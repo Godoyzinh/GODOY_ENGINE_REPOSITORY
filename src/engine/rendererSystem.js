@@ -16,6 +16,7 @@ export class RendererSystem {
     this.renderer.toneMapping = ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = PCFShadowMap;
+    this.domElement = this.renderer.domElement;
 
     this.rootElement.appendChild(this.renderer.domElement);
     this.resize(this.width, this.height);

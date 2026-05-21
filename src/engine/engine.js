@@ -1,10 +1,12 @@
 import { Timer } from 'three';
+import { VoxelInteractionSystem } from '../building/voxelInteractionSystem.js';
 import { CameraSystem } from './cameraSystem.js';
 import { LightingSystem } from './lightingSystem.js';
 import { RendererSystem } from './rendererSystem.js';
 import { SceneSystem } from './sceneSystem.js';
 import { PlayerController } from '../player/playerController.js';
 import { PhysicsWorld } from '../physics/physicsWorld.js';
+import { SaveSystem } from '../save/saveSystem.js';
 import { DebugOverlay } from '../ui/debugOverlay.js';
 import { TerrainGenerator } from '../world/terrainGenerator.js';
 
@@ -24,11 +26,17 @@ export class Engine {
       height: this.rendererSystem.height,
     });
     this.lightingSystem = new LightingSystem();
-    this.terrainGenerator = new TerrainGenerator();
+    this.saveSystem = new SaveSystem();
+    this.terrainGenerator = new TerrainGenerator({ saveSystem: this.saveSystem });
     this.physicsWorld = new PhysicsWorld();
     this.playerController = new PlayerController({
       camera: this.cameraSystem.camera,
       terrainSampler: this.terrainGenerator,
+    });
+    this.voxelInteractionSystem = new VoxelInteractionSystem({
+      camera: this.cameraSystem.camera,
+      domElement: this.rendererSystem.domElement,
+      world: this.terrainGenerator,
     });
     this.debugOverlay = new DebugOverlay({ rootElement });
 
@@ -83,6 +91,7 @@ export class Engine {
     this.playerController.update(deltaTime);
     this.terrainGenerator.update({
       focusPosition: this.playerController.position,
+      camera: this.cameraSystem.camera,
     });
     this.physicsWorld.update(deltaTime);
     this.cameraSystem.update({
@@ -92,6 +101,7 @@ export class Engine {
     this.rendererSystem.render(this.sceneSystem.scene, this.cameraSystem.camera);
     this.debugOverlay.update({
       deltaTime,
+      interactionStatus: this.voxelInteractionSystem.lastAction,
       playerPosition: this.playerController.position,
       terrainStats: this.terrainGenerator.stats,
     });

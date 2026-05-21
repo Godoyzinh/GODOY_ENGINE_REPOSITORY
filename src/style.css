@@ -13,6 +13,7 @@
 html,
 body,
 #app {
+  position: relative;
   width: 100%;
   height: 100%;
   margin: 0;
@@ -39,6 +40,20 @@ canvas {
   backdrop-filter: blur(10px);
 }
 
+#app::after {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.84);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(8, 11, 16, 0.52);
+  content: "";
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
 .debug-overlay__title {
   margin-bottom: 6px;
   color: #8ee6b5;
@@ -54,4 +69,25 @@ canvas {
 
 .debug-overlay__label {
   color: #aeb8c7;
+}
+
+.engine-error {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-content: center;
+  gap: 8px;
+  background: #0b0f16;
+  color: #edf5ff;
+  text-align: center;
+}
+
+.engine-error strong {
+  color: #8ee6b5;
+  font-size: 18px;
+}
+
+.engine-error span {
+  color: #aeb8c7;
+  font-size: 14px;
 }

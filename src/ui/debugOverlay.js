@@ -6,7 +6,7 @@ export class DebugOverlay {
     rootElement.appendChild(this.element);
   }
 
-  update({ deltaTime, playerPosition, terrainStats }) {
+  update({ deltaTime, interactionStatus, playerPosition, terrainStats }) {
     const instantFramesPerSecond = 1 / Math.max(deltaTime, 0.001);
     this.framesPerSecond = Math.round(this.framesPerSecond * 0.9 + instantFramesPerSecond * 0.1);
 
@@ -18,7 +18,11 @@ export class DebugOverlay {
       ${this.createRow('Player Y', playerPosition.y.toFixed(2))}
       ${this.createRow('Player Z', playerPosition.z.toFixed(2))}
       ${this.createRow('Chunks', terrainStats.chunksLoaded)}
-      ${this.createRow('Terrain Vertices', terrainStats.vertices)}
+      ${this.createRow('Visible', terrainStats.chunksVisible)}
+      ${this.createRow('Queue', terrainStats.chunksQueued)}
+      ${this.createRow('Blocks', terrainStats.blocksVisible)}
+      ${this.createRow('Saved', terrainStats.savedChunks)}
+      ${this.createRow('Voxel', interactionStatus)}
     `;
   }
 
