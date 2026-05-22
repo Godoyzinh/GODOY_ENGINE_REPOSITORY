@@ -40,6 +40,76 @@ canvas {
   backdrop-filter: blur(10px);
 }
 
+.hotbar-ui {
+  position: fixed;
+  right: 50%;
+  bottom: 18px;
+  display: grid;
+  grid-template-columns: repeat(9, 54px);
+  gap: 6px;
+  transform: translateX(50%);
+  pointer-events: none;
+}
+
+.hotbar-slot {
+  position: relative;
+  display: grid;
+  width: 54px;
+  height: 58px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(7, 10, 15, 0.66);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+  color: #edf5ff;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  backdrop-filter: blur(8px);
+}
+
+.hotbar-slot--selected {
+  border-color: #8ee6b5;
+  box-shadow:
+    0 0 0 2px rgba(142, 230, 181, 0.28),
+    inset 0 0 0 1px rgba(142, 230, 181, 0.18);
+}
+
+.hotbar-slot__key {
+  position: absolute;
+  top: 3px;
+  left: 5px;
+  color: #aeb8c7;
+  font-size: 10px;
+}
+
+.hotbar-slot__swatch {
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: var(--slot-color, #d9dee7);
+  box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.16);
+}
+
+.hotbar-slot__name {
+  align-self: end;
+  width: 100%;
+  padding: 0 4px 4px;
+  overflow: hidden;
+  color: #d8e1ee;
+  font-size: 9px;
+  line-height: 1.1;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hotbar-slot__count {
+  position: absolute;
+  right: 5px;
+  bottom: 15px;
+  color: #ffffff;
+  font-size: 10px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
 #app::after {
   position: fixed;
   top: 50%;
@@ -69,6 +139,33 @@ canvas {
 
 .debug-overlay__label {
   color: #aeb8c7;
+}
+
+@media (max-width: 620px) {
+  .debug-overlay {
+    max-width: 178px;
+    min-width: 178px;
+    font-size: 10px;
+  }
+
+  .hotbar-ui {
+    grid-template-columns: repeat(9, 38px);
+    gap: 4px;
+  }
+
+  .hotbar-slot {
+    width: 38px;
+    height: 46px;
+  }
+
+  .hotbar-slot__swatch {
+    width: 18px;
+    height: 18px;
+  }
+
+  .hotbar-slot__name {
+    font-size: 8px;
+  }
 }
 
 .engine-error {

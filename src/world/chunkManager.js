@@ -248,6 +248,21 @@ export class ChunkManager {
     return true;
   }
 
+  getBlockAtWorldPosition(worldX, worldY, worldZ) {
+    const chunkKey = getChunkKeyFromWorldPosition({ x: worldX, z: worldZ });
+    const chunk = this.chunks.get(chunkKey);
+
+    if (!chunk) {
+      return BLOCK_IDS.air;
+    }
+
+    return chunk.getBlock(
+      getLocalCoordinate(worldX),
+      Math.floor(worldY),
+      getLocalCoordinate(worldZ),
+    );
+  }
+
   markNeighborChunksDirty(localX, localZ, chunk) {
     const neighborOffsets = [];
 

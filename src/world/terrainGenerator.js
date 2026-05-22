@@ -43,4 +43,8 @@ export class TerrainGenerator {
   setBlockAtWorldPosition(worldX, worldY, worldZ, blockId) {
     return this.chunkManager.setBlockAtWorldPosition(worldX, worldY, worldZ, blockId);
   }
+
+  getBlockAtWorldPosition(worldX, worldY, worldZ) {
+    return this.chunkManager.getBlockAtWorldPosition(worldX, worldY, worldZ);
+  }
 }
