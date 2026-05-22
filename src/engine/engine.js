@@ -4,6 +4,7 @@ import { CameraSystem } from './cameraSystem.js';
 import { LightingSystem } from './lightingSystem.js';
 import { RendererSystem } from './rendererSystem.js';
 import { SceneSystem } from './sceneSystem.js';
+import { EntitySystem } from '../entities/entitySystem.js';
 import { PlayerController } from '../player/playerController.js';
 import { InventorySystem } from '../player/inventorySystem.js';
 import { PlayerState } from '../player/playerState.js';
@@ -36,6 +37,10 @@ export class Engine {
     this.playerState = new PlayerState();
     this.toolSystem = new ToolSystem();
     this.inventorySystem = new InventorySystem({ playerState: this.playerState });
+    this.entitySystem = new EntitySystem({
+      terrainSampler: this.terrainGenerator,
+      inventorySystem: this.inventorySystem,
+    });
     this.playerController = new PlayerController({
       camera: this.cameraSystem.camera,
       terrainSampler: this.terrainGenerator,
@@ -48,6 +53,7 @@ export class Engine {
       inventorySystem: this.inventorySystem,
       playerState: this.playerState,
       toolSystem: this.toolSystem,
+      onBlockMined: (minedBlock) => this.handleBlockMined(minedBlock),
     });
     this.debugOverlay = new DebugOverlay({ rootElement });
     this.hotbarUI = new HotbarUI({
@@ -57,6 +63,7 @@ export class Engine {
 
     this.sceneSystem.add(this.lightingSystem.group);
     this.sceneSystem.add(this.terrainGenerator.group);
+    this.sceneSystem.add(this.entitySystem.group);
     this.sceneSystem.add(this.voxelInteractionSystem.group);
     this.sceneSystem.add(this.playerController.object);
 
@@ -118,6 +125,10 @@ export class Engine {
       targetPosition: this.playerController.cameraTarget,
     });
     this.voxelInteractionSystem.update(deltaTime);
+    this.entitySystem.update({
+      deltaTime,
+      playerPosition: this.playerController.position,
+    });
     this.sceneSystem.update(deltaTime, elapsedTime);
     this.rendererSystem.render(this.sceneSystem.scene, this.cameraSystem.camera);
     this.hotbarUI.update();
@@ -126,11 +137,24 @@ export class Engine {
       interactionStatus: this.voxelInteractionSystem.lastAction,
       playerPosition: this.playerController.position,
       terrainStats: this.terrainGenerator.stats,
+      entityStats: this.entitySystem.stats,
       playerState: this.playerState.getSnapshot(),
       inventorySnapshot: this.inventorySystem.getSnapshot(),
       miningSnapshot: this.voxelInteractionSystem.miningSnapshot,
     });
 
     this.animationFrameId = requestAnimationFrame(this.update);
+  }
+
+  handleBlockMined({ targetBlock, dropId }) {
+    this.entitySystem.spawnDroppedItem({
+      blockId: dropId,
+      count: 1,
+      position: {
+        x: targetBlock.worldX + 0.5,
+        y: targetBlock.y + 0.8,
+        z: targetBlock.worldZ + 0.5,
+      },
+    });
   }
 }

@@ -179,7 +179,7 @@ function createBlockStack(blockId) {
     itemType: 'block',
     itemId: blockId,
     name: blockDefinition.name,
-    count: 64,
+    count: 32,
     maxStack: 64,
   };
 }

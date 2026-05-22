@@ -11,13 +11,22 @@ import { BLOCK_IDS } from '../world/blockTypes.js';
 const RAYCAST_DISTANCE = 28;
 
 export class VoxelInteractionSystem {
-  constructor({ camera, domElement, world, inventorySystem, playerState, toolSystem }) {
+  constructor({
+    camera,
+    domElement,
+    world,
+    inventorySystem,
+    playerState,
+    toolSystem,
+    onBlockMined = null,
+  }) {
     this.camera = camera;
     this.domElement = domElement;
     this.world = world;
     this.inventorySystem = inventorySystem;
     this.playerState = playerState;
     this.toolSystem = toolSystem;
+    this.onBlockMined = onBlockMined;
     this.miningSystem = new MiningSystem({ toolSystem });
     this.feedback = new VoxelInteractionFeedback();
     this.group = this.feedback.group;
@@ -176,16 +185,29 @@ export class VoxelInteractionSystem {
       return;
     }
 
-    if (this.playerState.mode !== 'creative' && dropId !== null) {
-      this.inventorySystem.addItem({
-        itemType: 'block',
-        itemId: dropId,
-        count: 1,
-      });
+    if (dropId !== null) {
+      this.handleBlockDrop({ targetBlock, dropId, blockDefinition });
     }
 
     this.targetBlock = null;
     this.lastAction = `Mined ${blockDefinition.name}`;
+  }
+
+  handleBlockDrop({ targetBlock, dropId, blockDefinition }) {
+    if (this.onBlockMined) {
+      this.onBlockMined({
+        targetBlock,
+        dropId,
+        blockDefinition,
+      });
+      return;
+    }
+
+    this.inventorySystem.addItem({
+      itemType: 'block',
+      itemId: dropId,
+      count: 1,
+    });
   }
 
   updateFeedback() {

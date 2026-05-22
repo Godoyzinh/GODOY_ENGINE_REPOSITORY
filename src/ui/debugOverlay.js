@@ -12,6 +12,7 @@ export class DebugOverlay {
     interactionStatus,
     playerPosition,
     terrainStats,
+    entityStats,
     playerState,
     inventorySnapshot,
     miningSnapshot,
@@ -38,6 +39,10 @@ export class DebugOverlay {
       ${this.createRow('Blocks', terrainStats.blocksVisible)}
       ${this.createRow('Pool', terrainStats.pooledChunks)}
       ${this.createRow('Saved', terrainStats.savedChunks)}
+      ${this.createRow('Entities', entityStats.activeEntities)}
+      ${this.createRow('Ent Pool', entityStats.pooledEntities)}
+      ${this.createRow('Drops', entityStats.droppedItems)}
+      ${this.createRow('NPCs', entityStats.npcs)}
       ${this.createRow('Mining', formatMiningProgress(miningSnapshot))}
       ${this.createRow('Voxel', interactionStatus)}
     `;
