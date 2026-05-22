@@ -1,23 +1,32 @@
-import { BoxGeometry, InstancedMesh, Matrix4, MeshStandardMaterial } from 'three';
-import { BLOCK_DEFINITIONS, BLOCK_IDS, isSolidBlock } from './blockTypes.js';
+import { BoxGeometry, InstancedMesh, Matrix4 } from 'three';
+import { BLOCK_DEFINITIONS, BLOCK_IDS, isOccludingBlock, isRenderableBlock, isSolidBlock } from './blockTypes.js';
 import { getBlockKey, getWorldCoordinate } from './chunkMath.js';
 import { BLOCK_SIZE, CHUNK_SIZE, MIN_GENERATED_Y } from './worldConstants.js';
 
 const sharedGeometry = new BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
 
 export class TerrainChunk {
-  constructor({ chunkX, chunkZ, terrainNoise, savedEdits }) {
+  constructor({ chunkX, chunkZ, terrainNoise, natureGenerator, savedEdits }) {
+    this.blocks = new Map();
+    this.edits = new Map();
+    this.meshes = [];
+    this.initialize({ chunkX, chunkZ, terrainNoise, natureGenerator, savedEdits });
+  }
+
+  initialize({ chunkX, chunkZ, terrainNoise, natureGenerator, savedEdits }) {
     this.chunkX = chunkX;
     this.chunkZ = chunkZ;
     this.key = `${chunkX},${chunkZ}`;
     this.terrainNoise = terrainNoise;
-    this.blocks = new Map();
+    this.natureGenerator = natureGenerator;
+    this.blocks.clear();
     this.edits = new Map(savedEdits);
-    this.meshes = [];
     this.needsMeshRebuild = true;
     this.isLoaded = false;
 
     this.generate();
+
+    return this;
   }
 
   generate() {
@@ -25,12 +34,18 @@ export class TerrainChunk {
       for (let localX = 0; localX < CHUNK_SIZE; localX += 1) {
         const worldX = getWorldCoordinate(this.chunkX, localX);
         const worldZ = getWorldCoordinate(this.chunkZ, localZ);
-        const surfaceY = this.terrainNoise.getHeightAt(worldX, worldZ);
+        const columnProfile = this.terrainNoise.getColumnProfile(worldX, worldZ);
+        const surfaceY = columnProfile.surfaceY;
 
         for (let y = MIN_GENERATED_Y; y <= surfaceY; y += 1) {
-          const blockId = this.getGeneratedBlockId(y, surfaceY);
-          this.blocks.set(getBlockKey(localX, y, localZ), blockId);
+          if (!this.terrainNoise.shouldCarveCave(worldX, y, worldZ, surfaceY)) {
+            const blockId = this.getGeneratedBlockId(y, surfaceY, columnProfile);
+            this.blocks.set(getBlockKey(localX, y, localZ), blockId);
+          }
         }
+
+        this.addWater(localX, localZ, columnProfile);
+        this.addNature(localX, localZ, worldX, worldZ, columnProfile);
       }
     }
 
@@ -47,16 +62,43 @@ export class TerrainChunk {
     }
   }
 
-  getGeneratedBlockId(y, surfaceY) {
+  getGeneratedBlockId(y, surfaceY, columnProfile) {
     if (y === surfaceY) {
-      return this.terrainNoise.getSurfaceBlockId(surfaceY);
+      return this.terrainNoise.getSurfaceBlockId(columnProfile);
     }
 
     if (surfaceY - y <= 3) {
-      return BLOCK_IDS.dirt;
+      return this.terrainNoise.getSubsurfaceBlockId(columnProfile);
     }
 
     return BLOCK_IDS.stone;
+  }
+
+  addWater(localX, localZ, columnProfile) {
+    if (columnProfile.surfaceY < columnProfile.waterLevel) {
+      this.blocks.set(getBlockKey(localX, columnProfile.waterLevel, localZ), BLOCK_IDS.water);
+    }
+  }
+
+  addNature(localX, localZ, worldX, worldZ, columnProfile) {
+    const decoration = this.natureGenerator.getDecorationAt(worldX, worldZ, columnProfile);
+
+    this.natureGenerator.placeDecoration({
+      decoration,
+      localX,
+      localZ,
+      surfaceY: columnProfile.surfaceY,
+      setBlock: (targetLocalX, targetY, targetLocalZ, blockId) => {
+        if (
+          targetLocalX >= 0 &&
+          targetLocalX < CHUNK_SIZE &&
+          targetLocalZ >= 0 &&
+          targetLocalZ < CHUNK_SIZE
+        ) {
+          this.blocks.set(getBlockKey(targetLocalX, targetY, targetLocalZ), blockId);
+        }
+      },
+    });
   }
 
   getBlock(localX, y, localZ) {
@@ -103,6 +145,7 @@ export class TerrainChunk {
       const blockId = Number(blockIdText);
       const mesh = new InstancedMesh(sharedGeometry, materials.get(blockId), blockEntries.length);
       const matrix = new Matrix4();
+      const blockScale = BLOCK_DEFINITIONS[blockId].scale ?? { x: 1, y: 1, z: 1 };
 
       mesh.name = `Chunk ${this.key} ${BLOCK_DEFINITIONS[blockId].name}`;
       mesh.castShadow = true;
@@ -114,7 +157,8 @@ export class TerrainChunk {
 
       for (let index = 0; index < blockEntries.length; index += 1) {
         const block = blockEntries[index];
-        matrix.makeTranslation(block.worldX + 0.5, block.y + 0.5, block.worldZ + 0.5);
+        matrix.makeScale(blockScale.x, blockScale.y, blockScale.z);
+        matrix.setPosition(block.worldX + 0.5, block.y + blockScale.y / 2, block.worldZ + 0.5);
         mesh.setMatrixAt(index, matrix);
       }
 
@@ -131,7 +175,7 @@ export class TerrainChunk {
     const blockEntriesByType = new Map();
 
     for (const [blockKey, blockId] of this.blocks) {
-      if (!isSolidBlock(blockId)) {
+      if (!isRenderableBlock(blockId)) {
         continue;
       }
 
@@ -172,7 +216,7 @@ export class TerrainChunk {
         return true;
       }
 
-      return !isSolidBlock(this.getBlock(neighborX, neighborY, neighborZ));
+      return !isOccludingBlock(this.getBlock(neighborX, neighborY, neighborZ));
     });
   }
 
@@ -183,6 +227,14 @@ export class TerrainChunk {
     }
 
     this.meshes = [];
+  }
+
+  prepareForReuse(parentGroup) {
+    this.disposeMeshes(parentGroup);
+    this.blocks.clear();
+    this.edits.clear();
+    this.needsMeshRebuild = false;
+    this.isLoaded = false;
   }
 
   serializeEdits() {

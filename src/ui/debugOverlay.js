@@ -20,7 +20,9 @@ export class DebugOverlay {
       ${this.createRow('Chunks', terrainStats.chunksLoaded)}
       ${this.createRow('Visible', terrainStats.chunksVisible)}
       ${this.createRow('Queue', terrainStats.chunksQueued)}
+      ${this.createRow('Biome', terrainStats.activeBiome)}
       ${this.createRow('Blocks', terrainStats.blocksVisible)}
+      ${this.createRow('Pool', terrainStats.pooledChunks)}
       ${this.createRow('Saved', terrainStats.savedChunks)}
       ${this.createRow('Voxel', interactionStatus)}
     `;

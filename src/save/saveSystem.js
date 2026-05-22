@@ -11,6 +11,7 @@ export class SaveSystem {
     if (!serializedState) {
       return {
         version: 1,
+        worldSeed: null,
         chunks: {},
         lastChangedBlock: null,
       };
@@ -21,10 +22,20 @@ export class SaveSystem {
     } catch {
       return {
         version: 1,
+        worldSeed: null,
         chunks: {},
         lastChangedBlock: null,
       };
     }
+  }
+
+  getWorldSeed(defaultSeed) {
+    if (!this.state.worldSeed) {
+      this.state.worldSeed = defaultSeed;
+      this.persist();
+    }
+
+    return this.state.worldSeed;
   }
 
   loadChunkEdits(chunkKey) {
@@ -58,6 +69,7 @@ export class SaveSystem {
   serializeWorld() {
     return {
       version: 1,
+      worldSeed: this.state.worldSeed,
       savedAt: new Date().toISOString(),
       chunks: this.state.chunks,
     };

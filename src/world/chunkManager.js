@@ -20,12 +20,15 @@ import {
 const reusableVector = new Vector3();
 
 export class ChunkManager {
-  constructor({ group, terrainNoise, saveSystem }) {
+  constructor({ group, terrainNoise, natureGenerator, saveSystem }) {
     this.group = group;
     this.terrainNoise = terrainNoise;
+    this.natureGenerator = natureGenerator;
     this.saveSystem = saveSystem;
     this.chunks = new Map();
+    this.chunkPool = [];
     this.loadQueue = [];
+    this.generationQueue = [];
     this.unloadQueue = [];
     this.materials = this.createMaterials();
     this.lastFocusChunkKey = null;
@@ -38,6 +41,9 @@ export class ChunkManager {
       chunkRegistrySize: 0,
       blocksVisible: 0,
       savedChunks: 0,
+      pooledChunks: 0,
+      worldSeed: terrainNoise.seed,
+      activeBiome: 'Plains',
     };
   }
 
@@ -46,6 +52,7 @@ export class ChunkManager {
     this.processQueues();
     this.rebuildDirtyChunks();
     this.updateVisibility(camera);
+    this.updateActiveBiome(focusPosition);
     this.updateStats();
   }
 
@@ -59,15 +66,11 @@ export class ChunkManager {
     }
 
     this.lastFocusChunkKey = focusChunkKey;
-    const desiredKeys = new Set();
-
     for (let offsetZ = -CHUNK_LOAD_RADIUS; offsetZ <= CHUNK_LOAD_RADIUS; offsetZ += 1) {
       for (let offsetX = -CHUNK_LOAD_RADIUS; offsetX <= CHUNK_LOAD_RADIUS; offsetX += 1) {
         const chunkX = focusChunkX + offsetX;
         const chunkZ = focusChunkZ + offsetZ;
         const chunkKey = getChunkKey(chunkX, chunkZ);
-
-        desiredKeys.add(chunkKey);
 
         if (!this.chunks.has(chunkKey) && !this.loadQueue.includes(chunkKey)) {
           this.loadQueue.push(chunkKey);
@@ -102,6 +105,14 @@ export class ChunkManager {
     for (let count = 0; count < MAX_CHUNK_LOADS_PER_FRAME && this.loadQueue.length > 0; count += 1) {
       const chunkKey = this.loadQueue.shift();
 
+      if (!this.chunks.has(chunkKey) && !this.generationQueue.includes(chunkKey)) {
+        this.generationQueue.push(chunkKey);
+      }
+    }
+
+    for (let count = 0; count < MAX_CHUNK_LOADS_PER_FRAME && this.generationQueue.length > 0; count += 1) {
+      const chunkKey = this.generationQueue.shift();
+
       if (!this.chunks.has(chunkKey)) {
         this.loadChunk(chunkKey);
       }
@@ -116,10 +127,11 @@ export class ChunkManager {
   loadChunk(chunkKey) {
     const { chunkX, chunkZ } = parseChunkKey(chunkKey);
     const savedEdits = this.saveSystem.loadChunkEdits(chunkKey);
-    const chunk = new TerrainChunk({
+    const chunk = this.acquireChunk({
       chunkX,
       chunkZ,
       terrainNoise: this.terrainNoise,
+      natureGenerator: this.natureGenerator,
       savedEdits,
     });
 
@@ -133,8 +145,19 @@ export class ChunkManager {
       return;
     }
 
-    chunk.disposeMeshes(this.group);
+    chunk.prepareForReuse(this.group);
     this.chunks.delete(chunkKey);
+    this.chunkPool.push(chunk);
+  }
+
+  acquireChunk(chunkOptions) {
+    const pooledChunk = this.chunkPool.pop();
+
+    if (pooledChunk) {
+      return pooledChunk.initialize(chunkOptions);
+    }
+
+    return new TerrainChunk(chunkOptions);
   }
 
   rebuildDirtyChunks() {
@@ -262,6 +285,9 @@ export class ChunkManager {
         blockDefinition.id,
         new MeshStandardMaterial({
           color: blockDefinition.color,
+          opacity: blockDefinition.opacity ?? 1,
+          transparent: blockDefinition.transparent,
+          depthWrite: !blockDefinition.transparent,
           roughness: 0.88,
           metalness: 0,
         }),
@@ -283,15 +309,20 @@ export class ChunkManager {
     }
 
     this.stats.chunksLoaded = this.chunks.size;
-    this.stats.chunksQueued = this.loadQueue.length + this.unloadQueue.length;
+    this.stats.chunksQueued = this.loadQueue.length + this.generationQueue.length + this.unloadQueue.length;
     this.stats.chunkRegistrySize = this.chunks.size;
     this.stats.blocksVisible = blocksVisible;
     this.stats.savedChunks = this.saveSystem.getSavedChunkCount();
+    this.stats.pooledChunks = this.chunkPool.length;
   }
 
   getFocusChunk(position) {
     reusableVector.copy(position);
 
     return getChunkKeyFromWorldPosition(reusableVector);
+  }
+
+  updateActiveBiome(position) {
+    this.stats.activeBiome = this.terrainNoise.getBiomeAt(position.x, position.z).name;
   }
 }

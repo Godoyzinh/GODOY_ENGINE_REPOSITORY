@@ -4,6 +4,12 @@ export const BLOCK_IDS = {
   dirt: 2,
   stone: 3,
   sand: 4,
+  water: 5,
+  wood: 6,
+  leaves: 7,
+  grassPlant: 8,
+  rock: 9,
+  sandstone: 10,
 };
 
 export const BLOCK_DEFINITIONS = {
@@ -15,6 +21,8 @@ export const BLOCK_DEFINITIONS = {
     hardness: 0,
     collision: false,
     transparent: true,
+    renderable: false,
+    occludes: false,
     color: '#000000',
   },
   [BLOCK_IDS.grass]: {
@@ -25,6 +33,9 @@ export const BLOCK_DEFINITIONS = {
     hardness: 1,
     collision: true,
     transparent: false,
+    renderable: true,
+    occludes: true,
+    scale: { x: 1, y: 1, z: 1 },
     color: '#2f8f45',
   },
   [BLOCK_IDS.dirt]: {
@@ -35,6 +46,9 @@ export const BLOCK_DEFINITIONS = {
     hardness: 1,
     collision: true,
     transparent: false,
+    renderable: true,
+    occludes: true,
+    scale: { x: 1, y: 1, z: 1 },
     color: '#8a6139',
   },
   [BLOCK_IDS.stone]: {
@@ -45,6 +59,9 @@ export const BLOCK_DEFINITIONS = {
     hardness: 3,
     collision: true,
     transparent: false,
+    renderable: true,
+    occludes: true,
+    scale: { x: 1, y: 1, z: 1 },
     color: '#828985',
   },
   [BLOCK_IDS.sand]: {
@@ -55,10 +72,101 @@ export const BLOCK_DEFINITIONS = {
     hardness: 1,
     collision: true,
     transparent: false,
+    renderable: true,
+    occludes: true,
+    scale: { x: 1, y: 1, z: 1 },
     color: '#d9c36d',
+  },
+  [BLOCK_IDS.water]: {
+    id: BLOCK_IDS.water,
+    name: 'Water',
+    material: 'liquid',
+    texture: null,
+    hardness: 0,
+    collision: false,
+    transparent: true,
+    renderable: true,
+    occludes: false,
+    opacity: 0.58,
+    scale: { x: 1, y: 0.82, z: 1 },
+    color: '#3c8ed8',
+  },
+  [BLOCK_IDS.wood]: {
+    id: BLOCK_IDS.wood,
+    name: 'Wood',
+    material: 'organic',
+    texture: null,
+    hardness: 2,
+    collision: true,
+    transparent: false,
+    renderable: true,
+    occludes: true,
+    scale: { x: 1, y: 1, z: 1 },
+    color: '#7a522b',
+  },
+  [BLOCK_IDS.leaves]: {
+    id: BLOCK_IDS.leaves,
+    name: 'Leaves',
+    material: 'organic',
+    texture: null,
+    hardness: 1,
+    collision: true,
+    transparent: false,
+    renderable: true,
+    occludes: true,
+    scale: { x: 1, y: 1, z: 1 },
+    color: '#237d34',
+  },
+  [BLOCK_IDS.grassPlant]: {
+    id: BLOCK_IDS.grassPlant,
+    name: 'Grass Plant',
+    material: 'organic',
+    texture: null,
+    hardness: 0,
+    collision: false,
+    transparent: true,
+    renderable: true,
+    occludes: false,
+    opacity: 0.88,
+    scale: { x: 0.22, y: 0.72, z: 0.22 },
+    color: '#46b653',
+  },
+  [BLOCK_IDS.rock]: {
+    id: BLOCK_IDS.rock,
+    name: 'Rock',
+    material: 'rock',
+    texture: null,
+    hardness: 3,
+    collision: true,
+    transparent: false,
+    renderable: true,
+    occludes: true,
+    scale: { x: 0.78, y: 0.58, z: 0.78 },
+    color: '#6d746f',
+  },
+  [BLOCK_IDS.sandstone]: {
+    id: BLOCK_IDS.sandstone,
+    name: 'Sandstone',
+    material: 'rock',
+    texture: null,
+    hardness: 2,
+    collision: true,
+    transparent: false,
+    renderable: true,
+    occludes: true,
+    scale: { x: 1, y: 1, z: 1 },
+    color: '#bfa562',
   },
 };
 
 export function isSolidBlock(blockId) {
   return blockId !== BLOCK_IDS.air && BLOCK_DEFINITIONS[blockId]?.collision === true;
+}
+
+export function isRenderableBlock(blockId) {
+  return BLOCK_DEFINITIONS[blockId]?.renderable === true;
+}
+
+export function isOccludingBlock(blockId) {
+  return BLOCK_DEFINITIONS[blockId]?.occludes === true;
 }
