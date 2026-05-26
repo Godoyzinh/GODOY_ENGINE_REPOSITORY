@@ -6,21 +6,26 @@ import { BLOCK_SIZE, CHUNK_SIZE, MIN_GENERATED_Y } from './worldConstants.js';
 const sharedGeometry = new BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
 
 export class TerrainChunk {
-  constructor({ chunkX, chunkZ, terrainNoise, natureGenerator, savedEdits }) {
+  constructor({ chunkX, chunkZ, terrainNoise, natureGenerator, structureGenerator, savedEdits }) {
     this.blocks = new Map();
     this.edits = new Map();
+    this.structureMetadata = new Map();
+    this.structureRecords = [];
     this.meshes = [];
-    this.initialize({ chunkX, chunkZ, terrainNoise, natureGenerator, savedEdits });
+    this.initialize({ chunkX, chunkZ, terrainNoise, natureGenerator, structureGenerator, savedEdits });
   }
 
-  initialize({ chunkX, chunkZ, terrainNoise, natureGenerator, savedEdits }) {
+  initialize({ chunkX, chunkZ, terrainNoise, natureGenerator, structureGenerator, savedEdits }) {
     this.chunkX = chunkX;
     this.chunkZ = chunkZ;
     this.key = `${chunkX},${chunkZ}`;
     this.terrainNoise = terrainNoise;
     this.natureGenerator = natureGenerator;
+    this.structureGenerator = structureGenerator;
     this.blocks.clear();
     this.edits = new Map(savedEdits);
+    this.structureMetadata.clear();
+    this.structureRecords = [];
     this.needsMeshRebuild = true;
     this.isLoaded = false;
 
@@ -49,6 +54,7 @@ export class TerrainChunk {
       }
     }
 
+    this.addStructure();
     this.applySavedEdits();
   }
 
@@ -101,8 +107,46 @@ export class TerrainChunk {
     });
   }
 
+  addStructure() {
+    const structure = this.structureGenerator?.getStructureForChunk({
+      chunkX: this.chunkX,
+      chunkZ: this.chunkZ,
+      terrainNoise: this.terrainNoise,
+    });
+
+    if (!structure) {
+      return;
+    }
+
+    this.structureGenerator.placeStructure({
+      structure,
+      setBlock: (targetLocalX, targetY, targetLocalZ, blockId) => {
+        if (
+          targetLocalX >= 0 &&
+          targetLocalX < CHUNK_SIZE &&
+          targetLocalZ >= 0 &&
+          targetLocalZ < CHUNK_SIZE
+        ) {
+          this.blocks.set(getBlockKey(targetLocalX, targetY, targetLocalZ), blockId);
+        }
+      },
+      setMetadata: (blockKey, metadata) => {
+        this.structureMetadata.set(blockKey, metadata);
+      },
+    });
+    this.structureRecords.push({
+      id: structure.id,
+      name: structure.name,
+      lootTableId: structure.lootTableId,
+    });
+  }
+
   getBlock(localX, y, localZ) {
     return this.blocks.get(getBlockKey(localX, y, localZ)) ?? BLOCK_IDS.air;
+  }
+
+  getBlockMetadata(localX, y, localZ) {
+    return this.structureMetadata.get(getBlockKey(localX, y, localZ)) ?? null;
   }
 
   setBlock(localX, y, localZ, blockId) {
@@ -233,6 +277,8 @@ export class TerrainChunk {
     this.disposeMeshes(parentGroup);
     this.blocks.clear();
     this.edits.clear();
+    this.structureMetadata.clear();
+    this.structureRecords = [];
     this.needsMeshRebuild = false;
     this.isLoaded = false;
   }

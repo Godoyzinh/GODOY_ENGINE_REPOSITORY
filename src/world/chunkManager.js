@@ -20,10 +20,11 @@ import {
 const reusableVector = new Vector3();
 
 export class ChunkManager {
-  constructor({ group, terrainNoise, natureGenerator, saveSystem }) {
+  constructor({ group, terrainNoise, natureGenerator, structureGenerator, saveSystem }) {
     this.group = group;
     this.terrainNoise = terrainNoise;
     this.natureGenerator = natureGenerator;
+    this.structureGenerator = structureGenerator;
     this.saveSystem = saveSystem;
     this.chunks = new Map();
     this.chunkPool = [];
@@ -44,6 +45,7 @@ export class ChunkManager {
       pooledChunks: 0,
       worldSeed: terrainNoise.seed,
       activeBiome: 'Plains',
+      structuresGenerated: 0,
     };
   }
 
@@ -132,6 +134,7 @@ export class ChunkManager {
       chunkZ,
       terrainNoise: this.terrainNoise,
       natureGenerator: this.natureGenerator,
+      structureGenerator: this.structureGenerator,
       savedEdits,
     });
 
@@ -225,6 +228,7 @@ export class ChunkManager {
       ...block,
       chunk: mesh.userData.chunk,
       blockId: mesh.userData.blockId,
+      metadata: mesh.userData.chunk.getBlockMetadata(block.localX, block.y, block.localZ),
     };
   }
 
@@ -318,8 +322,11 @@ export class ChunkManager {
 
   updateStats() {
     let blocksVisible = 0;
+    let structuresGenerated = 0;
 
     for (const chunk of this.chunks.values()) {
+      structuresGenerated += chunk.structureRecords.length;
+
       for (const mesh of chunk.meshes) {
         if (mesh.visible) {
           blocksVisible += mesh.count;
@@ -333,6 +340,7 @@ export class ChunkManager {
     this.stats.blocksVisible = blocksVisible;
     this.stats.savedChunks = this.saveSystem.getSavedChunkCount();
     this.stats.pooledChunks = this.chunkPool.length;
+    this.stats.structuresGenerated = structuresGenerated;
   }
 
   getFocusChunk(position) {

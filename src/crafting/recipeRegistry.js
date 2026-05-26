@@ -1,10 +1,15 @@
 import { ITEM_IDS, ITEM_TYPES } from '../items/itemRegistry.js';
+import { TOOL_IDS } from '../tools/toolSystem.js';
 import { BLOCK_IDS } from '../world/blockTypes.js';
 
 export const RECIPE_IDS = {
   woodPlanks: 'woodPlanks',
   sticks: 'sticks',
   berrySnack: 'berrySnack',
+  furnace: 'furnace',
+  campfire: 'campfire',
+  ironPickaxe: 'ironPickaxe',
+  ironAxe: 'ironAxe',
 };
 
 export const RECIPE_REGISTRY = {
@@ -35,6 +40,45 @@ export const RECIPE_REGISTRY = {
       { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.fiber, count: 1 },
     ],
     output: { itemType: ITEM_TYPES.consumable, itemId: ITEM_IDS.apple, count: 1 },
+  },
+  [RECIPE_IDS.furnace]: {
+    id: RECIPE_IDS.furnace,
+    name: 'Furnace',
+    category: 'station',
+    inputs: [
+      { itemType: ITEM_TYPES.block, itemId: BLOCK_IDS.stone, count: 8 },
+    ],
+    output: { itemType: ITEM_TYPES.block, itemId: BLOCK_IDS.furnace, count: 1 },
+  },
+  [RECIPE_IDS.campfire]: {
+    id: RECIPE_IDS.campfire,
+    name: 'Campfire',
+    category: 'station',
+    inputs: [
+      { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.stick, count: 3 },
+      { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.coal, count: 1 },
+    ],
+    output: { itemType: ITEM_TYPES.block, itemId: BLOCK_IDS.campfire, count: 1 },
+  },
+  [RECIPE_IDS.ironPickaxe]: {
+    id: RECIPE_IDS.ironPickaxe,
+    name: 'Iron Pickaxe',
+    category: 'tooling',
+    inputs: [
+      { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.ironIngot, count: 3 },
+      { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.stick, count: 2 },
+    ],
+    output: { itemType: ITEM_TYPES.tool, itemId: TOOL_IDS.ironPickaxe, count: 1 },
+  },
+  [RECIPE_IDS.ironAxe]: {
+    id: RECIPE_IDS.ironAxe,
+    name: 'Iron Axe',
+    category: 'tooling',
+    inputs: [
+      { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.ironIngot, count: 3 },
+      { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.stick, count: 2 },
+    ],
+    output: { itemType: ITEM_TYPES.tool, itemId: TOOL_IDS.ironAxe, count: 1 },
   },
 };
 

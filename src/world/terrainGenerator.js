@@ -2,6 +2,7 @@ import { Group } from 'three';
 import { ChunkManager } from './chunkManager.js';
 import { NatureGenerator } from './natureGenerator.js';
 import { PerlinNoise } from './perlinNoise.js';
+import { StructureGenerator } from './structureGenerator.js';
 import { TerrainNoise } from './terrainNoise.js';
 import { DEFAULT_WORLD_SEED } from './worldConstants.js';
 
@@ -14,10 +15,14 @@ export class TerrainGenerator {
     this.natureGenerator = new NatureGenerator({
       noise: new PerlinNoise(`${this.worldSeed}:nature`),
     });
+    this.structureGenerator = new StructureGenerator({
+      worldSeed: this.worldSeed,
+    });
     this.chunkManager = new ChunkManager({
       group: this.group,
       terrainNoise: this.terrainNoise,
       natureGenerator: this.natureGenerator,
+      structureGenerator: this.structureGenerator,
       saveSystem,
     });
     this.stats = this.chunkManager.stats;

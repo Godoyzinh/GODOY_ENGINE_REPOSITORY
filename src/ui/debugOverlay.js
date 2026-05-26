@@ -21,6 +21,9 @@ export class DebugOverlay {
     damageSnapshot,
     combatSnapshot,
     dayNightSnapshot,
+    weatherSnapshot,
+    progressionSnapshot,
+    furnaceSnapshot,
   }) {
     const instantFramesPerSecond = 1 / Math.max(deltaTime, 0.001);
     this.framesPerSecond = Math.round(this.framesPerSecond * 0.9 + instantFramesPerSecond * 0.1);
@@ -35,6 +38,10 @@ export class DebugOverlay {
       ${this.createRow('Stamina', Math.round(survivalSnapshot.stamina))}
       ${this.createRow('Time', `${dayNightSnapshot.timeLabel} ${dayNightSnapshot.isNight ? 'Night' : 'Day'}`)}
       ${this.createRow('Pressure', dayNightSnapshot.ambientPressure.toFixed(2))}
+      ${this.createRow('Weather', `${weatherSnapshot.state} ${Math.round(weatherSnapshot.intensity * 100)}%`)}
+      ${this.createRow('Ambience', weatherSnapshot.ambience)}
+      ${this.createRow('Tier', progressionSnapshot.currentTier)}
+      ${this.createRow('Next Tier', progressionSnapshot.nextTier)}
       ${this.createRow('Selected', inventorySnapshot.selectedItemLabel)}
       ${this.createRow('Slot', inventorySnapshot.selectedSlot + 1)}
       ${this.createRow('Player X', playerPosition.x.toFixed(2))}
@@ -47,6 +54,7 @@ export class DebugOverlay {
       ${this.createRow('Queue', terrainStats.chunksQueued)}
       ${this.createRow('Biome', terrainStats.activeBiome)}
       ${this.createRow('Blocks', terrainStats.blocksVisible)}
+      ${this.createRow('Structures', terrainStats.structuresGenerated)}
       ${this.createRow('Pool', terrainStats.pooledChunks)}
       ${this.createRow('Saved', terrainStats.savedChunks)}
       ${this.createRow('Entities', entityStats.activeEntities)}
@@ -57,6 +65,7 @@ export class DebugOverlay {
       ${this.createRow('Aggro', entityStats.aggroHostiles)}
       ${this.createRow('Hurt Ent', entityStats.hurtEntities)}
       ${this.createRow('Craftable', craftingSnapshot.craftableCount)}
+      ${this.createRow('Furnace', `${furnaceSnapshot.activeJobs} jobs / ${furnaceSnapshot.availableRecipes} ready`)}
       ${this.createRow('Survival', survivalSnapshot.lastEvent)}
       ${this.createRow('Damage', formatDamageEvent(damageSnapshot))}
       ${this.createRow('Combat', formatCombatEvent(combatSnapshot))}

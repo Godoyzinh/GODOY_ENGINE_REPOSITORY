@@ -3,16 +3,19 @@ import { VoxelInteractionSystem } from '../building/voxelInteractionSystem.js';
 import { CombatSystem } from '../combat/combatSystem.js';
 import { DamageSystem } from '../combat/damageSystem.js';
 import { CraftingSystem } from '../crafting/craftingSystem.js';
+import { FurnaceSystem } from '../crafting/furnaceSystem.js';
 import { CameraSystem } from './cameraSystem.js';
 import { LightingSystem } from './lightingSystem.js';
 import { RendererSystem } from './rendererSystem.js';
 import { SceneSystem } from './sceneSystem.js';
 import { EntitySystem } from '../entities/entitySystem.js';
+import { LootSystem, LOOT_TABLE_IDS } from '../loot/lootSystem.js';
 import { PlayerController } from '../player/playerController.js';
 import { InventorySystem } from '../player/inventorySystem.js';
 import { PlayerState } from '../player/playerState.js';
 import { SurvivalSystem } from '../player/survivalSystem.js';
 import { PhysicsWorld } from '../physics/physicsWorld.js';
+import { ProgressionSystem } from '../progression/progressionSystem.js';
 import { SaveSystem } from '../save/saveSystem.js';
 import { DebugOverlay } from '../ui/debugOverlay.js';
 import { CombatHud } from '../ui/combatHud.js';
@@ -21,6 +24,8 @@ import { SurvivalHud } from '../ui/survivalHud.js';
 import { ToolSystem } from '../tools/toolSystem.js';
 import { DayNightSystem } from '../world/dayNightSystem.js';
 import { TerrainGenerator } from '../world/terrainGenerator.js';
+import { WeatherSystem } from '../world/weatherSystem.js';
+import { BLOCK_IDS } from '../world/blockTypes.js';
 
 const MAX_DELTA_TIME = 0.05;
 
@@ -41,9 +46,11 @@ export class Engine {
     this.saveSystem = new SaveSystem();
     this.dayNightSystem = new DayNightSystem();
     this.terrainGenerator = new TerrainGenerator({ saveSystem: this.saveSystem });
+    this.weatherSystem = new WeatherSystem({ worldSeed: this.terrainGenerator.worldSeed });
     this.physicsWorld = new PhysicsWorld();
     this.playerState = new PlayerState();
     this.toolSystem = new ToolSystem();
+    this.lootSystem = new LootSystem();
     this.inventorySystem = new InventorySystem({ playerState: this.playerState });
     this.survivalSystem = new SurvivalSystem({
       playerState: this.playerState,
@@ -56,6 +63,8 @@ export class Engine {
       toolSystem: this.toolSystem,
     });
     this.craftingSystem = new CraftingSystem({ inventorySystem: this.inventorySystem });
+    this.furnaceSystem = new FurnaceSystem({ inventorySystem: this.inventorySystem });
+    this.progressionSystem = new ProgressionSystem({ inventorySystem: this.inventorySystem });
     this.entitySystem = new EntitySystem({
       terrainSampler: this.terrainGenerator,
       inventorySystem: this.inventorySystem,
@@ -170,8 +179,14 @@ export class Engine {
 
     this.dayNightSystem.update(deltaTime);
     const dayNightSnapshot = this.dayNightSystem.getSnapshot();
-    this.lightingSystem.update(dayNightSnapshot);
-    this.sceneSystem.applyEnvironment(dayNightSnapshot);
+    this.weatherSystem.update({
+      deltaTime,
+      dayNightSnapshot,
+      activeBiome: this.terrainGenerator.stats.activeBiome,
+    });
+    const weatherSnapshot = this.weatherSystem.getSnapshot();
+    this.lightingSystem.update(dayNightSnapshot, weatherSnapshot);
+    this.sceneSystem.applyEnvironment(dayNightSnapshot, weatherSnapshot);
     this.playerController.update(deltaTime);
     const landingImpact = this.playerController.consumeLandingImpact();
     this.survivalSystem.update({
@@ -196,6 +211,8 @@ export class Engine {
       dayNightSnapshot,
     });
     this.combatSystem.update(deltaTime);
+    this.furnaceSystem.update(deltaTime);
+    this.progressionSystem.update();
     this.craftingSystem.update();
     this.sceneSystem.update(deltaTime, elapsedTime);
     this.rendererSystem.render(this.sceneSystem.scene, this.cameraSystem.camera);
@@ -216,19 +233,43 @@ export class Engine {
       damageSnapshot: this.damageSystem.getSnapshot(),
       combatSnapshot: this.combatSystem.getSnapshot(),
       dayNightSnapshot,
+      weatherSnapshot,
+      progressionSnapshot: this.progressionSystem.getSnapshot(),
+      furnaceSnapshot: this.furnaceSystem.getSnapshot(),
     });
 
     this.animationFrameId = requestAnimationFrame(this.update);
   }
 
-  handleBlockMined({ targetBlock, dropStack }) {
+  handleBlockMined({ targetBlock, dropStack, blockDefinition }) {
+    const dropPosition = {
+      x: targetBlock.worldX + 0.5,
+      y: targetBlock.y + 0.8,
+      z: targetBlock.worldZ + 0.5,
+    };
+
+    if (blockDefinition.id === BLOCK_IDS.lootChest) {
+      this.spawnChestLoot({ targetBlock, dropPosition });
+    }
+
     this.entitySystem.spawnDroppedItem({
       itemStack: dropStack,
-      position: {
-        x: targetBlock.worldX + 0.5,
-        y: targetBlock.y + 0.8,
-        z: targetBlock.worldZ + 0.5,
-      },
+      position: dropPosition,
     });
+  }
+
+  spawnChestLoot({ targetBlock, dropPosition }) {
+    const tableId = targetBlock.metadata?.lootTableId ?? LOOT_TABLE_IDS.campChest;
+    const lootStacks = this.lootSystem.generateChestLoot({
+      tableId,
+      seed: `${targetBlock.worldX},${targetBlock.y},${targetBlock.worldZ}:${tableId}`,
+    });
+
+    for (const itemStack of lootStacks) {
+      this.entitySystem.spawnDroppedItem({
+        itemStack,
+        position: dropPosition,
+      });
+    }
   }
 }

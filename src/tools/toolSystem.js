@@ -2,6 +2,8 @@ export const TOOL_IDS = {
   hand: 'hand',
   pickaxe: 'pickaxe',
   axe: 'axe',
+  ironPickaxe: 'ironPickaxe',
+  ironAxe: 'ironAxe',
 };
 
 export const TOOL_DEFINITIONS = {
@@ -9,6 +11,7 @@ export const TOOL_DEFINITIONS = {
     id: TOOL_IDS.hand,
     name: 'Hand',
     category: 'hand',
+    tier: 'starter',
     miningMultiplier: 1,
     preferredToolTypes: ['hand'],
   },
@@ -16,6 +19,7 @@ export const TOOL_DEFINITIONS = {
     id: TOOL_IDS.pickaxe,
     name: 'Pickaxe',
     category: 'pickaxe',
+    tier: 'stone',
     miningMultiplier: 2.8,
     preferredToolTypes: ['pickaxe'],
   },
@@ -23,7 +27,24 @@ export const TOOL_DEFINITIONS = {
     id: TOOL_IDS.axe,
     name: 'Axe',
     category: 'axe',
+    tier: 'wood',
     miningMultiplier: 2.4,
+    preferredToolTypes: ['axe'],
+  },
+  [TOOL_IDS.ironPickaxe]: {
+    id: TOOL_IDS.ironPickaxe,
+    name: 'Iron Pickaxe',
+    category: 'pickaxe',
+    tier: 'iron',
+    miningMultiplier: 4.1,
+    preferredToolTypes: ['pickaxe'],
+  },
+  [TOOL_IDS.ironAxe]: {
+    id: TOOL_IDS.ironAxe,
+    name: 'Iron Axe',
+    category: 'axe',
+    tier: 'iron',
+    miningMultiplier: 3.6,
     preferredToolTypes: ['axe'],
   },
 };

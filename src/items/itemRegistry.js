@@ -15,6 +15,11 @@ export const ITEM_IDS = {
   fiber: 'fiber',
   woodPlank: 'woodPlank',
   wildCore: 'wildCore',
+  lootCache: 'lootCache',
+  coal: 'coal',
+  ironOre: 'ironOre',
+  ironIngot: 'ironIngot',
+  cookedBerries: 'cookedBerries',
 };
 
 export const ITEM_DEFINITIONS = {
@@ -81,6 +86,59 @@ export const ITEM_DEFINITIONS = {
     category: 'combat',
     maxStack: 32,
     color: '#a94f75',
+  },
+  [ITEM_IDS.lootCache]: {
+    itemType: ITEM_TYPES.resource,
+    itemId: ITEM_IDS.lootCache,
+    name: 'Loot Cache',
+    shortName: 'Cache',
+    category: 'loot',
+    maxStack: 16,
+    color: '#d6a552',
+  },
+  [ITEM_IDS.coal]: {
+    itemType: ITEM_TYPES.resource,
+    itemId: ITEM_IDS.coal,
+    name: 'Coal',
+    shortName: 'Coal',
+    category: 'fuel',
+    maxStack: 64,
+    color: '#252a2d',
+    fuel: {
+      burnSeconds: 8,
+    },
+  },
+  [ITEM_IDS.ironOre]: {
+    itemType: ITEM_TYPES.resource,
+    itemId: ITEM_IDS.ironOre,
+    name: 'Iron Ore',
+    shortName: 'Ore',
+    category: 'material',
+    maxStack: 64,
+    color: '#947a6a',
+  },
+  [ITEM_IDS.ironIngot]: {
+    itemType: ITEM_TYPES.resource,
+    itemId: ITEM_IDS.ironIngot,
+    name: 'Iron Ingot',
+    shortName: 'Ingot',
+    category: 'material',
+    maxStack: 64,
+    color: '#c4c0b8',
+  },
+  [ITEM_IDS.cookedBerries]: {
+    itemType: ITEM_TYPES.consumable,
+    itemId: ITEM_IDS.cookedBerries,
+    name: 'Cooked Berries',
+    shortName: 'Cooked',
+    category: 'food',
+    maxStack: 16,
+    color: '#e07b52',
+    consumable: {
+      hungerRestore: 20,
+      healthRestore: 5,
+      staminaRestore: 10,
+    },
   },
 };
 
@@ -179,4 +237,8 @@ export function getItemDisplay(itemStack) {
 
 export function getConsumableEffect(itemStack) {
   return getItemDefinition(itemStack).consumable ?? null;
+}
+
+export function getFuelDefinition(itemStack) {
+  return getItemDefinition(itemStack).fuel ?? null;
 }
