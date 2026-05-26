@@ -205,6 +205,10 @@ export class ChunkManager {
     return chunk.getHighestSolidY(getLocalCoordinate(worldX), getLocalCoordinate(worldZ)) + 1;
   }
 
+  getBiomeAt(worldX, worldZ) {
+    return this.terrainNoise.getBiomeAt(worldX, worldZ);
+  }
+
   getRaycastTargets() {
     return [...this.chunks.values()].flatMap((chunk) => chunk.meshes);
   }

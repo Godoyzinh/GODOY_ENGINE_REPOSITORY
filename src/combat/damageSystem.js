@@ -25,12 +25,12 @@ export class DamageSystem {
     return wasApplied;
   }
 
-  applyEntityDamage({ entity, amount, type = DAMAGE_TYPES.attack, source = null }) {
+  applyEntityDamage({ entity, amount, type = DAMAGE_TYPES.attack, source = null, knockback = null }) {
     if (!entity || typeof entity.applyDamage !== 'function') {
       return false;
     }
 
-    const wasApplied = entity.applyDamage({ amount, type, source });
+    const wasApplied = entity.applyDamage({ amount, type, source, knockback });
 
     if (wasApplied) {
       this.lastDamageEvent = {
@@ -38,6 +38,7 @@ export class DamageSystem {
         amount,
         type,
         source,
+        targetName: entity.name,
       };
     }
 

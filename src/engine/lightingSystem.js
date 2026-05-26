@@ -20,4 +20,23 @@ export class LightingSystem {
 
     this.group.add(this.hemisphereLight, this.ambientLight, this.sunLight);
   }
+
+  update(dayNightSnapshot) {
+    if (!dayNightSnapshot) {
+      return;
+    }
+
+    const daylight = dayNightSnapshot.daylight;
+    const sunAngle = dayNightSnapshot.timeOfDay * Math.PI * 2;
+
+    this.hemisphereLight.intensity = 0.48 + daylight * 0.92;
+    this.ambientLight.intensity = 0.16 + daylight * 0.28;
+    this.sunLight.intensity = 0.25 + daylight * 3.05;
+    this.sunLight.color.set(dayNightSnapshot.isNight ? '#9fb7ff' : '#fff2d2');
+    this.sunLight.position.set(
+      Math.cos(sunAngle) * 42,
+      16 + Math.max(daylight, 0.12) * 42,
+      Math.sin(sunAngle) * 42,
+    );
+  }
 }

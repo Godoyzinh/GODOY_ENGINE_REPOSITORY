@@ -6,12 +6,14 @@ import { EntityRegistry } from './entityRegistry.js';
 import { ENTITY_TYPES } from './entityTypes.js';
 import { HostileEntity } from './hostileEntity.js';
 import { NpcEntity } from './npcEntity.js';
+import { getHostileSpawnChance } from './spawnTables.js';
 
 const ENTITY_ACTIVATION_DISTANCE = 72;
 const ENTITY_VISIBLE_DISTANCE = 96;
 const NPC_SPAWN_RADIUS_CHUNKS = 1;
 const MAX_ACTIVE_NPCS = 6;
 const MAX_ACTIVE_HOSTILES = 4;
+const MAX_NIGHT_HOSTILES = 7;
 const MAX_DROPPED_ITEMS = 48;
 
 export class EntitySystem {
@@ -28,9 +30,9 @@ export class EntitySystem {
     this.stats = createEmptyStats();
   }
 
-  update({ deltaTime, playerPosition }) {
+  update({ deltaTime, playerPosition, dayNightSnapshot = null }) {
     this.spawnNpcsNearFocus(playerPosition);
-    this.spawnHostilesNearFocus(playerPosition);
+    this.spawnHostilesNearFocus(playerPosition, dayNightSnapshot);
     this.registry.updateActivation({
       focusPosition: playerPosition,
       activationDistance: ENTITY_ACTIVATION_DISTANCE,
@@ -44,6 +46,7 @@ export class EntitySystem {
           inventorySystem: this.inventorySystem,
           playerPosition,
           damageSystem: this.damageSystem,
+          dayNightSnapshot,
         });
       }
     }
@@ -79,8 +82,8 @@ export class EntitySystem {
     });
   }
 
-  spawnHostile({ position, seed = Math.random() }) {
-    if (this.registry.getCountByType(ENTITY_TYPES.hostile) >= MAX_ACTIVE_HOSTILES) {
+  spawnHostile({ position, seed = Math.random(), maxActiveHostiles = MAX_ACTIVE_HOSTILES }) {
+    if (this.registry.getCountByType(ENTITY_TYPES.hostile) >= maxActiveHostiles) {
       return null;
     }
 
@@ -135,18 +138,18 @@ export class EntitySystem {
     }
   }
 
-  spawnHostilesNearFocus(focusPosition) {
+  spawnHostilesNearFocus(focusPosition, dayNightSnapshot = null) {
     if (!focusPosition) {
       return;
     }
 
     const focusChunkX = getChunkCoordinate(focusPosition.x);
     const focusChunkZ = getChunkCoordinate(focusPosition.z);
-    const focusChunkKey = getChunkKey(focusChunkX, focusChunkZ);
+    const maxActiveHostiles = dayNightSnapshot?.isNight ? MAX_NIGHT_HOSTILES : MAX_ACTIVE_HOSTILES;
 
     for (let offsetZ = -NPC_SPAWN_RADIUS_CHUNKS; offsetZ <= NPC_SPAWN_RADIUS_CHUNKS; offsetZ += 1) {
       for (let offsetX = -NPC_SPAWN_RADIUS_CHUNKS; offsetX <= NPC_SPAWN_RADIUS_CHUNKS; offsetX += 1) {
-        if (this.registry.getCountByType(ENTITY_TYPES.hostile) >= MAX_ACTIVE_HOSTILES) {
+        if (this.registry.getCountByType(ENTITY_TYPES.hostile) >= maxActiveHostiles) {
           return;
         }
 
@@ -159,7 +162,17 @@ export class EntitySystem {
         }
 
         const hash = hashString(`${chunkKey}:hostile`);
-        const shouldSpawn = chunkKey === focusChunkKey || hash % 5 === 0;
+        const spawnPosition = this.getEntitySpawnPosition(chunkX, chunkZ, hash);
+        const biome = this.terrainSampler.getBiomeAt?.(spawnPosition.x, spawnPosition.z);
+        const baseSpawnChance = getHostileSpawnChance({
+          biomeId: biome?.id,
+          isNight: dayNightSnapshot?.isNight === true,
+        });
+        const spawnChance = Math.min(
+          0.9,
+          baseSpawnChance * (dayNightSnapshot?.hostileSpawnMultiplier ?? 1),
+        );
+        const shouldSpawn = (hash % 1000) / 1000 <= spawnChance;
 
         if (!shouldSpawn) {
           continue;
@@ -167,8 +180,9 @@ export class EntitySystem {
 
         this.spawnedHostileChunks.add(chunkKey);
         this.spawnHostile({
-          position: this.getEntitySpawnPosition(chunkX, chunkZ, hash),
+          position: spawnPosition,
           seed: hash,
+          maxActiveHostiles,
         });
       }
     }
@@ -197,11 +211,94 @@ export class EntitySystem {
   }
 
   releaseRemovedEntities() {
+    const removedEntities = this.registry.getEntities().filter((entity) => entity.state.removeRequested);
+
+    for (const entity of removedEntities) {
+      this.spawnEntityDeathDrops(entity);
+      this.recordEntityCleanup(entity);
+      this.registry.release(entity);
+    }
+  }
+
+  spawnEntityDeathDrops(entity) {
+    if (
+      entity.type === ENTITY_TYPES.droppedItem ||
+      entity.state.removeReason !== 'destroyed' ||
+      entity.combat?.deathDropsSpawned
+    ) {
+      return;
+    }
+
+    const deathDrops = entity.getDeathDrops?.() ?? [];
+
+    for (const [dropIndex, itemStack] of deathDrops.entries()) {
+      this.spawnDroppedItem({
+        itemStack,
+        position: {
+          x: entity.transform.position.x,
+          y: entity.transform.position.y + 0.7,
+          z: entity.transform.position.z,
+        },
+        impulse: createDeathDropImpulse(dropIndex),
+      });
+    }
+
+    if (entity.combat) {
+      entity.combat.deathDropsSpawned = true;
+    }
+  }
+
+  recordEntityCleanup(entity) {
+    if (entity.state.removeReason === 'destroyed') {
+      this.stats.lastCleanup = `${entity.name} destroyed`;
+      return;
+    }
+
+    this.stats.lastCleanup = `${entity.name} ${entity.state.removeReason}`;
+  }
+
+  findMeleeTarget({ origin, direction, range, arcCosine }) {
+    const attackOrigin = toVector3(origin).add(new Vector3(0, 1, 0));
+    const attackDirection = direction.clone().setY(0).normalize();
+    let bestTarget = null;
+    let bestScore = -Infinity;
+
     for (const entity of this.registry.getEntities()) {
-      if (entity.state.removeRequested) {
-        this.registry.release(entity);
+      if (!isMeleeTarget(entity)) {
+        continue;
+      }
+
+      const targetCenter = entity.transform.position.clone().add(new Vector3(0, entity.collider.height * 0.5, 0));
+      const offset = targetCenter.sub(attackOrigin);
+      const distance = offset.length();
+
+      if (distance > range) {
+        continue;
+      }
+
+      const alignment = offset.setY(0).normalize().dot(attackDirection);
+
+      if (alignment < arcCosine) {
+        continue;
+      }
+
+      const score = alignment - distance * 0.08;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestTarget = entity;
       }
     }
+
+    return bestTarget;
+  }
+
+  getFocusedCombatTarget() {
+    const hostiles = this.registry.getEntities()
+      .filter((entity) => entity.type === ENTITY_TYPES.hostile && entity.isAlive?.())
+      .sort((left, right) => left.getHealthPercent() - right.getHealthPercent());
+
+    return hostiles[0]?.getCombatSnapshot() ?? null;
   }
 
   updateStats() {
@@ -211,6 +308,8 @@ export class EntitySystem {
     const droppedItems = entities.filter((entity) => entity.type === ENTITY_TYPES.droppedItem);
     const npcs = entities.filter((entity) => entity.type === ENTITY_TYPES.npc);
     const hostiles = entities.filter((entity) => entity.type === ENTITY_TYPES.hostile);
+    const aggroHostiles = hostiles.filter((entity) => ['attack', 'chase', 'flee'].includes(entity.behavior?.state));
+    const hurtEntities = entities.filter((entity) => entity.combat?.hurtTimer > 0);
 
     this.stats.totalEntities = entities.length;
     this.stats.activeEntities = activeEntities.length;
@@ -219,6 +318,8 @@ export class EntitySystem {
     this.stats.droppedItems = droppedItems.length;
     this.stats.npcs = npcs.length;
     this.stats.hostiles = hostiles.length;
+    this.stats.aggroHostiles = aggroHostiles.length;
+    this.stats.hurtEntities = hurtEntities.length;
     this.stats.spawnedNpcChunks = this.spawnedNpcChunks.size;
     this.stats.spawnedHostileChunks = this.spawnedHostileChunks.size;
   }
@@ -233,8 +334,11 @@ function createEmptyStats() {
     droppedItems: 0,
     npcs: 0,
     hostiles: 0,
+    aggroHostiles: 0,
+    hurtEntities: 0,
     spawnedNpcChunks: 0,
     spawnedHostileChunks: 0,
+    lastCleanup: 'None',
   };
 }
 
@@ -255,4 +359,17 @@ function hashString(value) {
   }
 
   return Math.abs(hash);
+}
+
+function isMeleeTarget(entity) {
+  return entity.type === ENTITY_TYPES.hostile &&
+    entity.state.isActive &&
+    entity.state.isVisible &&
+    entity.isAlive?.() === true;
+}
+
+function createDeathDropImpulse(dropIndex) {
+  const angle = dropIndex * 2.4;
+
+  return new Vector3(Math.sin(angle) * 1.4, 4.2, Math.cos(angle) * 1.4);
 }

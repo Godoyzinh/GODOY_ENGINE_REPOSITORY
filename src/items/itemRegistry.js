@@ -14,6 +14,7 @@ export const ITEM_IDS = {
   stick: 'stick',
   fiber: 'fiber',
   woodPlank: 'woodPlank',
+  wildCore: 'wildCore',
 };
 
 export const ITEM_DEFINITIONS = {
@@ -71,6 +72,15 @@ export const ITEM_DEFINITIONS = {
     category: 'crafting',
     maxStack: 64,
     color: '#b47a3c',
+  },
+  [ITEM_IDS.wildCore]: {
+    itemType: ITEM_TYPES.resource,
+    itemId: ITEM_IDS.wildCore,
+    name: 'Wild Core',
+    shortName: 'Core',
+    category: 'combat',
+    maxStack: 32,
+    color: '#a94f75',
   },
 };
 

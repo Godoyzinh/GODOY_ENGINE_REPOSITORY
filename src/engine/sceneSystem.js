@@ -26,4 +26,19 @@ export class SceneSystem {
       updatable.update(deltaTime, elapsedTime);
     }
   }
+
+  applyEnvironment(dayNightSnapshot) {
+    if (!dayNightSnapshot) {
+      return;
+    }
+
+    const daylight = dayNightSnapshot.daylight;
+    const skyColor = daylight > 0.35 ? '#86b8f0' : '#17223b';
+    const fogColor = daylight > 0.35 ? '#86b8f0' : '#101827';
+
+    this.scene.background.set(skyColor);
+    this.scene.fog.color.set(fogColor);
+    this.scene.fog.near = dayNightSnapshot.isNight ? 32 : 45;
+    this.scene.fog.far = dayNightSnapshot.isNight ? 110 : 140;
+  }
 }

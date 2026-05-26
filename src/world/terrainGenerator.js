@@ -32,6 +32,10 @@ export class TerrainGenerator {
     return this.chunkManager.getHeightAt(x, z);
   }
 
+  getBiomeAt(x, z) {
+    return this.chunkManager.getBiomeAt(x, z);
+  }
+
   getRaycastTargets() {
     return this.chunkManager.getRaycastTargets();
   }

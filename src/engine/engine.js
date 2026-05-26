@@ -1,5 +1,6 @@
 import { Timer } from 'three';
 import { VoxelInteractionSystem } from '../building/voxelInteractionSystem.js';
+import { CombatSystem } from '../combat/combatSystem.js';
 import { DamageSystem } from '../combat/damageSystem.js';
 import { CraftingSystem } from '../crafting/craftingSystem.js';
 import { CameraSystem } from './cameraSystem.js';
@@ -14,9 +15,11 @@ import { SurvivalSystem } from '../player/survivalSystem.js';
 import { PhysicsWorld } from '../physics/physicsWorld.js';
 import { SaveSystem } from '../save/saveSystem.js';
 import { DebugOverlay } from '../ui/debugOverlay.js';
+import { CombatHud } from '../ui/combatHud.js';
 import { HotbarUI } from '../ui/hotbarUI.js';
 import { SurvivalHud } from '../ui/survivalHud.js';
 import { ToolSystem } from '../tools/toolSystem.js';
+import { DayNightSystem } from '../world/dayNightSystem.js';
 import { TerrainGenerator } from '../world/terrainGenerator.js';
 
 const MAX_DELTA_TIME = 0.05;
@@ -36,6 +39,7 @@ export class Engine {
     });
     this.lightingSystem = new LightingSystem();
     this.saveSystem = new SaveSystem();
+    this.dayNightSystem = new DayNightSystem();
     this.terrainGenerator = new TerrainGenerator({ saveSystem: this.saveSystem });
     this.physicsWorld = new PhysicsWorld();
     this.playerState = new PlayerState();
@@ -46,6 +50,11 @@ export class Engine {
       inventorySystem: this.inventorySystem,
     });
     this.damageSystem = new DamageSystem({ survivalSystem: this.survivalSystem });
+    this.combatSystem = new CombatSystem({
+      camera: this.cameraSystem.camera,
+      damageSystem: this.damageSystem,
+      toolSystem: this.toolSystem,
+    });
     this.craftingSystem = new CraftingSystem({ inventorySystem: this.inventorySystem });
     this.entitySystem = new EntitySystem({
       terrainSampler: this.terrainGenerator,
@@ -74,6 +83,11 @@ export class Engine {
     this.survivalHud = new SurvivalHud({
       rootElement,
       survivalSystem: this.survivalSystem,
+    });
+    this.combatHud = new CombatHud({
+      rootElement,
+      combatSystem: this.combatSystem,
+      entitySystem: this.entitySystem,
     });
 
     this.sceneSystem.add(this.lightingSystem.group);
@@ -114,6 +128,7 @@ export class Engine {
     this.inventorySystem.dispose();
     this.hotbarUI.dispose();
     this.survivalHud.dispose();
+    this.combatHud.dispose();
   }
 
   handleKeyDown(event) {
@@ -125,6 +140,13 @@ export class Engine {
       this.survivalSystem.consumeSelectedItem();
     } else if (event.code === 'KeyR') {
       this.craftingSystem.craftFirstAvailable();
+    } else if (event.code === 'KeyQ') {
+      this.combatSystem.tryPlayerMeleeAttack({
+        playerPosition: this.playerController.position,
+        selectedStack: this.inventorySystem.getSelectedStack(),
+        entitySystem: this.entitySystem,
+      });
+      event.preventDefault();
     }
   }
 
@@ -146,12 +168,17 @@ export class Engine {
     const deltaTime = Math.min(this.timer.getDelta(), MAX_DELTA_TIME);
     const elapsedTime = this.timer.getElapsed();
 
+    this.dayNightSystem.update(deltaTime);
+    const dayNightSnapshot = this.dayNightSystem.getSnapshot();
+    this.lightingSystem.update(dayNightSnapshot);
+    this.sceneSystem.applyEnvironment(dayNightSnapshot);
     this.playerController.update(deltaTime);
     const landingImpact = this.playerController.consumeLandingImpact();
     this.survivalSystem.update({
       deltaTime,
       playerController: this.playerController,
       landingImpact,
+      dayNightSnapshot,
     });
     this.damageSystem.applyFallDamage(landingImpact);
     this.terrainGenerator.update({
@@ -166,12 +193,15 @@ export class Engine {
     this.entitySystem.update({
       deltaTime,
       playerPosition: this.playerController.position,
+      dayNightSnapshot,
     });
+    this.combatSystem.update(deltaTime);
     this.craftingSystem.update();
     this.sceneSystem.update(deltaTime, elapsedTime);
     this.rendererSystem.render(this.sceneSystem.scene, this.cameraSystem.camera);
     this.hotbarUI.update();
     this.survivalHud.update();
+    this.combatHud.update();
     this.debugOverlay.update({
       deltaTime,
       interactionStatus: this.voxelInteractionSystem.lastAction,
@@ -184,6 +214,8 @@ export class Engine {
       miningSnapshot: this.voxelInteractionSystem.miningSnapshot,
       craftingSnapshot: this.craftingSystem.getSnapshot(),
       damageSnapshot: this.damageSystem.getSnapshot(),
+      combatSnapshot: this.combatSystem.getSnapshot(),
+      dayNightSnapshot,
     });
 
     this.animationFrameId = requestAnimationFrame(this.update);

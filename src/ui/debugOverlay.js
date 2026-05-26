@@ -19,6 +19,8 @@ export class DebugOverlay {
     miningSnapshot,
     craftingSnapshot,
     damageSnapshot,
+    combatSnapshot,
+    dayNightSnapshot,
   }) {
     const instantFramesPerSecond = 1 / Math.max(deltaTime, 0.001);
     this.framesPerSecond = Math.round(this.framesPerSecond * 0.9 + instantFramesPerSecond * 0.1);
@@ -31,6 +33,8 @@ export class DebugOverlay {
       ${this.createRow('HP', `${Math.round(survivalSnapshot.health)}/${survivalSnapshot.maxHealth}`)}
       ${this.createRow('Food', Math.round(survivalSnapshot.hunger))}
       ${this.createRow('Stamina', Math.round(survivalSnapshot.stamina))}
+      ${this.createRow('Time', `${dayNightSnapshot.timeLabel} ${dayNightSnapshot.isNight ? 'Night' : 'Day'}`)}
+      ${this.createRow('Pressure', dayNightSnapshot.ambientPressure.toFixed(2))}
       ${this.createRow('Selected', inventorySnapshot.selectedItemLabel)}
       ${this.createRow('Slot', inventorySnapshot.selectedSlot + 1)}
       ${this.createRow('Player X', playerPosition.x.toFixed(2))}
@@ -50,9 +54,13 @@ export class DebugOverlay {
       ${this.createRow('Drops', entityStats.droppedItems)}
       ${this.createRow('NPCs', entityStats.npcs)}
       ${this.createRow('Hostiles', entityStats.hostiles)}
+      ${this.createRow('Aggro', entityStats.aggroHostiles)}
+      ${this.createRow('Hurt Ent', entityStats.hurtEntities)}
       ${this.createRow('Craftable', craftingSnapshot.craftableCount)}
       ${this.createRow('Survival', survivalSnapshot.lastEvent)}
       ${this.createRow('Damage', formatDamageEvent(damageSnapshot))}
+      ${this.createRow('Combat', formatCombatEvent(combatSnapshot))}
+      ${this.createRow('Cleanup', entityStats.lastCleanup)}
       ${this.createRow('Mining', formatMiningProgress(miningSnapshot))}
       ${this.createRow('Voxel', interactionStatus)}
     `;
@@ -96,4 +104,18 @@ function formatDamageEvent(damageSnapshot) {
   }
 
   return `${damageEvent.type} ${damageEvent.amount}`;
+}
+
+function formatCombatEvent(combatSnapshot) {
+  const lastAttack = combatSnapshot?.lastAttack;
+
+  if (!lastAttack) {
+    return 'Ready';
+  }
+
+  if (lastAttack.state === 'hit') {
+    return `${lastAttack.targetName} -${lastAttack.damage}`;
+  }
+
+  return lastAttack.state;
 }

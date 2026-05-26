@@ -1,9 +1,13 @@
 import { Group, Vector3 } from 'three';
 import { getChunkKeyFromWorldPosition } from '../world/chunkMath.js';
-import { ENTITY_STATES } from './entityTypes.js';
+import { ENTITY_COMBAT_STATES, ENTITY_STATES } from './entityTypes.js';
 
 const DEFAULT_GRAVITY = -24;
 const DEFAULT_MAX_FALL_SPEED = -32;
+const HURT_SECONDS = 0.22;
+const DAMAGE_FLASH_SECONDS = 0.16;
+const DEATH_CLEANUP_SECONDS = 0.48;
+const KNOCKBACK_DAMPING = 7;
 
 let nextEntityId = 1;
 
@@ -43,6 +47,15 @@ export class BaseEntity {
       removeRequested: false,
       removeReason: null,
     };
+    this.combat = {
+      state: ENTITY_COMBAT_STATES.idle,
+      hurtTimer: 0,
+      damageFlashTimer: 0,
+      deathTimer: 0,
+      knockbackVelocity: new Vector3(),
+      lastDamage: null,
+      deathDropsSpawned: false,
+    };
   }
 
   initialize({ id = null, position = null } = {}) {
@@ -58,6 +71,13 @@ export class BaseEntity {
     this.state.isVisible = true;
     this.state.removeRequested = false;
     this.state.removeReason = null;
+    this.combat.state = ENTITY_COMBAT_STATES.idle;
+    this.combat.hurtTimer = 0;
+    this.combat.damageFlashTimer = 0;
+    this.combat.deathTimer = 0;
+    this.combat.knockbackVelocity.set(0, 0, 0);
+    this.combat.lastDamage = null;
+    this.combat.deathDropsSpawned = false;
     this.updateChunkKey();
     this.syncObjectTransform();
 
@@ -66,6 +86,12 @@ export class BaseEntity {
 
   update(deltaTime, context) {
     this.state.age += deltaTime;
+    this.updateCombatState(deltaTime);
+
+    if (this.state.removeRequested || !this.isAlive()) {
+      this.syncObjectTransform();
+      return;
+    }
 
     if (this.physics.gravityEnabled) {
       this.applyGravity(deltaTime, context.terrainSampler);
@@ -73,6 +99,30 @@ export class BaseEntity {
 
     this.updateChunkKey();
     this.syncObjectTransform();
+  }
+
+  updateCombatState(deltaTime) {
+    if (this.combat.knockbackVelocity.lengthSq() > 0.0001) {
+      this.transform.position.addScaledVector(this.combat.knockbackVelocity, deltaTime);
+      this.combat.knockbackVelocity.multiplyScalar(Math.max(0, 1 - deltaTime * KNOCKBACK_DAMPING));
+    }
+
+    this.combat.damageFlashTimer = Math.max(0, this.combat.damageFlashTimer - deltaTime);
+    this.combat.hurtTimer = Math.max(0, this.combat.hurtTimer - deltaTime);
+
+    if (this.combat.state === ENTITY_COMBAT_STATES.hurt && this.combat.hurtTimer <= 0) {
+      this.combat.state = ENTITY_COMBAT_STATES.idle;
+    }
+
+    if (this.combat.state !== ENTITY_COMBAT_STATES.death) {
+      return;
+    }
+
+    this.combat.deathTimer -= deltaTime;
+
+    if (this.combat.deathTimer <= 0) {
+      this.requestRemoval('destroyed');
+    }
   }
 
   applyGravity(deltaTime, terrainSampler) {
@@ -97,6 +147,12 @@ export class BaseEntity {
   }
 
   setSimulationActive(isActive) {
+    if (this.combat.state === ENTITY_COMBAT_STATES.death) {
+      this.state.isActive = true;
+      this.state.lifecycle = ENTITY_STATES.dying;
+      return;
+    }
+
     this.state.isActive = isActive;
     this.state.lifecycle = isActive ? ENTITY_STATES.active : ENTITY_STATES.inactive;
   }
@@ -112,23 +168,65 @@ export class BaseEntity {
     this.state.lifecycle = ENTITY_STATES.despawned;
   }
 
-  applyDamage({ amount, type = 'generic', source = null }) {
-    if (this.state.removeRequested) {
+  applyDamage({ amount, type = 'generic', source = null, knockback = null }) {
+    if (this.state.removeRequested || !this.isAlive()) {
       return false;
     }
 
     this.state.health = Math.max(0, this.state.health - amount);
-    this.state.lastDamage = {
+    this.combat.lastDamage = {
       amount,
       type,
       source,
     };
+    this.state.lastDamage = this.combat.lastDamage;
+    this.combat.hurtTimer = HURT_SECONDS;
+    this.combat.damageFlashTimer = DAMAGE_FLASH_SECONDS;
+
+    if (knockback) {
+      this.combat.knockbackVelocity.copy(knockback);
+    }
 
     if (this.state.health <= 0) {
-      this.requestRemoval('destroyed');
+      this.beginDeath(source);
+    } else {
+      this.combat.state = ENTITY_COMBAT_STATES.hurt;
     }
 
     return true;
+  }
+
+  beginDeath(source = null) {
+    this.state.health = 0;
+    this.state.lifecycle = ENTITY_STATES.dying;
+    this.combat.state = ENTITY_COMBAT_STATES.death;
+    this.combat.deathTimer = DEATH_CLEANUP_SECONDS;
+    this.combat.lastDamage = {
+      ...(this.combat.lastDamage ?? {}),
+      source,
+    };
+  }
+
+  isAlive() {
+    return this.state.health > 0 && this.combat.state !== ENTITY_COMBAT_STATES.death;
+  }
+
+  getHealthPercent() {
+    return this.state.maxHealth > 0 ? this.state.health / this.state.maxHealth : 0;
+  }
+
+  getDeathDrops() {
+    return [];
+  }
+
+  getCombatSnapshot() {
+    return {
+      state: this.combat.state,
+      health: this.state.health,
+      maxHealth: this.state.maxHealth,
+      healthPercent: this.getHealthPercent(),
+      lastDamage: this.combat.lastDamage,
+    };
   }
 
   getDistanceTo(position) {
@@ -156,5 +254,12 @@ export class BaseEntity {
     this.state.isVisible = false;
     this.state.removeRequested = false;
     this.state.removeReason = null;
+    this.combat.state = ENTITY_COMBAT_STATES.idle;
+    this.combat.hurtTimer = 0;
+    this.combat.damageFlashTimer = 0;
+    this.combat.deathTimer = 0;
+    this.combat.knockbackVelocity.set(0, 0, 0);
+    this.combat.lastDamage = null;
+    this.combat.deathDropsSpawned = false;
   }
 }

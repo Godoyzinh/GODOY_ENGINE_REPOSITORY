@@ -3,6 +3,7 @@ import { getConsumableEffect } from '../items/itemRegistry.js';
 import { PLAYER_MODES } from './playerState.js';
 
 const HUNGER_DRAIN_PER_SECOND = 0.18;
+const PRESSURE_HUNGER_DRAIN_PER_SECOND = 0.08;
 const SPRINT_STAMINA_DRAIN_PER_SECOND = 18;
 const STAMINA_REGEN_PER_SECOND = 14;
 const CROUCH_STAMINA_REGEN_BONUS = 5;
@@ -19,7 +20,7 @@ export class SurvivalSystem {
     this.lastEvent = 'Ready';
   }
 
-  update({ deltaTime, playerController, landingImpact }) {
+  update({ deltaTime, playerController, landingImpact, dayNightSnapshot = null }) {
     if (this.playerState.mode !== PLAYER_MODES.survival) {
       this.playerState.restoreStamina(STAMINA_REGEN_PER_SECOND * deltaTime);
       this.lastEvent = 'Creative';
@@ -31,7 +32,7 @@ export class SurvivalSystem {
       return;
     }
 
-    this.updateNeeds(deltaTime);
+    this.updateNeeds(deltaTime, dayNightSnapshot);
     this.updateStamina(deltaTime);
     this.updateRegeneration(deltaTime);
 
@@ -40,8 +41,10 @@ export class SurvivalSystem {
     }
   }
 
-  updateNeeds(deltaTime) {
-    this.playerState.restoreHunger(-HUNGER_DRAIN_PER_SECOND * deltaTime);
+  updateNeeds(deltaTime, dayNightSnapshot = null) {
+    const pressureDrain = (dayNightSnapshot?.ambientPressure ?? 0) * PRESSURE_HUNGER_DRAIN_PER_SECOND;
+
+    this.playerState.restoreHunger(-(HUNGER_DRAIN_PER_SECOND + pressureDrain) * deltaTime);
 
     if (this.playerState.hunger > 0) {
       this.starvationTimer = 0;

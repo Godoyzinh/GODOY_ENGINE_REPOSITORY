@@ -7,6 +7,11 @@ try {
   const engine = new Engine({ rootElement: appElement });
   engine.start();
 } catch (error) {
+  window.__GODOY_BOOT_ERROR__ = {
+    message: error.message,
+    stack: error.stack,
+  };
+  appElement.dataset.bootError = error.message;
   appElement.innerHTML = `
     <div class="engine-error">
       <strong>Godoy Engine</strong>
