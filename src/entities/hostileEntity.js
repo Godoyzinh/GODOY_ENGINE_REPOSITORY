@@ -50,18 +50,19 @@ export class HostileEntity extends BaseEntity {
     this.object.add(model.group);
   }
 
-  initialize({ position, seed = Math.random() } = {}) {
-    super.initialize({ position });
+  initialize({ id = null, position, seed = Math.random(), persistenceState = null } = {}) {
+    super.initialize({ id, position });
     this.state.maxHealth = 45;
-    this.state.health = this.state.maxHealth;
+    this.state.health = persistenceState?.health ?? this.state.maxHealth;
     this.seed = seed;
-    this.behavior.state = 'idle';
-    this.behavior.timer = getRandomRange(IDLE_SECONDS);
-    this.behavior.attackCooldown = 0;
-    this.behavior.targetMemory = 0;
+    this.behavior.state = persistenceState?.behaviorState ?? 'idle';
+    this.behavior.timer = persistenceState?.behaviorTimer ?? getRandomRange(IDLE_SECONDS);
+    this.behavior.attackCooldown = persistenceState?.attackCooldown ?? 0;
+    this.behavior.targetMemory = persistenceState?.targetMemory ?? 0;
     this.behavior.lastKnownTarget.copy(this.transform.position);
     this.behavior.moveDirection.set(0, 0, 0);
     this.behavior.patrolOrigin.copy(position ?? this.transform.position);
+    this.applyPersistenceState(persistenceState);
     this.updatePresentation();
 
     return this;
@@ -234,6 +235,17 @@ export class HostileEntity extends BaseEntity {
     this.healthBarGroup.visible = healthPercent < 1 || this.combat.state !== ENTITY_COMBAT_STATES.idle;
     this.healthBarFill.scale.x = Math.max(0.02, healthPercent);
     this.healthBarFill.position.x = -0.45 * (1 - this.healthBarFill.scale.x);
+  }
+
+  getPersistenceState() {
+    return {
+      ...super.getPersistenceState(),
+      seed: this.seed,
+      behaviorState: this.behavior.state,
+      behaviorTimer: this.behavior.timer,
+      attackCooldown: this.behavior.attackCooldown,
+      targetMemory: this.behavior.targetMemory,
+    };
   }
 }
 

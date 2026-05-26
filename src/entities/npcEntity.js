@@ -28,12 +28,13 @@ export class NpcEntity extends BaseEntity {
     this.object.add(createNpcModel());
   }
 
-  initialize({ position, seed = Math.random() } = {}) {
-    super.initialize({ position });
+  initialize({ id = null, position, seed = Math.random(), persistenceState = null } = {}) {
+    super.initialize({ id, position });
     this.seed = seed;
-    this.behavior.state = 'idle';
-    this.behavior.timer = getRandomRange(IDLE_SECONDS);
+    this.behavior.state = persistenceState?.behaviorState ?? 'idle';
+    this.behavior.timer = persistenceState?.behaviorTimer ?? getRandomRange(IDLE_SECONDS);
     this.behavior.moveDirection.set(0, 0, 0);
+    this.applyPersistenceState(persistenceState);
 
     return this;
   }
@@ -75,6 +76,15 @@ export class NpcEntity extends BaseEntity {
     const angle = Math.random() * Math.PI * 2;
 
     this.behavior.moveDirection.set(Math.sin(angle), 0, Math.cos(angle)).normalize();
+  }
+
+  getPersistenceState() {
+    return {
+      ...super.getPersistenceState(),
+      seed: this.seed,
+      behaviorState: this.behavior.state,
+      behaviorTimer: this.behavior.timer,
+    };
   }
 }
 

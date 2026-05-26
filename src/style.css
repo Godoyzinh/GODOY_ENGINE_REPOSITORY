@@ -28,7 +28,10 @@ canvas {
   position: fixed;
   top: 12px;
   left: 12px;
+  max-width: min(340px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
   min-width: 220px;
+  overflow: hidden;
   padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(7, 10, 15, 0.76);
@@ -273,7 +276,16 @@ canvas {
 }
 
 .debug-overlay__label {
+  flex: 0 0 auto;
   color: #aeb8c7;
+}
+
+.debug-overlay__row span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 620px) {

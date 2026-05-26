@@ -53,7 +53,15 @@ export class TerrainGenerator {
     return this.chunkManager.setBlockAtWorldPosition(worldX, worldY, worldZ, blockId);
   }
 
+  setBlocksAtWorldPositions(blockPlacements) {
+    return this.chunkManager.setBlocksAtWorldPositions(blockPlacements);
+  }
+
   getBlockAtWorldPosition(worldX, worldY, worldZ) {
     return this.chunkManager.getBlockAtWorldPosition(worldX, worldY, worldZ);
+  }
+
+  isWorldPositionLoaded(worldX, worldZ) {
+    return this.chunkManager.isWorldPositionLoaded(worldX, worldZ);
   }
 }

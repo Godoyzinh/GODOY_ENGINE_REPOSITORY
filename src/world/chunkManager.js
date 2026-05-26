@@ -256,6 +256,51 @@ export class ChunkManager {
     return true;
   }
 
+  setBlocksAtWorldPositions(blockPlacements) {
+    if (blockPlacements.length === 0) {
+      return false;
+    }
+
+    const chunksToUpdate = new Map();
+
+    for (const placement of blockPlacements) {
+      const chunkKey = getChunkKeyFromWorldPosition({ x: placement.worldX, z: placement.worldZ });
+      const chunk = this.chunks.get(chunkKey);
+
+      if (!chunk) {
+        return false;
+      }
+
+      if (!chunksToUpdate.has(chunkKey)) {
+        chunksToUpdate.set(chunkKey, {
+          chunk,
+          placements: [],
+        });
+      }
+
+      chunksToUpdate.get(chunkKey).placements.push(placement);
+    }
+
+    for (const { chunk, placements } of chunksToUpdate.values()) {
+      for (const placement of placements) {
+        const localX = getLocalCoordinate(placement.worldX);
+        const localZ = getLocalCoordinate(placement.worldZ);
+
+        chunk.setBlock(localX, Math.floor(placement.y), localZ, placement.blockId);
+        this.markNeighborChunksDirty(localX, localZ, chunk);
+        this.saveSystem.cacheLastChangedBlock({
+          chunkKey: chunk.key,
+          blockKey: getBlockKeyFromWorldPosition(placement.worldX, placement.y, placement.worldZ),
+          blockId: placement.blockId,
+        });
+      }
+
+      this.saveSystem.saveChunkEdits(chunk.key, chunk.serializeEdits());
+    }
+
+    return true;
+  }
+
   getBlockAtWorldPosition(worldX, worldY, worldZ) {
     const chunkKey = getChunkKeyFromWorldPosition({ x: worldX, z: worldZ });
     const chunk = this.chunks.get(chunkKey);
@@ -269,6 +314,10 @@ export class ChunkManager {
       Math.floor(worldY),
       getLocalCoordinate(worldZ),
     );
+  }
+
+  isWorldPositionLoaded(worldX, worldZ) {
+    return this.chunks.has(getChunkKeyFromWorldPosition({ x: worldX, z: worldZ }));
   }
 
   markNeighborChunksDirty(localX, localZ, chunk) {

@@ -28,14 +28,15 @@ export class DroppedItemEntity extends BaseEntity {
     this.object.add(this.mesh);
   }
 
-  initialize({ itemStack, position, impulse = null } = {}) {
-    super.initialize({ position });
+  initialize({ id = null, itemStack, position, impulse = null, persistenceState = null } = {}) {
+    super.initialize({ id, position });
     this.itemStack = normalizeItemStack(itemStack);
-    this.despawnAfter = DEFAULT_DESPAWN_SECONDS;
+    this.despawnAfter = persistenceState?.despawnAfter ?? DEFAULT_DESPAWN_SECONDS;
     this.pickupDelay = PICKUP_DELAY_SECONDS;
     this.mesh.material = getItemMaterial(this.itemStack);
     this.mesh.position.set(0, 0.18, 0);
     this.velocity.copy(impulse ?? createDefaultImpulse());
+    this.applyPersistenceState(persistenceState);
 
     return this;
   }
@@ -69,6 +70,14 @@ export class DroppedItemEntity extends BaseEntity {
     if (wasAdded) {
       this.requestRemoval('pickedUp');
     }
+  }
+
+  getPersistenceState() {
+    return {
+      ...super.getPersistenceState(),
+      itemStack: this.itemStack ? { ...this.itemStack } : null,
+      despawnAfter: this.despawnAfter,
+    };
   }
 }
 

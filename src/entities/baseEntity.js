@@ -59,7 +59,11 @@ export class BaseEntity {
   }
 
   initialize({ id = null, position = null } = {}) {
-    this.id = id ?? this.id;
+    if (id) {
+      this.id = id;
+      syncNextEntityId(id);
+    }
+
     this.transform.position.copy(position ?? new Vector3());
     this.transform.rotation.set(0, 0, 0);
     this.transform.scale.set(1, 1, 1);
@@ -229,6 +233,58 @@ export class BaseEntity {
     };
   }
 
+  applyPersistenceState(persistenceState = {}) {
+    if (!persistenceState) {
+      return;
+    }
+
+    if (persistenceState.health !== undefined) {
+      this.state.health = persistenceState.health;
+    }
+
+    if (persistenceState.maxHealth !== undefined) {
+      this.state.maxHealth = persistenceState.maxHealth;
+    }
+
+    if (persistenceState.age !== undefined) {
+      this.state.age = persistenceState.age;
+    }
+
+    if (persistenceState.velocity) {
+      this.velocity.set(
+        persistenceState.velocity.x ?? 0,
+        persistenceState.velocity.y ?? 0,
+        persistenceState.velocity.z ?? 0,
+      );
+    }
+
+    this.updateChunkKey();
+    this.syncObjectTransform();
+  }
+
+  getPersistenceState() {
+    return {
+      id: this.id,
+      type: this.type,
+      name: this.name,
+      position: {
+        x: this.transform.position.x,
+        y: this.transform.position.y,
+        z: this.transform.position.z,
+      },
+      velocity: {
+        x: this.velocity.x,
+        y: this.velocity.y,
+        z: this.velocity.z,
+      },
+      health: this.state.health,
+      maxHealth: this.state.maxHealth,
+      age: this.state.age,
+      chunkKey: this.state.chunkKey,
+      lifecycle: this.state.lifecycle,
+    };
+  }
+
   getDistanceTo(position) {
     return this.transform.position.distanceTo(position);
   }
@@ -262,4 +318,14 @@ export class BaseEntity {
     this.combat.lastDamage = null;
     this.combat.deathDropsSpawned = false;
   }
+}
+
+function syncNextEntityId(entityId) {
+  const match = /^entity-(\d+)$/.exec(entityId);
+
+  if (!match) {
+    return;
+  }
+
+  nextEntityId = Math.max(nextEntityId, Number(match[1]) + 1);
 }

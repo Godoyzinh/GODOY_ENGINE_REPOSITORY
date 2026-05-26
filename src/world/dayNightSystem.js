@@ -2,10 +2,10 @@ const DAY_LENGTH_SECONDS = 240;
 const INITIAL_TIME_OF_DAY = 0.28;
 
 export class DayNightSystem {
-  constructor({ dayLengthSeconds = DAY_LENGTH_SECONDS } = {}) {
+  constructor({ dayLengthSeconds = DAY_LENGTH_SECONDS, savedState = null } = {}) {
     this.dayLengthSeconds = dayLengthSeconds;
-    this.timeOfDay = INITIAL_TIME_OF_DAY;
-    this.elapsedDays = 0;
+    this.timeOfDay = savedState?.timeOfDay ?? INITIAL_TIME_OF_DAY;
+    this.elapsedDays = savedState?.elapsedDays ?? 0;
     this.snapshot = this.createSnapshot();
   }
 
@@ -19,6 +19,23 @@ export class DayNightSystem {
     }
 
     this.snapshot = this.createSnapshot();
+  }
+
+  skipToTime(timeOfDay) {
+    if (timeOfDay <= this.timeOfDay) {
+      this.elapsedDays += 1;
+    }
+
+    this.timeOfDay = timeOfDay;
+    this.snapshot = this.createSnapshot();
+  }
+
+  getPersistenceState() {
+    return {
+      dayLengthSeconds: this.dayLengthSeconds,
+      timeOfDay: this.timeOfDay,
+      elapsedDays: this.elapsedDays,
+    };
   }
 
   createSnapshot() {

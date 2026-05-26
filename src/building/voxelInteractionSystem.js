@@ -1,4 +1,5 @@
 import { Raycaster, Vector2, Vector3 } from 'three';
+import { BlueprintSystem } from './blueprintSystem.js';
 import { MiningSystem } from './miningSystem.js';
 import { VoxelInteractionFeedback } from './voxelInteractionFeedback.js';
 import {
@@ -19,6 +20,7 @@ export class VoxelInteractionSystem {
     playerState,
     toolSystem,
     onBlockMined = null,
+    onStructurePlaced = null,
   }) {
     this.camera = camera;
     this.domElement = domElement;
@@ -27,7 +29,9 @@ export class VoxelInteractionSystem {
     this.playerState = playerState;
     this.toolSystem = toolSystem;
     this.onBlockMined = onBlockMined;
+    this.onStructurePlaced = onStructurePlaced;
     this.miningSystem = new MiningSystem({ toolSystem });
+    this.blueprintSystem = new BlueprintSystem();
     this.feedback = new VoxelInteractionFeedback();
     this.group = this.feedback.group;
     this.raycaster = new Raycaster();
@@ -40,11 +44,13 @@ export class VoxelInteractionSystem {
     this.handlePointerDown = this.handlePointerDown.bind(this);
     this.handlePointerUp = this.handlePointerUp.bind(this);
     this.handleContextMenu = this.handleContextMenu.bind(this);
+    this.handleKeyDown = this.handleKeyDown.bind(this);
 
     this.domElement.addEventListener('pointerdown', this.handlePointerDown);
     this.domElement.addEventListener('pointerup', this.handlePointerUp);
     this.domElement.addEventListener('pointerleave', this.handlePointerUp);
     this.domElement.addEventListener('contextmenu', this.handleContextMenu);
+    window.addEventListener('keydown', this.handleKeyDown);
   }
 
   dispose() {
@@ -52,6 +58,7 @@ export class VoxelInteractionSystem {
     this.domElement.removeEventListener('pointerup', this.handlePointerUp);
     this.domElement.removeEventListener('pointerleave', this.handlePointerUp);
     this.domElement.removeEventListener('contextmenu', this.handleContextMenu);
+    window.removeEventListener('keydown', this.handleKeyDown);
   }
 
   handlePointerDown(event) {
@@ -70,6 +77,20 @@ export class VoxelInteractionSystem {
 
   handleContextMenu(event) {
     event.preventDefault();
+  }
+
+  handleKeyDown(event) {
+    if (event.repeat) {
+      return;
+    }
+
+    if (event.code === 'KeyZ') {
+      const snapshot = this.blueprintSystem.rotate(1);
+      this.lastAction = `Rotate ${snapshot.rotationLabel}`;
+    } else if (event.code === 'KeyX') {
+      const snapshot = this.blueprintSystem.cycleBlueprint(1);
+      this.lastAction = `Blueprint ${snapshot.selectedBlueprintName}`;
+    }
   }
 
   update(deltaTime) {
@@ -118,19 +139,31 @@ export class VoxelInteractionSystem {
       return;
     }
 
-    const placementPosition = this.getPlacementPosition(target);
+    const placementPlan = this.blueprintSystem.createPlacementPlan({
+      targetBlock: target,
+      selectedBlockId,
+      canPlaceBlockAt: (placementPosition) => this.canPlaceBlockAt(placementPosition),
+      isWorldPositionLoaded: (placementPosition) => this.isWorldPositionLoaded(placementPosition),
+    });
 
-    if (!this.canPlaceBlockAt(placementPosition)) {
+    if (!placementPlan?.canPlace) {
       this.lastAction = 'Blocked placement';
       return;
     }
 
-    const wasPlaced = this.world.setBlockAtWorldPosition(
-      placementPosition.worldX,
-      placementPosition.y,
-      placementPosition.worldZ,
-      selectedBlockId,
-    );
+    if (!this.canSpendSelectedBlocks(placementPlan.blocks.length)) {
+      this.lastAction = 'Not enough blocks';
+      return;
+    }
+
+    const wasPlaced = placementPlan.blocks.length === 1
+      ? this.world.setBlockAtWorldPosition(
+        placementPlan.blocks[0].worldX,
+        placementPlan.blocks[0].y,
+        placementPlan.blocks[0].worldZ,
+        selectedBlockId,
+      )
+      : this.world.setBlocksAtWorldPositions(placementPlan.blocks);
 
     if (!wasPlaced) {
       this.lastAction = 'Chunk not loaded';
@@ -138,11 +171,19 @@ export class VoxelInteractionSystem {
     }
 
     if (this.playerState.mode !== 'creative') {
-      this.inventorySystem.consumeSelected(1);
+      this.inventorySystem.consumeSelected(placementPlan.blocks.length);
+    }
+
+    if (placementPlan.blocks.length > 1 && this.onStructurePlaced) {
+      this.onStructurePlaced(this.blueprintSystem.createStructureRecord({
+        plan: placementPlan,
+      }));
     }
 
     const blockDefinition = getBlockDefinition(selectedBlockId);
-    this.lastAction = `Placed ${blockDefinition.name}`;
+    this.lastAction = placementPlan.blocks.length === 1
+      ? `Placed ${blockDefinition.name}`
+      : `Placed ${placementPlan.blueprintName}`;
   }
 
   getTargetBlock() {
@@ -209,8 +250,16 @@ export class VoxelInteractionSystem {
   updateFeedback() {
     const selectedBlockId = this.inventorySystem.getSelectedBlockId();
     const selectedBlockDefinition = selectedBlockId ? getBlockDefinition(selectedBlockId) : null;
-    const placementPosition = this.targetBlock ? this.getPlacementPosition(this.targetBlock) : null;
-    const canPlace = placementPosition ? this.canPlaceBlockAt(placementPosition) : false;
+    const placementPlan = this.targetBlock && selectedBlockId
+      ? this.blueprintSystem.createPlacementPlan({
+        targetBlock: this.targetBlock,
+        selectedBlockId,
+        canPlaceBlockAt: (placementPosition) => this.canPlaceBlockAt(placementPosition),
+        isWorldPositionLoaded: (placementPosition) => this.isWorldPositionLoaded(placementPosition),
+      })
+      : null;
+    const placementPosition = placementPlan?.blocks[0] ?? null;
+    const canPlace = placementPlan?.canPlace ?? false;
 
     this.feedback.update({
       targetBlock: this.targetBlock,
@@ -239,5 +288,23 @@ export class VoxelInteractionSystem {
     );
 
     return canReplaceBlock(existingBlockId);
+  }
+
+  isWorldPositionLoaded(placementPosition) {
+    return this.world.isWorldPositionLoaded?.(placementPosition.worldX, placementPosition.worldZ) ?? true;
+  }
+
+  canSpendSelectedBlocks(blockCount) {
+    if (this.playerState.mode === 'creative') {
+      return true;
+    }
+
+    const selectedStack = this.inventorySystem.getSelectedStack();
+
+    return selectedStack?.count === Infinity || selectedStack?.count >= blockCount;
+  }
+
+  getBuildingSnapshot() {
+    return this.blueprintSystem.getSnapshot();
   }
 }

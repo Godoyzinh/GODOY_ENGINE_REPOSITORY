@@ -30,6 +30,34 @@ export class EntitySystem {
     this.stats = createEmptyStats();
   }
 
+  restoreEntities(entityStates = []) {
+    for (const entityState of entityStates) {
+      const EntityClass = getEntityClass(entityState.type);
+
+      if (!EntityClass) {
+        continue;
+      }
+
+      const position = toVector3(entityState.position);
+      const entity = this.registry.acquire(EntityClass, {
+        id: entityState.id,
+        type: entityState.type,
+        itemStack: entityState.itemStack,
+        position,
+        seed: entityState.seed,
+        persistenceState: entityState,
+      });
+
+      if (entity.type === ENTITY_TYPES.npc) {
+        this.spawnedNpcChunks.add(entity.state.chunkKey);
+      } else if (entity.type === ENTITY_TYPES.hostile) {
+        this.spawnedHostileChunks.add(entity.state.chunkKey);
+      }
+    }
+
+    this.updateStats();
+  }
+
   update({ deltaTime, playerPosition, dayNightSnapshot = null }) {
     this.spawnNpcsNearFocus(playerPosition);
     this.spawnHostilesNearFocus(playerPosition, dayNightSnapshot);
@@ -322,6 +350,19 @@ export class EntitySystem {
     this.stats.hurtEntities = hurtEntities.length;
     this.stats.spawnedNpcChunks = this.spawnedNpcChunks.size;
     this.stats.spawnedHostileChunks = this.spawnedHostileChunks.size;
+    this.stats.persistableEntities = this.getPersistenceState().length;
+  }
+
+  getPersistentNpcCount() {
+    return this.registry.getEntities()
+      .filter((entity) => entity.type === ENTITY_TYPES.npc || entity.type === ENTITY_TYPES.hostile)
+      .length;
+  }
+
+  getPersistenceState() {
+    return this.registry.getEntities()
+      .filter((entity) => shouldPersistEntity(entity))
+      .map((entity) => entity.getPersistenceState());
   }
 }
 
@@ -338,6 +379,7 @@ function createEmptyStats() {
     hurtEntities: 0,
     spawnedNpcChunks: 0,
     spawnedHostileChunks: 0,
+    persistableEntities: 0,
     lastCleanup: 'None',
   };
 }
@@ -372,4 +414,25 @@ function createDeathDropImpulse(dropIndex) {
   const angle = dropIndex * 2.4;
 
   return new Vector3(Math.sin(angle) * 1.4, 4.2, Math.cos(angle) * 1.4);
+}
+
+function getEntityClass(entityType) {
+  if (entityType === ENTITY_TYPES.droppedItem) {
+    return DroppedItemEntity;
+  }
+
+  if (entityType === ENTITY_TYPES.npc) {
+    return NpcEntity;
+  }
+
+  if (entityType === ENTITY_TYPES.hostile) {
+    return HostileEntity;
+  }
+
+  return null;
+}
+
+function shouldPersistEntity(entity) {
+  return entity.state.removeRequested !== true &&
+    [ENTITY_TYPES.droppedItem, ENTITY_TYPES.npc, ENTITY_TYPES.hostile].includes(entity.type);
 }

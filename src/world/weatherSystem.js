@@ -7,12 +7,12 @@ const WEATHER_STATES = {
 const WEATHER_CHANGE_INTERVAL_SECONDS = 28;
 
 export class WeatherSystem {
-  constructor({ worldSeed }) {
+  constructor({ worldSeed, savedState = null }) {
     this.worldSeed = worldSeed;
-    this.elapsedTime = 0;
-    this.currentState = WEATHER_STATES.clear;
-    this.intensity = 0;
-    this.lastBiome = 'Plains';
+    this.elapsedTime = savedState?.elapsedTime ?? 0;
+    this.currentState = savedState?.state ?? WEATHER_STATES.clear;
+    this.intensity = savedState?.intensity ?? 0;
+    this.lastBiome = savedState?.lastBiome ?? 'Plains';
     this.snapshot = this.createSnapshot();
   }
 
@@ -63,6 +63,15 @@ export class WeatherSystem {
 
   getSnapshot() {
     return this.snapshot;
+  }
+
+  getPersistenceState() {
+    return {
+      elapsedTime: this.elapsedTime,
+      state: this.currentState,
+      intensity: this.intensity,
+      lastBiome: this.lastBiome,
+    };
   }
 }
 

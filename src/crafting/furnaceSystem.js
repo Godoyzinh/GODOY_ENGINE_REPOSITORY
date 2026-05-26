@@ -27,11 +27,11 @@ export const FURNACE_RECIPES = {
 const DEFAULT_FUEL_STACK = { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.coal, count: 1 };
 
 export class FurnaceSystem {
-  constructor({ inventorySystem }) {
+  constructor({ inventorySystem, savedState = null }) {
     this.inventorySystem = inventorySystem;
-    this.activeJobs = [];
-    this.completedJobs = 0;
-    this.lastEvent = 'Idle';
+    this.activeJobs = savedState?.activeJobs ?? [];
+    this.completedJobs = savedState?.completedJobs ?? 0;
+    this.lastEvent = savedState?.lastEvent ?? 'Idle';
     this.snapshot = this.createSnapshot();
   }
 
@@ -125,5 +125,13 @@ export class FurnaceSystem {
 
   getSnapshot() {
     return this.snapshot;
+  }
+
+  getPersistenceState() {
+    return {
+      activeJobs: this.activeJobs.map((job) => ({ ...job })),
+      completedJobs: this.completedJobs,
+      lastEvent: this.lastEvent,
+    };
   }
 }

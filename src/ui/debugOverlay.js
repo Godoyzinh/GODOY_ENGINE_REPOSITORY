@@ -24,6 +24,10 @@ export class DebugOverlay {
     weatherSnapshot,
     progressionSnapshot,
     furnaceSnapshot,
+    buildingSnapshot,
+    persistenceSnapshot,
+    worldSimulationSnapshot,
+    audioSnapshot,
   }) {
     const instantFramesPerSecond = 1 / Math.max(deltaTime, 0.001);
     this.framesPerSecond = Math.round(this.framesPerSecond * 0.9 + instantFramesPerSecond * 0.1);
@@ -40,8 +44,10 @@ export class DebugOverlay {
       ${this.createRow('Pressure', dayNightSnapshot.ambientPressure.toFixed(2))}
       ${this.createRow('Weather', `${weatherSnapshot.state} ${Math.round(weatherSnapshot.intensity * 100)}%`)}
       ${this.createRow('Ambience', weatherSnapshot.ambience)}
+      ${this.createRow('Audio', audioSnapshot.ambientLayer)}
       ${this.createRow('Tier', progressionSnapshot.currentTier)}
       ${this.createRow('Next Tier', progressionSnapshot.nextTier)}
+      ${this.createRow('Blueprint', `${buildingSnapshot.selectedBlueprintName} ${buildingSnapshot.rotationLabel}`)}
       ${this.createRow('Selected', inventorySnapshot.selectedItemLabel)}
       ${this.createRow('Slot', inventorySnapshot.selectedSlot + 1)}
       ${this.createRow('Player X', playerPosition.x.toFixed(2))}
@@ -57,8 +63,13 @@ export class DebugOverlay {
       ${this.createRow('Structures', terrainStats.structuresGenerated)}
       ${this.createRow('Pool', terrainStats.pooledChunks)}
       ${this.createRow('Saved', terrainStats.savedChunks)}
+      ${this.createRow('Save KB', persistenceSnapshot.saveSizeKb.toFixed(1))}
+      ${this.createRow('Persist Ent', persistenceSnapshot.persistedEntities)}
+      ${this.createRow('Persist Chest', persistenceSnapshot.persistedChests)}
+      ${this.createRow('Chunk Prep', persistenceSnapshot.compressedChunkCandidates)}
       ${this.createRow('Entities', entityStats.activeEntities)}
       ${this.createRow('Ent Pool', entityStats.pooledEntities)}
+      ${this.createRow('Ent Save', entityStats.persistableEntities)}
       ${this.createRow('Drops', entityStats.droppedItems)}
       ${this.createRow('NPCs', entityStats.npcs)}
       ${this.createRow('Hostiles', entityStats.hostiles)}
@@ -66,6 +77,8 @@ export class DebugOverlay {
       ${this.createRow('Hurt Ent', entityStats.hurtEntities)}
       ${this.createRow('Craftable', craftingSnapshot.craftableCount)}
       ${this.createRow('Furnace', `${furnaceSnapshot.activeJobs} jobs / ${furnaceSnapshot.availableRecipes} ready`)}
+      ${this.createRow('World Sim', `${worldSimulationSnapshot.activeSimulationCount} active`)}
+      ${this.createRow('Sim Event', worldSimulationSnapshot.lastEvent)}
       ${this.createRow('Survival', survivalSnapshot.lastEvent)}
       ${this.createRow('Damage', formatDamageEvent(damageSnapshot))}
       ${this.createRow('Combat', formatCombatEvent(combatSnapshot))}
