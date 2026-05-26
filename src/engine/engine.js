@@ -11,6 +11,7 @@ import { RendererSystem } from './rendererSystem.js';
 import { SceneSystem } from './sceneSystem.js';
 import { EntitySystem } from '../entities/entitySystem.js';
 import { LootSystem, LOOT_TABLE_IDS } from '../loot/lootSystem.js';
+import { NetworkSession } from '../network/networkSession.js';
 import { PlayerController } from '../player/playerController.js';
 import { InventorySystem } from '../player/inventorySystem.js';
 import { PlayerState } from '../player/playerState.js';
@@ -86,6 +87,10 @@ export class Engine {
     });
     this.entitySystem.restoreEntities(this.saveSystem.loadEntityStates());
     this.ambientAudioSystem = new AmbientAudioSystem();
+    this.networkSession = new NetworkSession({
+      localPlayerId: 'player-local',
+      nickname: 'Godoy Player',
+    });
     this.playerController = new PlayerController({
       camera: this.cameraSystem.camera,
       terrainSampler: this.terrainGenerator,
@@ -119,6 +124,7 @@ export class Engine {
     this.sceneSystem.add(this.lightingSystem.group);
     this.sceneSystem.add(this.terrainGenerator.group);
     this.sceneSystem.add(this.entitySystem.group);
+    this.sceneSystem.add(this.networkSession.group);
     this.sceneSystem.add(this.voxelInteractionSystem.group);
     this.sceneSystem.add(this.playerController.object);
 
@@ -243,6 +249,15 @@ export class Engine {
     const survivalSnapshot = this.survivalSystem.getSnapshot();
     const combatSnapshot = this.combatSystem.getSnapshot();
     const worldSimulationSnapshot = this.worldSimulationSystem.getSnapshot();
+    const inventorySnapshot = this.inventorySystem.getSnapshot();
+    this.networkSession.update({
+      deltaTime,
+      playerController: this.playerController,
+      playerState: this.playerState,
+      inventorySnapshot,
+      entitySystem: this.entitySystem,
+      terrainReplicationSnapshot: this.terrainGenerator.getReplicationSnapshot(),
+    });
     this.ambientAudioSystem.update({
       weatherSnapshot,
       dayNightSnapshot,
@@ -264,7 +279,7 @@ export class Engine {
       entityStats: this.entitySystem.stats,
       playerState: this.playerState.getSnapshot(),
       survivalSnapshot,
-      inventorySnapshot: this.inventorySystem.getSnapshot(),
+      inventorySnapshot,
       miningSnapshot: this.voxelInteractionSystem.miningSnapshot,
       craftingSnapshot: this.craftingSystem.getSnapshot(),
       damageSnapshot: this.damageSystem.getSnapshot(),
@@ -277,6 +292,7 @@ export class Engine {
       persistenceSnapshot: this.persistenceSnapshot,
       worldSimulationSnapshot,
       audioSnapshot: this.ambientAudioSystem.getSnapshot(),
+      networkSnapshot: this.networkSession.getSnapshot(),
     });
 
     this.animationFrameId = requestAnimationFrame(this.update);

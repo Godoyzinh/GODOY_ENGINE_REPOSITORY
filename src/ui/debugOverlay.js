@@ -28,6 +28,7 @@ export class DebugOverlay {
     persistenceSnapshot,
     worldSimulationSnapshot,
     audioSnapshot,
+    networkSnapshot,
   }) {
     const instantFramesPerSecond = 1 / Math.max(deltaTime, 0.001);
     this.framesPerSecond = Math.round(this.framesPerSecond * 0.9 + instantFramesPerSecond * 0.1);
@@ -45,6 +46,10 @@ export class DebugOverlay {
       ${this.createRow('Weather', `${weatherSnapshot.state} ${Math.round(weatherSnapshot.intensity * 100)}%`)}
       ${this.createRow('Ambience', weatherSnapshot.ambience)}
       ${this.createRow('Audio', audioSnapshot.ambientLayer)}
+      ${this.createRow('Net Mode', networkSnapshot.mode)}
+      ${this.createRow('Latency', `${networkSnapshot.latencyMs}ms`)}
+      ${this.createRow('Server Tick', `${networkSnapshot.serverTick}@${networkSnapshot.serverTickRate}`)}
+      ${this.createRow('Tick Cost', `${networkSnapshot.serverTickMs.toFixed(2)}ms`)}
       ${this.createRow('Tier', progressionSnapshot.currentTier)}
       ${this.createRow('Next Tier', progressionSnapshot.nextTier)}
       ${this.createRow('Blueprint', `${buildingSnapshot.selectedBlueprintName} ${buildingSnapshot.rotationLabel}`)}
@@ -67,6 +72,10 @@ export class DebugOverlay {
       ${this.createRow('Persist Ent', persistenceSnapshot.persistedEntities)}
       ${this.createRow('Persist Chest', persistenceSnapshot.persistedChests)}
       ${this.createRow('Chunk Prep', persistenceSnapshot.compressedChunkCandidates)}
+      ${this.createRow('Synced Chunks', networkSnapshot.syncedChunks)}
+      ${this.createRow('Rep Ent', networkSnapshot.replicatedEntities)}
+      ${this.createRow('Rep Players', networkSnapshot.replicatedPlayerStates)}
+      ${this.createRow('Sync Batch', `${networkSnapshot.lastBatchEntityCount}/${networkSnapshot.lastBatchChunkCount}`)}
       ${this.createRow('Entities', entityStats.activeEntities)}
       ${this.createRow('Ent Pool', entityStats.pooledEntities)}
       ${this.createRow('Ent Save', entityStats.persistableEntities)}

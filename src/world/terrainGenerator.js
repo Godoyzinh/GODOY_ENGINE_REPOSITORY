@@ -64,4 +64,11 @@ export class TerrainGenerator {
   isWorldPositionLoaded(worldX, worldZ) {
     return this.chunkManager.isWorldPositionLoaded(worldX, worldZ);
   }
+
+  getReplicationSnapshot() {
+    return {
+      stats: this.stats,
+      loadedChunkKeys: this.chunkManager.getLoadedChunkKeys(),
+    };
+  }
 }

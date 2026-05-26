@@ -2,6 +2,7 @@ export const ENTITY_TYPES = {
   droppedItem: 'droppedItem',
   npc: 'npc',
   hostile: 'hostile',
+  remotePlayer: 'remotePlayer',
 };
 
 export const ENTITY_STATES = {

@@ -320,6 +320,10 @@ export class ChunkManager {
     return this.chunks.has(getChunkKeyFromWorldPosition({ x: worldX, z: worldZ }));
   }
 
+  getLoadedChunkKeys() {
+    return [...this.chunks.keys()];
+  }
+
   markNeighborChunksDirty(localX, localZ, chunk) {
     const neighborOffsets = [];
 

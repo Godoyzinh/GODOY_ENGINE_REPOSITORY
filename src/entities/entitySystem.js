@@ -364,6 +364,12 @@ export class EntitySystem {
       .filter((entity) => shouldPersistEntity(entity))
       .map((entity) => entity.getPersistenceState());
   }
+
+  getNetworkSnapshots() {
+    return this.registry.getEntities()
+      .filter((entity) => shouldReplicateEntity(entity))
+      .map((entity) => createEntityNetworkSnapshot(entity));
+  }
 }
 
 function createEmptyStats() {
@@ -435,4 +441,50 @@ function getEntityClass(entityType) {
 function shouldPersistEntity(entity) {
   return entity.state.removeRequested !== true &&
     [ENTITY_TYPES.droppedItem, ENTITY_TYPES.npc, ENTITY_TYPES.hostile].includes(entity.type);
+}
+
+function shouldReplicateEntity(entity) {
+  return entity.state.removeRequested !== true &&
+    [ENTITY_TYPES.droppedItem, ENTITY_TYPES.npc, ENTITY_TYPES.hostile].includes(entity.type);
+}
+
+function createEntityNetworkSnapshot(entity) {
+  return {
+    id: entity.id,
+    type: entity.type,
+    name: entity.name,
+    ownerId: 'server',
+    chunkKey: entity.state.chunkKey,
+    transform: {
+      position: {
+        x: entity.transform.position.x,
+        y: entity.transform.position.y,
+        z: entity.transform.position.z,
+      },
+      rotation: {
+        x: entity.transform.rotation.x,
+        y: entity.transform.rotation.y,
+        z: entity.transform.rotation.z,
+      },
+    },
+    velocity: {
+      x: entity.velocity.x,
+      y: entity.velocity.y,
+      z: entity.velocity.z,
+    },
+    state: {
+      lifecycle: entity.state.lifecycle,
+      health: entity.state.health,
+      maxHealth: entity.state.maxHealth,
+      age: entity.state.age,
+      isActive: entity.state.isActive,
+      isVisible: entity.state.isVisible,
+    },
+    combat: {
+      state: entity.combat?.state,
+      hurtTimer: entity.combat?.hurtTimer ?? 0,
+    },
+    itemStack: entity.itemStack ? { ...entity.itemStack } : null,
+    behaviorState: entity.behavior?.state ?? null,
+  };
 }
