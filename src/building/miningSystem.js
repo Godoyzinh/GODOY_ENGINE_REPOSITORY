@@ -1,3 +1,4 @@
+import { normalizeDrop } from '../items/itemRegistry.js';
 import { getBlockDefinition, getBlockDrop } from '../world/blockRegistry.js';
 
 const MINING_COOLDOWN_SECONDS = 0.16;
@@ -48,7 +49,7 @@ export class MiningSystem {
     }
 
     const completedTarget = this.targetBlock;
-    const dropId = getBlockDrop(completedTarget.blockId);
+    const dropStack = normalizeDrop(getBlockDrop(completedTarget.blockId));
 
     this.cooldownRemaining = MINING_COOLDOWN_SECONDS;
     this.progress = 0;
@@ -58,7 +59,7 @@ export class MiningSystem {
     return this.createResult({
       completed: true,
       targetBlock: completedTarget,
-      dropId,
+      dropStack,
       blockDefinition,
     });
   }
@@ -80,11 +81,11 @@ export class MiningSystem {
     this.progress = 0;
   }
 
-  createResult({ completed = false, targetBlock = null, dropId = null, blockDefinition = null } = {}) {
+  createResult({ completed = false, targetBlock = null, dropStack = null, blockDefinition = null } = {}) {
     return {
       completed,
       targetBlock,
-      dropId,
+      dropStack,
       blockDefinition,
       snapshot: this.getSnapshot(),
     };

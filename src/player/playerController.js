@@ -54,6 +54,16 @@ export class PlayerController {
     this.cameraTarget.copy(this.position);
   }
 
+  consumeLandingImpact() {
+    return this.movementSystem.consumeLandingImpact();
+  }
+
+  respawn(position = undefined) {
+    this.movementSystem.respawn(position);
+    this.object.position.copy(this.position);
+    this.cameraTarget.copy(this.position);
+  }
+
   updateBodyPose() {
     const playerHeight = this.movementSystem.getCurrentHeight();
 

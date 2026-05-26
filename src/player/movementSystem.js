@@ -17,6 +17,8 @@ export class MovementSystem {
     this.playerState = playerState;
     this.position = new Vector3(0, 8, 0);
     this.velocity = new Vector3();
+    this.spawnPosition = new Vector3(0, 8, 0);
+    this.lastLandingImpact = 0;
     this.input = {
       forward: false,
       backward: false,
@@ -63,6 +65,12 @@ export class MovementSystem {
       return true;
     }
 
+    if (code === 'KeyV' && !event.repeat) {
+      this.playerState.toggleMode();
+      this.velocity.y = 0;
+      return true;
+    }
+
     return false;
   }
 
@@ -76,7 +84,7 @@ export class MovementSystem {
 
     this.playerState.setMovementFlags({
       isFlying: this.playerState.isFlying,
-      isSprinting: this.input.sprint && !this.input.crouch,
+      isSprinting: this.canSprint(),
       isCrouching: this.input.crouch,
       isGrounded: this.isGrounded,
     });
@@ -106,6 +114,7 @@ export class MovementSystem {
     this.position.y += this.velocity.y * deltaTime;
 
     if (this.position.y <= minimumY && this.velocity.y <= 0) {
+      this.lastLandingImpact = Math.abs(this.velocity.y);
       this.position.y = minimumY;
       this.velocity.y = 0;
       this.isGrounded = true;
@@ -141,14 +150,32 @@ export class MovementSystem {
       return CROUCH_SPEED;
     }
 
-    return this.input.sprint ? SPRINT_SPEED : WALK_SPEED;
+    return this.canSprint() ? SPRINT_SPEED : WALK_SPEED;
   }
 
   getFlySpeed() {
-    return this.input.sprint ? FLY_SPRINT_SPEED : FLY_SPEED;
+    return this.canSprint() ? FLY_SPRINT_SPEED : FLY_SPEED;
   }
 
   getCurrentHeight() {
     return this.input.crouch && !this.playerState.isFlying ? PLAYER_CROUCH_HEIGHT : PLAYER_STANDING_HEIGHT;
+  }
+
+  canSprint() {
+    return this.input.sprint && !this.input.crouch && this.playerState.stamina > 1 && !this.playerState.isDead;
+  }
+
+  consumeLandingImpact() {
+    const landingImpact = this.lastLandingImpact;
+    this.lastLandingImpact = 0;
+
+    return landingImpact;
+  }
+
+  respawn(position = this.spawnPosition) {
+    this.position.copy(position);
+    this.velocity.set(0, 0, 0);
+    this.isGrounded = false;
+    this.lastLandingImpact = 0;
   }
 }

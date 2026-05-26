@@ -1,5 +1,4 @@
-import { TOOL_DEFINITIONS } from '../tools/toolSystem.js';
-import { getBlockDefinition } from '../world/blockRegistry.js';
+import { getItemDisplay } from '../items/itemRegistry.js';
 
 export class HotbarUI {
   constructor({ rootElement, inventorySystem }) {
@@ -58,20 +57,11 @@ export class HotbarUI {
 }
 
 function getStackDisplay(stack) {
-  if (stack.itemType === 'block') {
-    const blockDefinition = getBlockDefinition(stack.itemId);
-
-    return {
-      color: blockDefinition.color,
-      shortName: getShortName(blockDefinition.name),
-    };
-  }
-
-  const toolDefinition = TOOL_DEFINITIONS[stack.itemId];
+  const itemDisplay = getItemDisplay(stack);
 
   return {
-    color: '#d9dee7',
-    shortName: getShortName(toolDefinition?.name ?? stack.name),
+    color: itemDisplay.color,
+    shortName: getShortName(itemDisplay.shortName ?? itemDisplay.name),
   };
 }
 

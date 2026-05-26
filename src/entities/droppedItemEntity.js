@@ -1,5 +1,5 @@
 import { BoxGeometry, Mesh, MeshStandardMaterial, Vector3 } from 'three';
-import { getBlockDefinition } from '../world/blockRegistry.js';
+import { getItemDisplay, normalizeItemStack } from '../items/itemRegistry.js';
 import { BaseEntity } from './baseEntity.js';
 import { ENTITY_TYPES } from './entityTypes.js';
 
@@ -16,26 +16,24 @@ export class DroppedItemEntity extends BaseEntity {
       name: 'DroppedItemEntity',
     });
 
-    this.blockId = null;
-    this.count = 1;
+    this.itemStack = null;
     this.despawnAfter = DEFAULT_DESPAWN_SECONDS;
     this.pickupDelay = PICKUP_DELAY_SECONDS;
     this.collider.radius = 0.28;
     this.collider.height = 0.34;
     this.collider.groundedOffset = 0.28;
-    this.mesh = new Mesh(itemGeometry, getItemMaterial(0));
+    this.mesh = new Mesh(itemGeometry, getItemMaterial({ itemType: 'resource', itemId: 'unknown' }));
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
     this.object.add(this.mesh);
   }
 
-  initialize({ blockId, count = 1, position, impulse = null } = {}) {
+  initialize({ itemStack, position, impulse = null } = {}) {
     super.initialize({ position });
-    this.blockId = blockId;
-    this.count = count;
+    this.itemStack = normalizeItemStack(itemStack);
     this.despawnAfter = DEFAULT_DESPAWN_SECONDS;
     this.pickupDelay = PICKUP_DELAY_SECONDS;
-    this.mesh.material = getItemMaterial(blockId);
+    this.mesh.material = getItemMaterial(this.itemStack);
     this.mesh.position.set(0, 0.18, 0);
     this.velocity.copy(impulse ?? createDefaultImpulse());
 
@@ -66,11 +64,7 @@ export class DroppedItemEntity extends BaseEntity {
       return;
     }
 
-    const wasAdded = inventorySystem.addItem({
-      itemType: 'block',
-      itemId: this.blockId,
-      count: this.count,
-    });
+    const wasAdded = inventorySystem.addItem(this.itemStack);
 
     if (wasAdded) {
       this.requestRemoval('pickedUp');
@@ -78,20 +72,22 @@ export class DroppedItemEntity extends BaseEntity {
   }
 }
 
-function getItemMaterial(blockId) {
-  if (!materialCache.has(blockId)) {
-    const blockDefinition = getBlockDefinition(blockId);
+function getItemMaterial(itemStack) {
+  const materialKey = `${itemStack.itemType}:${itemStack.itemId}`;
+
+  if (!materialCache.has(materialKey)) {
+    const itemDisplay = getItemDisplay(itemStack);
     materialCache.set(
-      blockId,
+      materialKey,
       new MeshStandardMaterial({
-        color: blockDefinition.color ?? '#ffffff',
+        color: itemDisplay.color ?? '#ffffff',
         roughness: 0.82,
         metalness: 0,
       }),
     );
   }
 
-  return materialCache.get(blockId);
+  return materialCache.get(materialKey);
 }
 
 function createDefaultImpulse() {

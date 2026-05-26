@@ -172,7 +172,7 @@ export class VoxelInteractionSystem {
     };
   }
 
-  completeMining({ targetBlock, dropId, blockDefinition }) {
+  completeMining({ targetBlock, dropStack, blockDefinition }) {
     const wasDestroyed = this.world.setBlockAtWorldPosition(
       targetBlock.worldX,
       targetBlock.y,
@@ -185,29 +185,25 @@ export class VoxelInteractionSystem {
       return;
     }
 
-    if (dropId !== null) {
-      this.handleBlockDrop({ targetBlock, dropId, blockDefinition });
+    if (dropStack !== null) {
+      this.handleBlockDrop({ targetBlock, dropStack, blockDefinition });
     }
 
     this.targetBlock = null;
     this.lastAction = `Mined ${blockDefinition.name}`;
   }
 
-  handleBlockDrop({ targetBlock, dropId, blockDefinition }) {
+  handleBlockDrop({ targetBlock, dropStack, blockDefinition }) {
     if (this.onBlockMined) {
       this.onBlockMined({
         targetBlock,
-        dropId,
+        dropStack,
         blockDefinition,
       });
       return;
     }
 
-    this.inventorySystem.addItem({
-      itemType: 'block',
-      itemId: dropId,
-      count: 1,
-    });
+    this.inventorySystem.addItem(dropStack);
   }
 
   updateFeedback() {

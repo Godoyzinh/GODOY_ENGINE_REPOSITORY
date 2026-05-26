@@ -1,5 +1,7 @@
 import { Timer } from 'three';
 import { VoxelInteractionSystem } from '../building/voxelInteractionSystem.js';
+import { DamageSystem } from '../combat/damageSystem.js';
+import { CraftingSystem } from '../crafting/craftingSystem.js';
 import { CameraSystem } from './cameraSystem.js';
 import { LightingSystem } from './lightingSystem.js';
 import { RendererSystem } from './rendererSystem.js';
@@ -8,10 +10,12 @@ import { EntitySystem } from '../entities/entitySystem.js';
 import { PlayerController } from '../player/playerController.js';
 import { InventorySystem } from '../player/inventorySystem.js';
 import { PlayerState } from '../player/playerState.js';
+import { SurvivalSystem } from '../player/survivalSystem.js';
 import { PhysicsWorld } from '../physics/physicsWorld.js';
 import { SaveSystem } from '../save/saveSystem.js';
 import { DebugOverlay } from '../ui/debugOverlay.js';
 import { HotbarUI } from '../ui/hotbarUI.js';
+import { SurvivalHud } from '../ui/survivalHud.js';
 import { ToolSystem } from '../tools/toolSystem.js';
 import { TerrainGenerator } from '../world/terrainGenerator.js';
 
@@ -37,9 +41,16 @@ export class Engine {
     this.playerState = new PlayerState();
     this.toolSystem = new ToolSystem();
     this.inventorySystem = new InventorySystem({ playerState: this.playerState });
+    this.survivalSystem = new SurvivalSystem({
+      playerState: this.playerState,
+      inventorySystem: this.inventorySystem,
+    });
+    this.damageSystem = new DamageSystem({ survivalSystem: this.survivalSystem });
+    this.craftingSystem = new CraftingSystem({ inventorySystem: this.inventorySystem });
     this.entitySystem = new EntitySystem({
       terrainSampler: this.terrainGenerator,
       inventorySystem: this.inventorySystem,
+      damageSystem: this.damageSystem,
     });
     this.playerController = new PlayerController({
       camera: this.cameraSystem.camera,
@@ -60,6 +71,10 @@ export class Engine {
       rootElement,
       inventorySystem: this.inventorySystem,
     });
+    this.survivalHud = new SurvivalHud({
+      rootElement,
+      survivalSystem: this.survivalSystem,
+    });
 
     this.sceneSystem.add(this.lightingSystem.group);
     this.sceneSystem.add(this.terrainGenerator.group);
@@ -68,6 +83,7 @@ export class Engine {
     this.sceneSystem.add(this.playerController.object);
 
     this.handleResize = this.handleResize.bind(this);
+    this.handleKeyDown = this.handleKeyDown.bind(this);
     this.update = this.update.bind(this);
   }
 
@@ -78,6 +94,7 @@ export class Engine {
 
     this.isRunning = true;
     window.addEventListener('resize', this.handleResize);
+    window.addEventListener('keydown', this.handleKeyDown);
     this.handleResize();
     this.timer.reset();
     this.update();
@@ -90,11 +107,25 @@ export class Engine {
 
     this.isRunning = false;
     window.removeEventListener('resize', this.handleResize);
+    window.removeEventListener('keydown', this.handleKeyDown);
     cancelAnimationFrame(this.animationFrameId);
     this.playerController.dispose();
     this.voxelInteractionSystem.dispose();
     this.inventorySystem.dispose();
     this.hotbarUI.dispose();
+    this.survivalHud.dispose();
+  }
+
+  handleKeyDown(event) {
+    if (event.repeat) {
+      return;
+    }
+
+    if (event.code === 'KeyE') {
+      this.survivalSystem.consumeSelectedItem();
+    } else if (event.code === 'KeyR') {
+      this.craftingSystem.craftFirstAvailable();
+    }
   }
 
   handleResize() {
@@ -116,6 +147,13 @@ export class Engine {
     const elapsedTime = this.timer.getElapsed();
 
     this.playerController.update(deltaTime);
+    const landingImpact = this.playerController.consumeLandingImpact();
+    this.survivalSystem.update({
+      deltaTime,
+      playerController: this.playerController,
+      landingImpact,
+    });
+    this.damageSystem.applyFallDamage(landingImpact);
     this.terrainGenerator.update({
       focusPosition: this.playerController.position,
       camera: this.cameraSystem.camera,
@@ -129,9 +167,11 @@ export class Engine {
       deltaTime,
       playerPosition: this.playerController.position,
     });
+    this.craftingSystem.update();
     this.sceneSystem.update(deltaTime, elapsedTime);
     this.rendererSystem.render(this.sceneSystem.scene, this.cameraSystem.camera);
     this.hotbarUI.update();
+    this.survivalHud.update();
     this.debugOverlay.update({
       deltaTime,
       interactionStatus: this.voxelInteractionSystem.lastAction,
@@ -139,17 +179,19 @@ export class Engine {
       terrainStats: this.terrainGenerator.stats,
       entityStats: this.entitySystem.stats,
       playerState: this.playerState.getSnapshot(),
+      survivalSnapshot: this.survivalSystem.getSnapshot(),
       inventorySnapshot: this.inventorySystem.getSnapshot(),
       miningSnapshot: this.voxelInteractionSystem.miningSnapshot,
+      craftingSnapshot: this.craftingSystem.getSnapshot(),
+      damageSnapshot: this.damageSystem.getSnapshot(),
     });
 
     this.animationFrameId = requestAnimationFrame(this.update);
   }
 
-  handleBlockMined({ targetBlock, dropId }) {
+  handleBlockMined({ targetBlock, dropStack }) {
     this.entitySystem.spawnDroppedItem({
-      blockId: dropId,
-      count: 1,
+      itemStack: dropStack,
       position: {
         x: targetBlock.worldX + 0.5,
         y: targetBlock.y + 0.8,

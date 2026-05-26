@@ -4,28 +4,33 @@ import { CHUNK_SIZE } from '../world/worldConstants.js';
 import { DroppedItemEntity } from './droppedItemEntity.js';
 import { EntityRegistry } from './entityRegistry.js';
 import { ENTITY_TYPES } from './entityTypes.js';
+import { HostileEntity } from './hostileEntity.js';
 import { NpcEntity } from './npcEntity.js';
 
 const ENTITY_ACTIVATION_DISTANCE = 72;
 const ENTITY_VISIBLE_DISTANCE = 96;
 const NPC_SPAWN_RADIUS_CHUNKS = 1;
 const MAX_ACTIVE_NPCS = 6;
+const MAX_ACTIVE_HOSTILES = 4;
 const MAX_DROPPED_ITEMS = 48;
 
 export class EntitySystem {
-  constructor({ terrainSampler, inventorySystem }) {
+  constructor({ terrainSampler, inventorySystem, damageSystem = null }) {
     this.terrainSampler = terrainSampler;
     this.inventorySystem = inventorySystem;
+    this.damageSystem = damageSystem;
     this.group = new Group();
     this.group.name = 'EntitySystem';
     this.registry = new EntityRegistry({ group: this.group });
     this.spawnedNpcChunks = new Set();
+    this.spawnedHostileChunks = new Set();
     this.lastFocusChunkKey = null;
     this.stats = createEmptyStats();
   }
 
   update({ deltaTime, playerPosition }) {
     this.spawnNpcsNearFocus(playerPosition);
+    this.spawnHostilesNearFocus(playerPosition);
     this.registry.updateActivation({
       focusPosition: playerPosition,
       activationDistance: ENTITY_ACTIVATION_DISTANCE,
@@ -38,6 +43,7 @@ export class EntitySystem {
           terrainSampler: this.terrainSampler,
           inventorySystem: this.inventorySystem,
           playerPosition,
+          damageSystem: this.damageSystem,
         });
       }
     }
@@ -46,8 +52,8 @@ export class EntitySystem {
     this.updateStats();
   }
 
-  spawnDroppedItem({ blockId, count = 1, position, impulse = null }) {
-    if (blockId === null || blockId === undefined || count <= 0) {
+  spawnDroppedItem({ itemStack, position, impulse = null }) {
+    if (!itemStack || itemStack.count <= 0) {
       return null;
     }
 
@@ -55,8 +61,7 @@ export class EntitySystem {
 
     return this.registry.acquire(DroppedItemEntity, {
       type: ENTITY_TYPES.droppedItem,
-      blockId,
-      count,
+      itemStack,
       position: toVector3(position),
       impulse,
     });
@@ -69,6 +74,18 @@ export class EntitySystem {
 
     return this.registry.acquire(NpcEntity, {
       type: ENTITY_TYPES.npc,
+      position: toVector3(position),
+      seed,
+    });
+  }
+
+  spawnHostile({ position, seed = Math.random() }) {
+    if (this.registry.getCountByType(ENTITY_TYPES.hostile) >= MAX_ACTIVE_HOSTILES) {
+      return null;
+    }
+
+    return this.registry.acquire(HostileEntity, {
+      type: ENTITY_TYPES.hostile,
       position: toVector3(position),
       seed,
     });
@@ -111,16 +128,53 @@ export class EntitySystem {
 
         this.spawnedNpcChunks.add(chunkKey);
         this.spawnNpc({
-          position: this.getNpcSpawnPosition(chunkX, chunkZ),
+          position: this.getEntitySpawnPosition(chunkX, chunkZ),
           seed: hashString(chunkKey),
         });
       }
     }
   }
 
-  getNpcSpawnPosition(chunkX, chunkZ) {
-    const chunkKey = getChunkKey(chunkX, chunkZ);
-    const hash = hashString(chunkKey);
+  spawnHostilesNearFocus(focusPosition) {
+    if (!focusPosition) {
+      return;
+    }
+
+    const focusChunkX = getChunkCoordinate(focusPosition.x);
+    const focusChunkZ = getChunkCoordinate(focusPosition.z);
+    const focusChunkKey = getChunkKey(focusChunkX, focusChunkZ);
+
+    for (let offsetZ = -NPC_SPAWN_RADIUS_CHUNKS; offsetZ <= NPC_SPAWN_RADIUS_CHUNKS; offsetZ += 1) {
+      for (let offsetX = -NPC_SPAWN_RADIUS_CHUNKS; offsetX <= NPC_SPAWN_RADIUS_CHUNKS; offsetX += 1) {
+        if (this.registry.getCountByType(ENTITY_TYPES.hostile) >= MAX_ACTIVE_HOSTILES) {
+          return;
+        }
+
+        const chunkX = focusChunkX + offsetX;
+        const chunkZ = focusChunkZ + offsetZ;
+        const chunkKey = getChunkKey(chunkX, chunkZ);
+
+        if (this.spawnedHostileChunks.has(chunkKey)) {
+          continue;
+        }
+
+        const hash = hashString(`${chunkKey}:hostile`);
+        const shouldSpawn = chunkKey === focusChunkKey || hash % 5 === 0;
+
+        if (!shouldSpawn) {
+          continue;
+        }
+
+        this.spawnedHostileChunks.add(chunkKey);
+        this.spawnHostile({
+          position: this.getEntitySpawnPosition(chunkX, chunkZ, hash),
+          seed: hash,
+        });
+      }
+    }
+  }
+
+  getEntitySpawnPosition(chunkX, chunkZ, hash = hashString(getChunkKey(chunkX, chunkZ))) {
     const localX = 4 + (hash % 8);
     const localZ = 4 + (Math.floor(hash / 11) % 8);
     const worldX = chunkX * CHUNK_SIZE + localX;
@@ -156,6 +210,7 @@ export class EntitySystem {
     const visibleEntities = entities.filter((entity) => entity.state.isVisible);
     const droppedItems = entities.filter((entity) => entity.type === ENTITY_TYPES.droppedItem);
     const npcs = entities.filter((entity) => entity.type === ENTITY_TYPES.npc);
+    const hostiles = entities.filter((entity) => entity.type === ENTITY_TYPES.hostile);
 
     this.stats.totalEntities = entities.length;
     this.stats.activeEntities = activeEntities.length;
@@ -163,7 +218,9 @@ export class EntitySystem {
     this.stats.pooledEntities = this.registry.getPooledCount();
     this.stats.droppedItems = droppedItems.length;
     this.stats.npcs = npcs.length;
+    this.stats.hostiles = hostiles.length;
     this.stats.spawnedNpcChunks = this.spawnedNpcChunks.size;
+    this.stats.spawnedHostileChunks = this.spawnedHostileChunks.size;
   }
 }
 
@@ -175,7 +232,9 @@ function createEmptyStats() {
     pooledEntities: 0,
     droppedItems: 0,
     npcs: 0,
+    hostiles: 0,
     spawnedNpcChunks: 0,
+    spawnedHostileChunks: 0,
   };
 }
 

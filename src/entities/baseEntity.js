@@ -35,6 +35,8 @@ export class BaseEntity {
     this.state = {
       lifecycle: ENTITY_STATES.active,
       age: 0,
+      health: 100,
+      maxHealth: 100,
       isActive: true,
       isVisible: true,
       chunkKey: '0,0',
@@ -51,6 +53,7 @@ export class BaseEntity {
     this.velocity.set(0, 0, 0);
     this.state.lifecycle = ENTITY_STATES.active;
     this.state.age = 0;
+    this.state.health = this.state.maxHealth;
     this.state.isActive = true;
     this.state.isVisible = true;
     this.state.removeRequested = false;
@@ -107,6 +110,25 @@ export class BaseEntity {
     this.state.removeRequested = true;
     this.state.removeReason = reason;
     this.state.lifecycle = ENTITY_STATES.despawned;
+  }
+
+  applyDamage({ amount, type = 'generic', source = null }) {
+    if (this.state.removeRequested) {
+      return false;
+    }
+
+    this.state.health = Math.max(0, this.state.health - amount);
+    this.state.lastDamage = {
+      amount,
+      type,
+      source,
+    };
+
+    if (this.state.health <= 0) {
+      this.requestRemoval('destroyed');
+    }
+
+    return true;
   }
 
   getDistanceTo(position) {
