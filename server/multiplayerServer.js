@@ -195,6 +195,12 @@ export function createMultiplayerServer(options = {}) {
       handleCombatAction(client, packet);
     } else if (packet.type === PACKET_TYPES.chunkInterest) {
       handleChunkInterest(client, packet);
+    } else if (packet.type === PACKET_TYPES.studioEdit) {
+      handleStudioEdit(client, packet);
+    } else if (packet.type === PACKET_TYPES.publishWorld) {
+      handlePublishWorld(client, packet);
+    } else if (packet.type === PACKET_TYPES.permissionUpdate) {
+      handlePermissionUpdate(client, packet);
     } else if (packet.type === PACKET_TYPES.ack) {
       handleAck(client, packet);
     } else if (packet.type === PACKET_TYPES.resendRequest) {
@@ -218,6 +224,7 @@ export function createMultiplayerServer(options = {}) {
     });
 
     applyPlayerToClient(client, player);
+    worldRuntime.ensureOwner(player.playerId);
     sendPacket(client, createWelcomePacket({
       playerId: player.playerId,
       serverTickRate: settings.tickRate,
@@ -267,6 +274,7 @@ export function createMultiplayerServer(options = {}) {
       player.worldId = worldRuntime.metadata.id;
     }
 
+    worldRuntime.ensureOwner(client.playerId);
     client.worldId = worldRuntime.metadata.id;
     sendPacket(client, createWorldJoinedPacket({
       world: worldRuntime.getMetadata({
@@ -287,6 +295,7 @@ export function createMultiplayerServer(options = {}) {
     });
 
     applyPlayerToClient(client, player);
+    worldRuntime.ensureOwner(player.playerId);
     hydratePlayerFromWorld(player, worldRuntime);
     sendPacket(client, createReconnectAcceptedPacket({
       playerId: player.playerId,
@@ -353,6 +362,87 @@ export function createMultiplayerServer(options = {}) {
     }
 
     worldRuntime.updateChunkInterest(client.playerId, packet.payload?.loadedChunkKeys ?? []);
+  }
+
+  function handleStudioEdit(client, packet) {
+    const worldRuntime = worldRegistry.getWorld(packet.payload?.worldId ?? client.worldId);
+
+    if (!worldRuntime) {
+      return;
+    }
+
+    const result = worldRuntime.applyStudioEdit({
+      playerId: client.playerId,
+      tool: packet.payload?.tool,
+      actionId: packet.payload?.actionId,
+      edits: (packet.payload?.edits ?? []).map((edit) => ({
+        ...edit,
+        sourcePlayerId: client.playerId,
+      })),
+    });
+
+    if (!result.ok) {
+      metrics.permissionDenials += 1;
+      sendPacket(client, createErrorPacket({
+        code: result.reason,
+        message: 'Studio edit rejected by world permissions.',
+      }));
+      return;
+    }
+
+    metrics.studioEditsReceived += result.edits.length;
+  }
+
+  function handlePublishWorld(client, packet) {
+    const worldRuntime = worldRegistry.getWorld(packet.payload?.worldId ?? client.worldId);
+
+    if (!worldRuntime) {
+      return;
+    }
+
+    metrics.publishRequests += 1;
+
+    const result = worldRuntime.publishWorld({
+      playerId: client.playerId,
+      metadata: packet.payload?.metadata ?? {},
+    });
+
+    if (!result.ok) {
+      metrics.permissionDenials += 1;
+      sendPacket(client, createErrorPacket({
+        code: result.reason,
+        message: 'World publish rejected by world permissions.',
+      }));
+      return;
+    }
+
+    metrics.publishSuccesses += 1;
+    sendWorldListToAll();
+  }
+
+  function handlePermissionUpdate(client, packet) {
+    const worldRuntime = worldRegistry.getWorld(packet.payload?.worldId ?? client.worldId);
+
+    if (!worldRuntime) {
+      return;
+    }
+
+    const wasUpdated = worldRuntime.updatePlayerRole({
+      actingPlayerId: client.playerId,
+      targetPlayerId: packet.payload?.targetPlayerId,
+      role: packet.payload?.role,
+    });
+
+    if (!wasUpdated) {
+      metrics.permissionDenials += 1;
+      sendPacket(client, createErrorPacket({
+        code: 'permission-update-denied',
+        message: 'Permission update rejected by world authority.',
+      }));
+      return;
+    }
+
+    sendWorldListToAll();
   }
 
   function handleAck(client, packet) {
@@ -492,6 +582,16 @@ export function createMultiplayerServer(options = {}) {
     }
   }
 
+  function sendWorldListToAll() {
+    const packet = createWorldListPacket({
+      worlds: worldRegistry.listWorlds({ playerRegistry }),
+    });
+
+    for (const client of clients.values()) {
+      sendPacket(client, packet);
+    }
+  }
+
   function applyPlayerToClient(client, player) {
     client.playerId = player.playerId;
     client.nickname = player.nickname;
@@ -526,6 +626,12 @@ export function createMultiplayerServer(options = {}) {
       bytesReceived: metrics.bytesReceived,
       blockEditsReceived: metrics.blockEditsReceived,
       combatActionsReceived: metrics.combatActionsReceived,
+      studioEditsReceived: metrics.studioEditsReceived,
+      publishRequests: metrics.publishRequests,
+      publishSuccesses: metrics.publishSuccesses,
+      permissionDenials: metrics.permissionDenials,
+      activeEditors: worldStats.activeEditors,
+      publishedWorlds: worldStats.publishedWorlds,
       acksReceived: metrics.acksReceived,
       resendRequests: metrics.resendRequests,
       timeoutRecoveries: metrics.timeoutRecoveries,
@@ -554,6 +660,14 @@ export function createMultiplayerServer(options = {}) {
       worlds: worldRegistry.listWorlds({ playerRegistry }),
       worldStats: worldRegistry.getStats({ playerRegistry }),
       worldSummaries: worldRegistry.getWorldSummaries({ playerRegistry }),
+      creatorPlatform: {
+        activeEditors: worldRegistry.getStats({ playerRegistry }).activeEditors,
+        publishedWorlds: worldRegistry.getStats({ playerRegistry }).publishedWorlds,
+        studioEditsReceived: metrics.studioEditsReceived,
+        publishRequests: metrics.publishRequests,
+        publishSuccesses: metrics.publishSuccesses,
+        permissionDenials: metrics.permissionDenials,
+      },
     };
   }
 
@@ -684,6 +798,10 @@ function createEmptyMetrics({ tickRate }) {
     bytesReceived: 0,
     blockEditsReceived: 0,
     combatActionsReceived: 0,
+    studioEditsReceived: 0,
+    publishRequests: 0,
+    publishSuccesses: 0,
+    permissionDenials: 0,
     acksReceived: 0,
     resendRequests: 0,
     timeoutRecoveries: 0,

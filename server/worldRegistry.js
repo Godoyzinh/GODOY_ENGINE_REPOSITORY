@@ -79,12 +79,15 @@ export class WorldRegistry {
 
   getStats({ playerRegistry = null } = {}) {
     const worlds = this.listWorlds({ playerRegistry });
+    const worldSummaries = this.getWorldSummaries({ playerRegistry });
 
     return {
       hostedWorlds: worlds.length,
       worldIds: worlds.map((world) => world.id),
       totalBlockEdits: worlds.reduce((total, world) => total + world.blockEdits, 0),
       totalCombatEvents: worlds.reduce((total, world) => total + world.combatEvents, 0),
+      activeEditors: worldSummaries.reduce((total, world) => total + world.creator.activeEditors, 0),
+      publishedWorlds: worldSummaries.filter((world) => world.creator.published).length,
     };
   }
 }

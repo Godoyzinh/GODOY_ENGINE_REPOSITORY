@@ -84,7 +84,7 @@ export class VoxelInteractionSystem {
   }
 
   handleKeyDown(event) {
-    if (event.repeat) {
+    if (event.repeat || event.ctrlKey || event.metaKey) {
       return;
     }
 

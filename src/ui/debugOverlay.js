@@ -25,6 +25,10 @@ export class DebugOverlay {
     progressionSnapshot,
     furnaceSnapshot,
     buildingSnapshot,
+    studioSnapshot,
+    prefabSnapshot,
+    publishingSnapshot,
+    permissionsSnapshot,
     persistenceSnapshot,
     worldSimulationSnapshot,
     audioSnapshot,
@@ -63,6 +67,14 @@ export class DebugOverlay {
       ${this.createRow('Tier', progressionSnapshot.currentTier)}
       ${this.createRow('Next Tier', progressionSnapshot.nextTier)}
       ${this.createRow('Blueprint', `${buildingSnapshot.selectedBlueprintName} ${buildingSnapshot.rotationLabel}`)}
+      ${this.createRow('Studio', `${studioSnapshot.isActive ? 'On' : 'Off'} ${studioSnapshot.activeTool}`)}
+      ${this.createRow('Selected Obj', studioSnapshot.selectedObjectLabel)}
+      ${this.createRow('Prefabs', `${prefabSnapshot.prefabCount} ${prefabSnapshot.selectedPrefabName}`)}
+      ${this.createRow('Editors', studioSnapshot.activeEditors)}
+      ${this.createRow('Undo', `${studioSnapshot.undoStack}/${studioSnapshot.redoStack}`)}
+      ${this.createRow('Published', publishingSnapshot.publishedWorlds)}
+      ${this.createRow('Owner', permissionsSnapshot.ownerId)}
+      ${this.createRow('Role', permissionsSnapshot.localRole)}
       ${this.createRow('Selected', inventorySnapshot.selectedItemLabel)}
       ${this.createRow('Slot', inventorySnapshot.selectedSlot + 1)}
       ${this.createRow('Player X', playerPosition.x.toFixed(2))}
@@ -81,6 +93,7 @@ export class DebugOverlay {
       ${this.createRow('Save KB', persistenceSnapshot.saveSizeKb.toFixed(1))}
       ${this.createRow('Persist Ent', persistenceSnapshot.persistedEntities)}
       ${this.createRow('Persist Chest', persistenceSnapshot.persistedChests)}
+      ${this.createRow('Prefab Saves', persistenceSnapshot.prefabPlacements)}
       ${this.createRow('Chunk Prep', persistenceSnapshot.compressedChunkCandidates)}
       ${this.createRow('Synced Chunks', networkSnapshot.syncedChunks)}
       ${this.createRow('Rep Ent', networkSnapshot.replicatedEntities)}

@@ -123,6 +123,48 @@ export function createChunkInterestPacket({ playerId, loadedChunkKeys }) {
   });
 }
 
+export function createStudioEditPacket({
+  worldId = DEFAULT_WORLD_ID,
+  playerId,
+  edits,
+  tool = 'studio',
+  actionId = `studio-${Date.now()}`,
+}) {
+  return createPacket(PACKET_TYPES.studioEdit, {
+    worldId,
+    playerId,
+    tool,
+    actionId,
+    edits: edits.slice(0, MAX_BLOCK_EDITS_PER_PACKET).map(normalizeBlockEdit),
+  });
+}
+
+export function createPublishWorldPacket({
+  worldId = DEFAULT_WORLD_ID,
+  playerId,
+  metadata,
+}) {
+  return createPacket(PACKET_TYPES.publishWorld, {
+    worldId,
+    playerId,
+    metadata: normalizeWorldPublishMetadata(metadata),
+  });
+}
+
+export function createPermissionUpdatePacket({
+  worldId = DEFAULT_WORLD_ID,
+  targetPlayerId,
+  role,
+  actingPlayerId,
+}) {
+  return createPacket(PACKET_TYPES.permissionUpdate, {
+    worldId,
+    targetPlayerId,
+    role,
+    actingPlayerId,
+  });
+}
+
 export function createAckPacket({ sequence, worldId = DEFAULT_WORLD_ID }) {
   return createPacket(PACKET_TYPES.ack, {
     sequence,
@@ -209,6 +251,21 @@ function normalizeBlockEdit(edit) {
     action: edit.action ?? 'set',
     chunkKey: edit.chunkKey ?? null,
     sourcePlayerId: edit.sourcePlayerId ?? null,
+  };
+}
+
+function normalizeWorldPublishMetadata(metadata = {}) {
+  return {
+    id: metadata.id ?? null,
+    worldId: metadata.worldId ?? DEFAULT_WORLD_ID,
+    title: String(metadata.title ?? 'Untitled World').slice(0, 80),
+    description: String(metadata.description ?? '').slice(0, 500),
+    visibility: metadata.visibility ?? 'private',
+    tags: Array.isArray(metadata.tags) ? metadata.tags.slice(0, 12) : [],
+    thumbnail: metadata.thumbnail ?? null,
+    ownerId: metadata.ownerId ?? null,
+    publishedAt: metadata.publishedAt ?? new Date().toISOString(),
+    status: metadata.status ?? 'published-draft',
   };
 }
 

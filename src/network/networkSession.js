@@ -12,6 +12,8 @@ import {
   createResendRequestPacket,
   createPlayerSnapshotPacket,
   createJoinWorldPacket,
+  createPublishWorldPacket,
+  createStudioEditPacket,
 } from './packetProtocol.js';
 import { RemotePlayerSystem } from './remotePlayerSystem.js';
 import { ServerTickSystem } from './serverTickSystem.js';
@@ -50,7 +52,10 @@ export class NetworkSession {
     this.connected = false;
     this.pendingBlockEdits = [];
     this.pendingCombatActions = [];
+    this.pendingStudioEdits = [];
+    this.pendingWorldPublishes = [];
     this.pendingRemoteBlockEdits = [];
+    this.worldMetadata = null;
     this.lastChunkInterestKey = '';
     this.serverMetrics = null;
     this.sessionToken = null;
@@ -117,6 +122,7 @@ export class NetworkSession {
   applyServerSnapshot(serverSnapshot) {
     this.remotePlayerSystem.applyServerSnapshot(serverSnapshot);
     this.serverMetrics = serverSnapshot?.metrics ?? this.serverMetrics;
+    this.worldMetadata = serverSnapshot?.world?.metadata ?? this.worldMetadata;
 
     const blockEdits = serverSnapshot?.world?.blockEdits ?? [];
 
@@ -138,6 +144,17 @@ export class NetworkSession {
       action,
       sourcePlayerId: this.localPlayerId,
     });
+  }
+
+  queueStudioEdits(edits) {
+    this.pendingStudioEdits.push(...edits.map((edit) => ({
+      ...edit,
+      sourcePlayerId: this.localPlayerId,
+    })));
+  }
+
+  queueWorldPublish(publishRecord) {
+    this.pendingWorldPublishes.push(publishRecord);
   }
 
   consumeRemoteBlockEdits() {
@@ -168,6 +185,7 @@ export class NetworkSession {
     });
     this.transport.on?.(PACKET_TYPES.worldJoined, (packet) => {
       this.worldId = packet.payload?.world?.id ?? this.worldId;
+      this.worldMetadata = packet.payload?.world ?? this.worldMetadata;
       this.hostedWorlds = mergeWorldMetadata(this.hostedWorlds, packet.payload?.world);
       this.transport.setSessionContext?.({
         sessionToken: this.sessionToken,
@@ -177,6 +195,7 @@ export class NetworkSession {
     this.transport.on?.(PACKET_TYPES.reconnectAccepted, (packet) => {
       this.sessionToken = packet.payload?.sessionToken ?? this.sessionToken;
       this.worldId = packet.payload?.world?.id ?? this.worldId;
+      this.worldMetadata = packet.payload?.world ?? this.worldMetadata;
       this.transport.setSessionContext?.({
         sessionToken: this.sessionToken,
         worldId: this.worldId,
@@ -219,6 +238,8 @@ export class NetworkSession {
     if (!this.transport) {
       this.pendingBlockEdits = [];
       this.pendingCombatActions = [];
+      this.pendingStudioEdits = [];
+      this.pendingWorldPublishes = [];
       return;
     }
 
@@ -242,6 +263,25 @@ export class NetworkSession {
     }
 
     this.pendingCombatActions = [];
+
+    if (this.pendingStudioEdits.length > 0) {
+      this.transport.send(createStudioEditPacket({
+        worldId: this.worldId,
+        playerId: this.localPlayerId,
+        edits: this.pendingStudioEdits,
+      }));
+      this.pendingStudioEdits = [];
+    }
+
+    for (const publishRecord of this.pendingWorldPublishes) {
+      this.transport.send(createPublishWorldPacket({
+        worldId: this.worldId,
+        playerId: this.localPlayerId,
+        metadata: publishRecord,
+      }));
+    }
+
+    this.pendingWorldPublishes = [];
   }
 
   joinWorld(worldId) {
@@ -309,6 +349,8 @@ export class NetworkSession {
       syncErrors: transportMetrics.syncErrors,
       lastNetworkError: transportMetrics.lastError,
       pendingRemoteBlockEdits: this.pendingRemoteBlockEdits.length,
+      pendingStudioEdits: this.pendingStudioEdits.length,
+      pendingWorldPublishes: this.pendingWorldPublishes.length,
       lastReceivedSequence: this.lastReceivedSequence,
       deltaMode: this.lastReplicationBatch?.deltaMode ?? 'hash-delta-prep',
       lastUpdatedRemotePlayer: remotePlayerStats.lastUpdatedPlayerId,
@@ -319,6 +361,10 @@ export class NetworkSession {
 
   getSnapshot() {
     return this.snapshot;
+  }
+
+  getWorldMetadata() {
+    return this.worldMetadata;
   }
 }
 

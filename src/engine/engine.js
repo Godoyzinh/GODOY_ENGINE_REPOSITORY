@@ -19,6 +19,10 @@ import { SurvivalSystem } from '../player/survivalSystem.js';
 import { PhysicsWorld } from '../physics/physicsWorld.js';
 import { ProgressionSystem } from '../progression/progressionSystem.js';
 import { SaveSystem } from '../save/saveSystem.js';
+import { CreatorPermissionSystem } from '../studio/creatorPermissions.js';
+import { PrefabRegistry } from '../studio/prefabRegistry.js';
+import { StudioToolSystem } from '../studio/studioToolSystem.js';
+import { WorldPublishingSystem } from '../studio/worldPublishingSystem.js';
 import { DebugOverlay } from '../ui/debugOverlay.js';
 import { CombatHud } from '../ui/combatHud.js';
 import { HotbarUI } from '../ui/hotbarUI.js';
@@ -32,6 +36,7 @@ import { BLOCK_IDS } from '../world/blockTypes.js';
 
 const MAX_DELTA_TIME = 0.05;
 const PERSISTENCE_INTERVAL_SECONDS = 4;
+const LOCAL_PLAYER_ID = 'player-local';
 
 export class Engine {
   constructor({ rootElement }) {
@@ -48,6 +53,7 @@ export class Engine {
     });
     this.lightingSystem = new LightingSystem();
     this.saveSystem = new SaveSystem();
+    this.savedStudioState = this.saveSystem.loadStudioState();
     this.worldSimulationSystem = new WorldSimulationSystem({
       savedState: this.saveSystem.loadWorldSimulationState(),
     });
@@ -88,8 +94,19 @@ export class Engine {
     this.entitySystem.restoreEntities(this.saveSystem.loadEntityStates());
     this.ambientAudioSystem = new AmbientAudioSystem();
     this.networkSession = new NetworkSession({
-      localPlayerId: 'player-local',
+      localPlayerId: LOCAL_PLAYER_ID,
       nickname: 'Godoy Player',
+    });
+    this.creatorPermissionSystem = new CreatorPermissionSystem({
+      localPlayerId: LOCAL_PLAYER_ID,
+      savedState: this.savedStudioState.permissions,
+    });
+    this.prefabRegistry = new PrefabRegistry();
+    this.worldPublishingSystem = new WorldPublishingSystem({
+      saveSystem: this.saveSystem,
+      permissionSystem: this.creatorPermissionSystem,
+      worldSeed: this.terrainGenerator.worldSeed,
+      initialState: this.savedStudioState.publishing,
     });
     this.playerController = new PlayerController({
       camera: this.cameraSystem.camera,
@@ -107,6 +124,21 @@ export class Engine {
       onStructurePlaced: (structurePlacement) => this.saveSystem.recordStructurePlacement(structurePlacement),
       onBlocksPlaced: (blockEdits) => this.networkSession.queueBlockEdits(blockEdits),
       onBlockRemoved: (blockEdit) => this.networkSession.queueBlockEdits([blockEdit]),
+    });
+    this.studioToolSystem = new StudioToolSystem({
+      world: this.terrainGenerator,
+      inventorySystem: this.inventorySystem,
+      permissionSystem: this.creatorPermissionSystem,
+      prefabRegistry: this.prefabRegistry,
+      publishingSystem: this.worldPublishingSystem,
+      onStudioEdits: (edits) => this.networkSession.queueStudioEdits(edits),
+      onPrefabPlaced: (prefabPlacement) => this.handlePrefabPlaced(prefabPlacement),
+      onWorldPublished: (publishRecord) => this.networkSession.queueWorldPublish(publishRecord),
+      onStateChanged: (toolState) => this.saveSystem.saveStudioState({
+        toolState,
+        permissions: this.creatorPermissionSystem.getPersistenceState(),
+        publishing: this.worldPublishingSystem.getPersistenceState(),
+      }),
     });
     this.debugOverlay = new DebugOverlay({ rootElement });
     this.hotbarUI = new HotbarUI({
@@ -128,6 +160,7 @@ export class Engine {
     this.sceneSystem.add(this.entitySystem.group);
     this.sceneSystem.add(this.networkSession.group);
     this.sceneSystem.add(this.voxelInteractionSystem.group);
+    this.sceneSystem.add(this.studioToolSystem.group);
     this.sceneSystem.add(this.playerController.object);
 
     this.handleResize = this.handleResize.bind(this);
@@ -161,6 +194,7 @@ export class Engine {
     cancelAnimationFrame(this.animationFrameId);
     this.playerController.dispose();
     this.voxelInteractionSystem.dispose();
+    this.studioToolSystem.dispose();
     this.inventorySystem.dispose();
     this.hotbarUI.dispose();
     this.survivalHud.dispose();
@@ -249,6 +283,12 @@ export class Engine {
       targetPosition: this.playerController.cameraTarget,
     });
     this.voxelInteractionSystem.update(deltaTime);
+    this.creatorPermissionSystem.updateFromServerMetadata(this.networkSession.getWorldMetadata());
+    this.studioToolSystem.update({
+      targetBlock: this.voxelInteractionSystem.targetBlock,
+      terrainStats: this.terrainGenerator.stats,
+      networkSnapshot: this.networkSession.getSnapshot(),
+    });
     this.entitySystem.update({
       deltaTime,
       playerPosition: this.playerController.position,
@@ -302,6 +342,10 @@ export class Engine {
       progressionSnapshot: this.progressionSystem.getSnapshot(),
       furnaceSnapshot: this.furnaceSystem.getSnapshot(),
       buildingSnapshot: this.voxelInteractionSystem.getBuildingSnapshot(),
+      studioSnapshot: this.studioToolSystem.getSnapshot(),
+      prefabSnapshot: this.prefabRegistry.getSnapshot(),
+      publishingSnapshot: this.worldPublishingSystem.getSnapshot(),
+      permissionsSnapshot: this.creatorPermissionSystem.getSnapshot(),
       persistenceSnapshot: this.persistenceSnapshot,
       worldSimulationSnapshot,
       audioSnapshot: this.ambientAudioSystem.getSnapshot(),
@@ -359,6 +403,11 @@ export class Engine {
     }
   }
 
+  handlePrefabPlaced(prefabPlacement) {
+    this.saveSystem.recordPrefabPlacement(prefabPlacement);
+    this.saveSystem.recordStructurePlacement(prefabPlacement);
+  }
+
   updatePersistence(deltaTime) {
     this.persistenceSaveTimer += deltaTime;
 
@@ -374,6 +423,11 @@ export class Engine {
       worldSimulationState: {
         ...this.worldSimulationSystem.getPersistenceState(),
         dayNight: this.dayNightSystem.getPersistenceState(),
+      },
+      studioState: {
+        permissions: this.creatorPermissionSystem.getPersistenceState(),
+        publishing: this.worldPublishingSystem.getPersistenceState(),
+        toolState: this.studioToolSystem.getPersistenceState(),
       },
     });
     this.persistenceSnapshot = this.saveSystem.getPersistenceStats();
