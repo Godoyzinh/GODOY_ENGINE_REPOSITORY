@@ -47,12 +47,19 @@ export class DebugOverlay {
       ${this.createRow('Ambience', weatherSnapshot.ambience)}
       ${this.createRow('Audio', audioSnapshot.ambientLayer)}
       ${this.createRow('Net Mode', `${networkSnapshot.mode} ${networkSnapshot.connectionState}`)}
+      ${this.createRow('World', networkSnapshot.worldId ?? 'local')}
+      ${this.createRow('Hosted', networkSnapshot.hostedWorlds)}
+      ${this.createRow('Players', getServerMetric(networkSnapshot, 'connectedPlayers', networkSnapshot.remotePlayers))}
       ${this.createRow('Latency', `${Math.round(networkSnapshot.latencyMs)}ms`)}
       ${this.createRow('Packets/s', networkSnapshot.packetsPerSecond)}
       ${this.createRow('Net KB', `${formatKilobytes(networkSnapshot.bytesSent)}/${formatKilobytes(networkSnapshot.bytesReceived)}`)}
       ${this.createRow('Sync Errors', networkSnapshot.syncErrors)}
+      ${this.createRow('Snapshot Seq', networkSnapshot.lastReceivedSequence)}
+      ${this.createRow('Resends', getServerMetric(networkSnapshot, 'resendRequests', 0))}
+      ${this.createRow('Reconnects', getServerMetric(networkSnapshot, 'reconnects', 0))}
+      ${this.createRow('Buffer', networkSnapshot.serverMetrics?.snapshotBuffer?.bufferedSnapshots ?? 0)}
       ${this.createRow('Server Tick', `${networkSnapshot.serverTick}@${networkSnapshot.serverTickRate}`)}
-      ${this.createRow('Tick Cost', `${networkSnapshot.serverTickMs.toFixed(2)}ms`)}
+      ${this.createRow('Tick Cost', `${getServerMetric(networkSnapshot, 'lastTickDurationMs', networkSnapshot.serverTickMs).toFixed(2)}ms`)}
       ${this.createRow('Tier', progressionSnapshot.currentTier)}
       ${this.createRow('Next Tier', progressionSnapshot.nextTier)}
       ${this.createRow('Blueprint', `${buildingSnapshot.selectedBlueprintName} ${buildingSnapshot.rotationLabel}`)}
@@ -157,4 +164,8 @@ function formatCombatEvent(combatSnapshot) {
 
 function formatKilobytes(bytes) {
   return (bytes / 1024).toFixed(1);
+}
+
+function getServerMetric(networkSnapshot, key, fallback) {
+  return networkSnapshot.serverMetrics?.[key] ?? fallback;
 }

@@ -1,43 +1,39 @@
 import { createHash } from 'node:crypto';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
-import {
-  DEFAULT_SERVER_TICK_RATE,
-  MAX_BLOCK_EDITS_PER_PACKET,
-  PACKET_TYPES,
-} from '../src/network/networkConstants.js';
+import { PACKET_TYPES } from '../src/network/networkConstants.js';
 import {
   createErrorPacket,
   createPingPacket,
   createPongPacket,
+  createReconnectAcceptedPacket,
+  createReconciliationPacket,
   createServerSnapshotPacket,
   createWelcomePacket,
+  createWorldJoinedPacket,
+  createWorldListPacket,
   estimatePacketBytes,
   parsePacket,
   serializePacket,
 } from '../src/network/packetProtocol.js';
+import { PlayerRegistry } from './playerRegistry.js';
+import { loadServerSettings } from './serverSettings.js';
+import { WorldRegistry } from './worldRegistry.js';
 
-const DEFAULT_PORT = Number.parseInt(process.env.GODOY_MULTIPLAYER_PORT ?? '8787', 10);
-const MAX_WORLD_BLOCK_EDITS = 512;
-const MAX_COMBAT_EVENTS = 128;
 const CONNECTION_TIMEOUT_SECONDS = 30;
 
-export function createMultiplayerServer({
-  port = DEFAULT_PORT,
-  tickRate = DEFAULT_SERVER_TICK_RATE,
-  host = '127.0.0.1',
-} = {}) {
+export function createMultiplayerServer(options = {}) {
+  const settings = loadServerSettings(options);
   const clients = new Map();
-  const worldState = {
-    blockEdits: [],
-    combatEvents: [],
-    entitySnapshots: [],
-    chunkInterests: new Map(),
-  };
-  const metrics = createEmptyMetrics({ tickRate });
+  const playerRegistry = new PlayerRegistry({
+    sessionRecoverySeconds: settings.sessionRecoverySeconds,
+  });
+  const worldRegistry = new WorldRegistry({ settings });
+  const metrics = createEmptyMetrics({ tickRate: settings.tickRate });
   let nextClientNumber = 1;
   let server = null;
   let tickInterval = null;
+  let lastTickAt = now();
 
   function start() {
     if (server) {
@@ -48,8 +44,9 @@ export function createMultiplayerServer({
     server.on('upgrade', handleUpgrade);
 
     return new Promise((resolve) => {
-      server.listen(port, host, () => {
-        tickInterval = setInterval(runServerTick, 1000 / tickRate);
+      server.listen(settings.port, settings.host, () => {
+        lastTickAt = now();
+        tickInterval = setInterval(runServerTick, 1000 / settings.tickRate);
         resolve(getAddress());
       });
     });
@@ -63,6 +60,7 @@ export function createMultiplayerServer({
     clients.clear();
     clearInterval(tickInterval);
     tickInterval = null;
+    worldRegistry.persistAll();
 
     return new Promise((resolve) => {
       if (!server) {
@@ -79,17 +77,24 @@ export function createMultiplayerServer({
 
   function handleHttpRequest(request, response) {
     if (request.url === '/health') {
-      const body = JSON.stringify({
+      respondJson(response, {
         ok: true,
         clients: clients.size,
         tick: metrics.serverTick,
+        worlds: worldRegistry.listWorlds({ playerRegistry }).length,
       });
+      return;
+    }
 
-      response.writeHead(200, {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
+    if (request.url === '/worlds') {
+      respondJson(response, {
+        worlds: worldRegistry.listWorlds({ playerRegistry }),
       });
-      response.end(body);
+      return;
+    }
+
+    if (request.url === '/admin/status') {
+      respondJson(response, getAdminStatus());
       return;
     }
 
@@ -127,11 +132,12 @@ export function createMultiplayerServer({
       connectionId,
       playerId: connectionId,
       nickname: connectionId,
+      sessionToken: null,
+      worldId: settings.defaultWorldId,
       socket,
-      playerSnapshot: null,
       connectedAt: now(),
       lastSeenAt: now(),
-      chunkInterest: [],
+      lastAckSequence: 0,
       packetsReceived: 0,
       packetsSent: 0,
     };
@@ -146,7 +152,9 @@ export function createMultiplayerServer({
   }
 
   function handleSocketData(client, buffer) {
-    for (const message of decodeWebSocketFrames(buffer)) {
+    const frameBatch = decodeWebSocketFrames(buffer);
+
+    for (const message of frameBatch.messages) {
       try {
         const packet = parsePacket(message);
 
@@ -154,6 +162,7 @@ export function createMultiplayerServer({
         client.packetsReceived += 1;
         metrics.packetsReceived += 1;
         metrics.bytesReceived += Buffer.byteLength(message);
+        metrics.lastPacketType = packet.type;
         routePacket(client, packet);
       } catch (error) {
         metrics.syncErrors += 1;
@@ -164,11 +173,20 @@ export function createMultiplayerServer({
         }));
       }
     }
+
+    if (frameBatch.hasCloseFrame) {
+      handleDisconnect(client);
+      client.socket.end();
+    }
   }
 
   function routePacket(client, packet) {
     if (packet.type === PACKET_TYPES.hello) {
       handleHello(client, packet);
+    } else if (packet.type === PACKET_TYPES.joinWorld) {
+      handleJoinWorld(client, packet.payload?.worldId);
+    } else if (packet.type === PACKET_TYPES.reconnect) {
+      handleReconnect(client, packet);
     } else if (packet.type === PACKET_TYPES.playerSnapshot) {
       handlePlayerSnapshot(client, packet);
     } else if (packet.type === PACKET_TYPES.blockEdit) {
@@ -177,6 +195,10 @@ export function createMultiplayerServer({
       handleCombatAction(client, packet);
     } else if (packet.type === PACKET_TYPES.chunkInterest) {
       handleChunkInterest(client, packet);
+    } else if (packet.type === PACKET_TYPES.ack) {
+      handleAck(client, packet);
+    } else if (packet.type === PACKET_TYPES.resendRequest) {
+      handleResendRequest(client, packet);
     } else if (packet.type === PACKET_TYPES.ping) {
       sendPacket(client, createPongPacket(packet));
     } else if (packet.type === PACKET_TYPES.pong) {
@@ -185,23 +207,93 @@ export function createMultiplayerServer({
   }
 
   function handleHello(client, packet) {
-    client.playerId = packet.payload?.playerId ?? client.connectionId;
-    client.nickname = packet.payload?.nickname ?? client.playerId;
-    sendPacket(client, createWelcomePacket({
-      playerId: client.playerId,
-      serverTickRate: tickRate,
-      clientCount: clients.size,
-    }));
-    broadcastExcept(client.connectionId, {
-      type: PACKET_TYPES.playerJoined,
-      version: 1,
-      sentAt: now(),
-      payload: {
-        playerId: client.playerId,
-        nickname: client.nickname,
-      },
-      meta: {},
+    const targetWorldId = packet.payload?.worldId ?? settings.defaultWorldId;
+    const worldRuntime = worldRegistry.ensureWorld(targetWorldId);
+    const { player, recovered } = playerRegistry.registerConnection({
+      connectionId: client.connectionId,
+      playerId: packet.payload?.playerId ?? client.connectionId,
+      nickname: packet.payload?.nickname ?? client.connectionId,
+      sessionToken: packet.payload?.sessionToken,
+      worldId: worldRuntime.metadata.id,
     });
+
+    applyPlayerToClient(client, player);
+    sendPacket(client, createWelcomePacket({
+      playerId: player.playerId,
+      serverTickRate: settings.tickRate,
+      clientCount: clients.size,
+      sessionToken: player.sessionToken,
+      worldId: worldRuntime.metadata.id,
+    }));
+    sendPacket(client, createWorldListPacket({
+      worlds: worldRegistry.listWorlds({ playerRegistry }),
+    }));
+    sendPacket(client, createWorldJoinedPacket({
+      world: worldRuntime.getMetadata({
+        connectedPlayers: playerRegistry.getConnectedPlayersForWorld(worldRuntime.metadata.id).length,
+      }),
+      playerId: player.playerId,
+      reconnect: recovered,
+    }));
+
+    if (recovered) {
+      sendPacket(client, createReconnectAcceptedPacket({
+        playerId: player.playerId,
+        sessionToken: player.sessionToken,
+        world: worldRuntime.getMetadata(),
+        recovered: true,
+      }));
+    } else {
+      hydratePlayerFromWorld(player, worldRuntime);
+      broadcastWorldExcept(client, {
+        type: PACKET_TYPES.playerJoined,
+        version: 1,
+        sentAt: now(),
+        payload: {
+          playerId: player.playerId,
+          nickname: player.nickname,
+          worldId: worldRuntime.metadata.id,
+        },
+        meta: {},
+      });
+    }
+  }
+
+  function handleJoinWorld(client, worldId = settings.defaultWorldId) {
+    const worldRuntime = worldRegistry.ensureWorld(worldId);
+    const player = playerRegistry.getPlayer(client.playerId);
+
+    if (player) {
+      player.worldId = worldRuntime.metadata.id;
+    }
+
+    client.worldId = worldRuntime.metadata.id;
+    sendPacket(client, createWorldJoinedPacket({
+      world: worldRuntime.getMetadata({
+        connectedPlayers: playerRegistry.getConnectedPlayersForWorld(worldRuntime.metadata.id).length,
+      }),
+      playerId: client.playerId,
+    }));
+  }
+
+  function handleReconnect(client, packet) {
+    const worldRuntime = worldRegistry.ensureWorld(packet.payload?.worldId ?? settings.defaultWorldId);
+    const { player, recovered } = playerRegistry.registerConnection({
+      connectionId: client.connectionId,
+      playerId: packet.payload?.playerId ?? client.connectionId,
+      nickname: client.nickname,
+      sessionToken: packet.payload?.sessionToken,
+      worldId: worldRuntime.metadata.id,
+    });
+
+    applyPlayerToClient(client, player);
+    hydratePlayerFromWorld(player, worldRuntime);
+    sendPacket(client, createReconnectAcceptedPacket({
+      playerId: player.playerId,
+      sessionToken: player.sessionToken,
+      world: worldRuntime.getMetadata(),
+      recovered,
+    }));
   }
 
   function handlePlayerSnapshot(client, packet) {
@@ -211,91 +303,146 @@ export function createMultiplayerServer({
       return;
     }
 
-    client.playerSnapshot = {
+    const normalizedSnapshot = {
       ...playerSnapshot,
       playerId: client.playerId,
       nickname: client.nickname,
+      worldId: client.worldId,
       serverReceivedAt: now(),
     };
+
+    playerRegistry.updatePlayerSnapshot(client.playerId, normalizedSnapshot);
+    worldRegistry.getWorld(client.worldId)?.updatePlayerSnapshot(client.playerId, normalizedSnapshot);
   }
 
   function handleBlockEdit(client, packet) {
-    const edits = (packet.payload?.edits ?? [])
-      .slice(0, MAX_BLOCK_EDITS_PER_PACKET)
-      .map((edit) => ({
-        ...edit,
-        sourcePlayerId: client.playerId,
-        serverTick: metrics.serverTick,
-      }));
+    const worldRuntime = worldRegistry.getWorld(client.worldId);
 
-    worldState.blockEdits.push(...edits);
-    worldState.blockEdits = worldState.blockEdits.slice(-MAX_WORLD_BLOCK_EDITS);
+    if (!worldRuntime) {
+      return;
+    }
+
+    const edits = (packet.payload?.edits ?? []).map((edit) => ({
+      ...edit,
+      sourcePlayerId: client.playerId,
+    }));
+
+    worldRuntime.applyBlockEdits(edits);
     metrics.blockEditsReceived += edits.length;
   }
 
   function handleCombatAction(client, packet) {
-    worldState.combatEvents.push({
+    const worldRuntime = worldRegistry.getWorld(client.worldId);
+
+    if (!worldRuntime) {
+      return;
+    }
+
+    worldRuntime.applyCombatEvent({
       ...packet.payload,
       sourcePlayerId: client.playerId,
-      serverTick: metrics.serverTick,
     });
-    worldState.combatEvents = worldState.combatEvents.slice(-MAX_COMBAT_EVENTS);
     metrics.combatActionsReceived += 1;
   }
 
   function handleChunkInterest(client, packet) {
-    client.chunkInterest = packet.payload?.loadedChunkKeys ?? [];
-    worldState.chunkInterests.set(client.playerId, client.chunkInterest);
+    const worldRuntime = worldRegistry.getWorld(client.worldId);
+
+    if (!worldRuntime) {
+      return;
+    }
+
+    worldRuntime.updateChunkInterest(client.playerId, packet.payload?.loadedChunkKeys ?? []);
+  }
+
+  function handleAck(client, packet) {
+    client.lastAckSequence = Math.max(client.lastAckSequence, packet.payload?.sequence ?? 0);
+    metrics.acksReceived += 1;
+  }
+
+  function handleResendRequest(client, packet) {
+    const worldRuntime = worldRegistry.getWorld(packet.payload?.worldId ?? client.worldId);
+
+    if (!worldRuntime) {
+      return;
+    }
+
+    const snapshots = worldRuntime.getBufferedSnapshots(
+      packet.payload?.fromSequence ?? 0,
+      packet.payload?.toSequence ?? packet.payload?.fromSequence ?? 0,
+      { playerId: client.playerId },
+    );
+
+    metrics.resendRequests += 1;
+
+    if (snapshots.length === 0) {
+      sendPacket(client, createReconciliationPacket({
+        worldId: worldRuntime.metadata.id,
+        authoritativeState: worldRuntime.createWorldPayload({ playerId: client.playerId }),
+        reason: 'snapshot-buffer-miss',
+      }));
+      return;
+    }
+
+    for (const snapshot of snapshots) {
+      sendPacket(client, snapshot.packet);
+    }
   }
 
   function runServerTick() {
     const tickStartedAt = now();
+    const deltaTime = Math.max(0, (tickStartedAt - lastTickAt) / 1000);
 
+    lastTickAt = tickStartedAt;
     metrics.serverTick += 1;
     metrics.activeConnections = clients.size;
     metrics.lastTickDurationMs = 0;
+    worldRegistry.update(deltaTime);
+
+    const expiredPlayers = playerRegistry.cleanupExpiredSessions();
+
+    for (const player of expiredPlayers) {
+      const worldRuntime = worldRegistry.getWorld(player.worldId);
+      worldRuntime?.removePlayerInterest(player.playerId);
+    }
 
     for (const client of clients.values()) {
       if ((now() - client.lastSeenAt) / 1000 > CONNECTION_TIMEOUT_SECONDS) {
+        metrics.timeoutRecoveries += 1;
         client.socket.destroy();
         continue;
       }
 
       sendPacket(client, createPingPacket(metrics.serverTick));
-      sendPacket(client, createServerSnapshotPacket({
-        tick: metrics.serverTick,
-        players: getPlayerSnapshotsForClient(client),
-        world: createWorldPayload(client),
-        metrics: createPublicMetrics(),
-      }));
+      sendServerSnapshot(client);
     }
 
     metrics.lastTickDurationMs = now() - tickStartedAt;
   }
 
-  function getPlayerSnapshotsForClient(client) {
-    return [...clients.values()]
-      .filter((candidateClient) => candidateClient.playerSnapshot && candidateClient.connectionId !== client.connectionId)
-      .map((candidateClient) => candidateClient.playerSnapshot);
-  }
+  function sendServerSnapshot(client) {
+    const worldRuntime = worldRegistry.getWorld(client.worldId);
 
-  function createWorldPayload(client) {
-    const interestedChunks = new Set(client.chunkInterest);
-    const relevantBlockEdits = worldState.blockEdits.filter((edit) => (
-      edit.sourcePlayerId !== client.playerId &&
-      (interestedChunks.size === 0 || !edit.chunkKey || interestedChunks.has(edit.chunkKey))
-    ));
+    if (!worldRuntime) {
+      return;
+    }
 
-    return {
-      blockEdits: relevantBlockEdits,
-      combatEvents: worldState.combatEvents.filter((event) => event.sourcePlayerId !== client.playerId),
-      entitySnapshots: worldState.entitySnapshots,
-      chunkSync: {
-        requestedChunks: client.chunkInterest.length,
-        syncedChunks: client.chunkInterest.length,
-        deltaCompression: 'hash-delta-prep',
-      },
-    };
+    const sequence = metrics.serverTick;
+    const packet = createServerSnapshotPacket({
+      tick: metrics.serverTick,
+      sequence,
+      players: playerRegistry.getPlayerSnapshotsForWorld(worldRuntime.metadata.id, client.playerId),
+      world: worldRuntime.createWorldPayload({ playerId: client.playerId }),
+      metrics: createPublicMetrics(worldRuntime),
+    });
+
+    worldRuntime.bufferSnapshot({
+      sequence,
+      packet,
+      playerId: client.playerId,
+      sentAt: now(),
+    });
+    sendPacket(client, packet);
   }
 
   function handleDisconnect(client) {
@@ -304,16 +451,17 @@ export function createMultiplayerServer({
     }
 
     clients.delete(client.connectionId);
-    worldState.chunkInterests.delete(client.playerId);
+    playerRegistry.markDisconnected(client.playerId);
     metrics.activeConnections = clients.size;
     metrics.disconnects += 1;
-    broadcastAll({
+    broadcastWorldExcept(client, {
       type: PACKET_TYPES.playerLeft,
       version: 1,
       sentAt: now(),
       payload: {
         playerId: client.playerId,
         nickname: client.nickname,
+        recoverable: true,
       },
       meta: {},
     });
@@ -336,42 +484,81 @@ export function createMultiplayerServer({
     return true;
   }
 
-  function broadcastAll(packet) {
+  function broadcastWorldExcept(sourceClient, packet) {
     for (const client of clients.values()) {
-      sendPacket(client, packet);
-    }
-  }
-
-  function broadcastExcept(connectionId, packet) {
-    for (const client of clients.values()) {
-      if (client.connectionId !== connectionId) {
+      if (client.connectionId !== sourceClient.connectionId && client.worldId === sourceClient.worldId) {
         sendPacket(client, packet);
       }
     }
   }
 
-  function createPublicMetrics() {
+  function applyPlayerToClient(client, player) {
+    client.playerId = player.playerId;
+    client.nickname = player.nickname;
+    client.sessionToken = player.sessionToken;
+    client.worldId = player.worldId;
+  }
+
+  function hydratePlayerFromWorld(player, worldRuntime) {
+    const persistedPlayer = worldRuntime.getPlayerSnapshot(player.playerId);
+
+    if (!persistedPlayer?.snapshot || player.lastSnapshot) {
+      return;
+    }
+
+    playerRegistry.updatePlayerSnapshot(player.playerId, persistedPlayer.snapshot);
+  }
+
+  function createPublicMetrics(worldRuntime = null) {
+    const playerStats = playerRegistry.getStats();
+    const worldStats = worldRegistry.getStats({ playerRegistry });
+    const snapshotStats = worldRuntime?.snapshotBuffer.getStats() ?? {};
+
     return {
       serverTick: metrics.serverTick,
-      tickRate,
+      tickRate: settings.tickRate,
       activeConnections: clients.size,
+      connectedPlayers: playerStats.connectedPlayers,
+      hostedWorlds: worldStats.hostedWorlds,
       packetsSent: metrics.packetsSent,
       packetsReceived: metrics.packetsReceived,
       bytesSent: metrics.bytesSent,
       bytesReceived: metrics.bytesReceived,
       blockEditsReceived: metrics.blockEditsReceived,
       combatActionsReceived: metrics.combatActionsReceived,
+      acksReceived: metrics.acksReceived,
+      resendRequests: metrics.resendRequests,
+      timeoutRecoveries: metrics.timeoutRecoveries,
+      reconnects: playerStats.reconnects,
+      reconnectMisses: playerStats.reconnectMisses,
       syncErrors: metrics.syncErrors,
       lastTickDurationMs: metrics.lastTickDurationMs,
+      snapshotBuffer: snapshotStats,
+    };
+  }
+
+  function getAdminStatus() {
+    return {
+      settings: {
+        host: settings.host,
+        port: getAddress().port,
+        tickRate: settings.tickRate,
+        defaultWorldId: settings.defaultWorldId,
+        persistWorlds: settings.persistWorlds,
+      },
+      metrics: {
+        ...createPublicMetrics(),
+        activeConnections: clients.size,
+      },
+      players: playerRegistry.getStats(),
+      worlds: worldRegistry.listWorlds({ playerRegistry }),
+      worldStats: worldRegistry.getStats({ playerRegistry }),
+      worldSummaries: worldRegistry.getWorldSummaries({ playerRegistry }),
     };
   }
 
   function getMetrics() {
-    return {
-      ...metrics,
-      activeConnections: clients.size,
-      port: getAddress().port,
-    };
+    return getAdminStatus().metrics;
   }
 
   function getAddress() {
@@ -379,8 +566,8 @@ export function createMultiplayerServer({
 
     if (!address || typeof address === 'string') {
       return {
-        host,
-        port,
+        host: settings.host,
+        port: settings.port,
       };
     }
 
@@ -395,11 +582,23 @@ export function createMultiplayerServer({
     stop,
     getMetrics,
     getAddress,
+    getAdminStatus,
   };
+}
+
+function respondJson(response, payload) {
+  const body = JSON.stringify(payload);
+
+  response.writeHead(200, {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(body),
+  });
+  response.end(body);
 }
 
 function decodeWebSocketFrames(buffer) {
   const messages = [];
+  let hasCloseFrame = false;
   let offset = 0;
 
   while (offset + 2 <= buffer.length) {
@@ -426,6 +625,7 @@ function decodeWebSocketFrames(buffer) {
     offset += payloadLength;
 
     if (opcode === 0x8) {
+      hasCloseFrame = true;
       continue;
     }
 
@@ -442,12 +642,15 @@ function decodeWebSocketFrames(buffer) {
     messages.push(decodedPayload.toString('utf8'));
   }
 
-  return messages;
+  return {
+    messages,
+    hasCloseFrame,
+  };
 }
 
 function encodeWebSocketFrame(message) {
   const payload = Buffer.from(message, 'utf8');
-  const headerLength = payload.length < 126 ? 2 : 4;
+  const headerLength = payload.length < 126 ? 2 : payload.length <= 65535 ? 4 : 10;
   const frame = Buffer.alloc(headerLength + payload.length);
 
   frame[0] = 0x81;
@@ -455,10 +658,14 @@ function encodeWebSocketFrame(message) {
   if (payload.length < 126) {
     frame[1] = payload.length;
     payload.copy(frame, 2);
-  } else {
+  } else if (payload.length <= 65535) {
     frame[1] = 126;
     frame.writeUInt16BE(payload.length, 2);
     payload.copy(frame, 4);
+  } else {
+    frame[1] = 127;
+    frame.writeBigUInt64BE(BigInt(payload.length), 2);
+    payload.copy(frame, 10);
   }
 
   return frame;
@@ -477,6 +684,11 @@ function createEmptyMetrics({ tickRate }) {
     bytesReceived: 0,
     blockEditsReceived: 0,
     combatActionsReceived: 0,
+    acksReceived: 0,
+    resendRequests: 0,
+    timeoutRecoveries: 0,
+    reconnects: 0,
+    reconnectMisses: 0,
     syncErrors: 0,
     lastError: 'none',
     lastPacketType: 'none',
@@ -496,5 +708,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const multiplayerServer = createMultiplayerServer();
   const address = await multiplayerServer.start();
 
-  process.stdout.write(`Godoy multiplayer server listening on ws://${address.host}:${address.port}\n`);
+  process.stdout.write(`Godoy dedicated server listening on ws://${address.host}:${address.port}\n`);
 }

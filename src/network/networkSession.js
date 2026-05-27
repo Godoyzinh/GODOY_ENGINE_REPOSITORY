@@ -6,9 +6,12 @@ import {
 } from './networkConstants.js';
 import {
   createBlockEditPacket,
+  createAckPacket,
   createChunkInterestPacket,
   createCombatActionPacket,
+  createResendRequestPacket,
   createPlayerSnapshotPacket,
+  createJoinWorldPacket,
 } from './packetProtocol.js';
 import { RemotePlayerSystem } from './remotePlayerSystem.js';
 import { ServerTickSystem } from './serverTickSystem.js';
@@ -50,6 +53,10 @@ export class NetworkSession {
     this.pendingRemoteBlockEdits = [];
     this.lastChunkInterestKey = '';
     this.serverMetrics = null;
+    this.sessionToken = null;
+    this.worldId = null;
+    this.hostedWorlds = [];
+    this.lastReceivedSequence = 0;
     this.snapshot = this.createSnapshot();
     this.bindTransport();
   }
@@ -144,15 +151,61 @@ export class NetworkSession {
 
     this.transport.on?.(PACKET_TYPES.welcome, (packet) => {
       this.connected = true;
+      this.sessionToken = packet.payload?.sessionToken ?? this.sessionToken;
+      this.worldId = packet.payload?.worldId ?? this.worldId;
+      this.transport.setSessionContext?.({
+        sessionToken: this.sessionToken,
+        worldId: this.worldId,
+      });
       this.serverMetrics = {
         ...(this.serverMetrics ?? {}),
         serverTickRate: packet.payload?.serverTickRate,
         clientCount: packet.payload?.clientCount,
       };
     });
+    this.transport.on?.(PACKET_TYPES.worldList, (packet) => {
+      this.hostedWorlds = packet.payload?.worlds ?? [];
+    });
+    this.transport.on?.(PACKET_TYPES.worldJoined, (packet) => {
+      this.worldId = packet.payload?.world?.id ?? this.worldId;
+      this.hostedWorlds = mergeWorldMetadata(this.hostedWorlds, packet.payload?.world);
+      this.transport.setSessionContext?.({
+        sessionToken: this.sessionToken,
+        worldId: this.worldId,
+      });
+    });
+    this.transport.on?.(PACKET_TYPES.reconnectAccepted, (packet) => {
+      this.sessionToken = packet.payload?.sessionToken ?? this.sessionToken;
+      this.worldId = packet.payload?.world?.id ?? this.worldId;
+      this.transport.setSessionContext?.({
+        sessionToken: this.sessionToken,
+        worldId: this.worldId,
+      });
+    });
     this.transport.on?.(PACKET_TYPES.serverSnapshot, (packet) => {
       this.connected = true;
+      const incomingSequence = packet.payload?.sequence ?? this.lastReceivedSequence;
+
+      if (this.lastReceivedSequence > 0 && incomingSequence > this.lastReceivedSequence + 1) {
+        this.transport.send?.(createResendRequestPacket({
+          fromSequence: this.lastReceivedSequence + 1,
+          toSequence: incomingSequence - 1,
+          worldId: this.worldId,
+        }));
+      }
+
+      this.lastReceivedSequence = incomingSequence;
+      this.transport.send?.(createAckPacket({
+        sequence: this.lastReceivedSequence,
+        worldId: this.worldId,
+      }));
       this.applyServerSnapshot(packet.payload);
+    });
+    this.transport.on?.(PACKET_TYPES.reconciliation, (packet) => {
+      this.applyServerSnapshot({
+        world: packet.payload?.authoritativeState,
+        metrics: this.serverMetrics,
+      });
     });
     this.transport.on?.(PACKET_TYPES.playerLeft, (packet) => {
       this.remotePlayerSystem.removeRemotePlayer?.(packet.payload?.playerId);
@@ -191,6 +244,18 @@ export class NetworkSession {
     this.pendingCombatActions = [];
   }
 
+  joinWorld(worldId) {
+    this.worldId = worldId;
+
+    if (this.transport) {
+      this.transport.send(createJoinWorldPacket({
+        worldId,
+        playerId: this.localPlayerId,
+        nickname: this.nickname,
+      }));
+    }
+  }
+
   sendChunkInterestIfChanged(loadedChunkKeys) {
     const chunkInterestKey = loadedChunkKeys.join('|');
 
@@ -220,15 +285,18 @@ export class NetworkSession {
       latencyMs: transportMetrics.latencyMs ?? this.latencyMs,
       localPlayerId: this.localPlayerId,
       nickname: this.nickname,
+      sessionToken: this.sessionToken,
+      worldId: this.worldId,
+      hostedWorlds: this.hostedWorlds.length,
       serverUrl: transportMetrics.url,
       connectionState: transportMetrics.connectionState,
       remotePlayers: remotePlayerStats.remotePlayers,
       replicatedPlayerStates: remotePlayerStats.replicatedPlayerStates,
       replicatedEntities: entitySnapshots.length,
       syncedChunks: chunkSnapshot?.syncedChunks ?? 0,
-      serverTick: serverTickMetrics.serverTick,
-      serverTickRate: serverTickMetrics.tickRate,
-      serverTickMs: serverTickMetrics.lastTickDurationMs,
+      serverTick: this.serverMetrics?.serverTick ?? serverTickMetrics.serverTick,
+      serverTickRate: this.serverMetrics?.tickRate ?? serverTickMetrics.tickRate,
+      serverTickMs: this.serverMetrics?.lastTickDurationMs ?? serverTickMetrics.lastTickDurationMs,
       sentBatches: serverTickMetrics.sentBatches,
       lastBatchEntityCount: serverTickMetrics.lastBatchEntityCount,
       lastBatchChunkCount: serverTickMetrics.lastBatchChunkCount,
@@ -241,6 +309,7 @@ export class NetworkSession {
       syncErrors: transportMetrics.syncErrors,
       lastNetworkError: transportMetrics.lastError,
       pendingRemoteBlockEdits: this.pendingRemoteBlockEdits.length,
+      lastReceivedSequence: this.lastReceivedSequence,
       deltaMode: this.lastReplicationBatch?.deltaMode ?? 'hash-delta-prep',
       lastUpdatedRemotePlayer: remotePlayerStats.lastUpdatedPlayerId,
       ownershipMode: 'server-authoritative',
@@ -251,6 +320,17 @@ export class NetworkSession {
   getSnapshot() {
     return this.snapshot;
   }
+}
+
+function mergeWorldMetadata(worlds, world) {
+  if (!world) {
+    return worlds;
+  }
+
+  const nextWorlds = worlds.filter((candidateWorld) => candidateWorld.id !== world.id);
+
+  nextWorlds.push(world);
+  return nextWorlds;
 }
 
 function createOptionalTransport({ mode, serverUrl, localPlayerId, nickname }) {

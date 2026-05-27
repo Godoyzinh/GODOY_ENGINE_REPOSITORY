@@ -1,4 +1,4 @@
-import { MAX_BLOCK_EDITS_PER_PACKET, PACKET_TYPES } from './networkConstants.js';
+import { DEFAULT_WORLD_ID, MAX_BLOCK_EDITS_PER_PACKET, PACKET_TYPES } from './networkConstants.js';
 
 export const PROTOCOL_VERSION = 1;
 
@@ -12,10 +12,12 @@ export function createPacket(type, payload = {}, meta = {}) {
   };
 }
 
-export function createHelloPacket({ playerId, nickname }) {
+export function createHelloPacket({ playerId, nickname, sessionToken = null, worldId = DEFAULT_WORLD_ID }) {
   return createPacket(PACKET_TYPES.hello, {
     playerId,
     nickname,
+    sessionToken,
+    worldId,
     capabilities: {
       snapshots: true,
       blockEdits: true,
@@ -26,12 +28,53 @@ export function createHelloPacket({ playerId, nickname }) {
   });
 }
 
-export function createWelcomePacket({ playerId, serverTickRate, clientCount }) {
+export function createWelcomePacket({ playerId, serverTickRate, clientCount, sessionToken, worldId }) {
   return createPacket(PACKET_TYPES.welcome, {
     playerId,
     serverTickRate,
     clientCount,
+    sessionToken,
+    worldId,
     authority: 'server',
+  });
+}
+
+export function createWorldListPacket({ worlds }) {
+  return createPacket(PACKET_TYPES.worldList, {
+    worlds,
+  });
+}
+
+export function createJoinWorldPacket({ worldId = DEFAULT_WORLD_ID, playerId, nickname }) {
+  return createPacket(PACKET_TYPES.joinWorld, {
+    worldId,
+    playerId,
+    nickname,
+  });
+}
+
+export function createWorldJoinedPacket({ world, playerId, reconnect = false }) {
+  return createPacket(PACKET_TYPES.worldJoined, {
+    world,
+    playerId,
+    reconnect,
+  });
+}
+
+export function createReconnectPacket({ playerId, sessionToken, worldId = DEFAULT_WORLD_ID }) {
+  return createPacket(PACKET_TYPES.reconnect, {
+    playerId,
+    sessionToken,
+    worldId,
+  });
+}
+
+export function createReconnectAcceptedPacket({ playerId, sessionToken, world, recovered }) {
+  return createPacket(PACKET_TYPES.reconnectAccepted, {
+    playerId,
+    sessionToken,
+    world,
+    recovered,
   });
 }
 
@@ -46,9 +89,11 @@ export function createServerSnapshotPacket({
   players,
   world,
   metrics,
+  sequence = tick,
 }) {
   return createPacket(PACKET_TYPES.serverSnapshot, {
     tick,
+    sequence,
     players,
     world,
     metrics,
@@ -75,6 +120,29 @@ export function createChunkInterestPacket({ playerId, loadedChunkKeys }) {
   return createPacket(PACKET_TYPES.chunkInterest, {
     playerId,
     loadedChunkKeys,
+  });
+}
+
+export function createAckPacket({ sequence, worldId = DEFAULT_WORLD_ID }) {
+  return createPacket(PACKET_TYPES.ack, {
+    sequence,
+    worldId,
+  });
+}
+
+export function createResendRequestPacket({ fromSequence, toSequence, worldId = DEFAULT_WORLD_ID }) {
+  return createPacket(PACKET_TYPES.resendRequest, {
+    fromSequence,
+    toSequence,
+    worldId,
+  });
+}
+
+export function createReconciliationPacket({ worldId, authoritativeState, reason }) {
+  return createPacket(PACKET_TYPES.reconciliation, {
+    worldId,
+    authoritativeState,
+    reason,
   });
 }
 
@@ -139,6 +207,8 @@ function normalizeBlockEdit(edit) {
     worldZ: Math.floor(edit.worldZ),
     blockId: edit.blockId,
     action: edit.action ?? 'set',
+    chunkKey: edit.chunkKey ?? null,
+    sourcePlayerId: edit.sourcePlayerId ?? null,
   };
 }
 

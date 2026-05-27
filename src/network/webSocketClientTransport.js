@@ -16,11 +16,15 @@ export class WebSocketClientTransport {
     url = DEFAULT_MULTIPLAYER_URL,
     playerId,
     nickname,
+    sessionToken = null,
+    worldId = null,
     autoConnect = true,
   }) {
     this.url = url;
     this.playerId = playerId;
     this.nickname = nickname;
+    this.sessionToken = sessionToken;
+    this.worldId = worldId;
     this.socket = null;
     this.listeners = new Map();
     this.outboundQueue = [];
@@ -58,6 +62,11 @@ export class WebSocketClientTransport {
     this.socket.close();
     this.socket = null;
     this.metrics.connectionState = 'disconnected';
+  }
+
+  setSessionContext({ sessionToken = this.sessionToken, worldId = this.worldId } = {}) {
+    this.sessionToken = sessionToken;
+    this.worldId = worldId;
   }
 
   on(packetType, listener) {
@@ -123,6 +132,8 @@ export class WebSocketClientTransport {
     this.send(createHelloPacket({
       playerId: this.playerId,
       nickname: this.nickname,
+      sessionToken: this.sessionToken,
+      worldId: this.worldId,
     }));
     this.flushQueue();
   }
