@@ -21,6 +21,8 @@ export class VoxelInteractionSystem {
     toolSystem,
     onBlockMined = null,
     onStructurePlaced = null,
+    onBlocksPlaced = null,
+    onBlockRemoved = null,
   }) {
     this.camera = camera;
     this.domElement = domElement;
@@ -30,6 +32,8 @@ export class VoxelInteractionSystem {
     this.toolSystem = toolSystem;
     this.onBlockMined = onBlockMined;
     this.onStructurePlaced = onStructurePlaced;
+    this.onBlocksPlaced = onBlocksPlaced;
+    this.onBlockRemoved = onBlockRemoved;
     this.miningSystem = new MiningSystem({ toolSystem });
     this.blueprintSystem = new BlueprintSystem();
     this.feedback = new VoxelInteractionFeedback();
@@ -122,6 +126,13 @@ export class VoxelInteractionSystem {
     }
 
     this.world.setBlockAtWorldPosition(target.worldX, target.y, target.worldZ, BLOCK_IDS.air);
+    this.onBlockRemoved?.({
+      worldX: target.worldX,
+      y: target.y,
+      worldZ: target.worldZ,
+      blockId: BLOCK_IDS.air,
+      action: 'destroy',
+    });
     this.lastAction = `Destroyed ${target.worldX},${target.y},${target.worldZ}`;
   }
 
@@ -180,6 +191,11 @@ export class VoxelInteractionSystem {
       }));
     }
 
+    this.onBlocksPlaced?.(placementPlan.blocks.map((placement) => ({
+      ...placement,
+      action: 'place',
+    })));
+
     const blockDefinition = getBlockDefinition(selectedBlockId);
     this.lastAction = placementPlan.blocks.length === 1
       ? `Placed ${blockDefinition.name}`
@@ -229,6 +245,14 @@ export class VoxelInteractionSystem {
     if (dropStack !== null) {
       this.handleBlockDrop({ targetBlock, dropStack, blockDefinition });
     }
+
+    this.onBlockRemoved?.({
+      worldX: targetBlock.worldX,
+      y: targetBlock.y,
+      worldZ: targetBlock.worldZ,
+      blockId: BLOCK_IDS.air,
+      action: 'destroy',
+    });
 
     this.targetBlock = null;
     this.lastAction = `Mined ${blockDefinition.name}`;

@@ -1,7 +1,15 @@
 import {
+  DEFAULT_MULTIPLAYER_URL,
   DEFAULT_LATENCY_PLACEHOLDER_MS,
   NETWORK_MODES,
+  PACKET_TYPES,
 } from './networkConstants.js';
+import {
+  createBlockEditPacket,
+  createChunkInterestPacket,
+  createCombatActionPacket,
+  createPlayerSnapshotPacket,
+} from './packetProtocol.js';
 import { RemotePlayerSystem } from './remotePlayerSystem.js';
 import { ServerTickSystem } from './serverTickSystem.js';
 import { SimulationOwnership } from './simulationOwnership.js';
@@ -10,12 +18,15 @@ import {
   createEntitySnapshots,
   createPlayerSnapshot,
 } from './snapshotSerializer.js';
+import { WebSocketClientTransport } from './webSocketClientTransport.js';
 
 export class NetworkSession {
   constructor({
     localPlayerId = 'local-player',
     nickname = 'Godoy Player',
-    mode = NETWORK_MODES.localPreview,
+    mode = resolveNetworkMode(),
+    serverUrl = resolveServerUrl(),
+    transport = null,
   } = {}) {
     this.localPlayerId = localPlayerId;
     this.nickname = nickname;
@@ -24,11 +35,23 @@ export class NetworkSession {
     this.serverTickSystem = new ServerTickSystem();
     this.remotePlayerSystem = new RemotePlayerSystem({ localPlayerId });
     this.group = this.remotePlayerSystem.group;
+    this.transport = transport ?? createOptionalTransport({
+      mode,
+      serverUrl,
+      localPlayerId,
+      nickname,
+    });
     this.lastPlayerSnapshot = null;
     this.lastReplicationBatch = null;
     this.latencyMs = DEFAULT_LATENCY_PLACEHOLDER_MS;
-    this.connected = mode !== NETWORK_MODES.localPreview;
+    this.connected = false;
+    this.pendingBlockEdits = [];
+    this.pendingCombatActions = [];
+    this.pendingRemoteBlockEdits = [];
+    this.lastChunkInterestKey = '';
+    this.serverMetrics = null;
     this.snapshot = this.createSnapshot();
+    this.bindTransport();
   }
 
   update({
@@ -68,9 +91,15 @@ export class NetworkSession {
 
     if (replicationBatch) {
       this.lastReplicationBatch = replicationBatch;
+      this.flushOutboundPackets({
+        playerSnapshot,
+        replicationBatch,
+        loadedChunkKeys: terrainReplicationSnapshot.loadedChunkKeys,
+      });
     }
 
     this.lastPlayerSnapshot = playerSnapshot;
+    this.transport?.update?.(deltaTime);
     this.remotePlayerSystem.update(deltaTime);
     this.snapshot = this.createSnapshot({
       entitySnapshots,
@@ -80,22 +109,119 @@ export class NetworkSession {
 
   applyServerSnapshot(serverSnapshot) {
     this.remotePlayerSystem.applyServerSnapshot(serverSnapshot);
+    this.serverMetrics = serverSnapshot?.metrics ?? this.serverMetrics;
+
+    const blockEdits = serverSnapshot?.world?.blockEdits ?? [];
+
+    this.pendingRemoteBlockEdits.push(
+      ...blockEdits.filter((edit) => edit.sourcePlayerId !== this.localPlayerId),
+    );
+    this.snapshot = this.createSnapshot();
+  }
+
+  queueBlockEdits(edits) {
+    this.pendingBlockEdits.push(...edits.map((edit) => ({
+      ...edit,
+      sourcePlayerId: this.localPlayerId,
+    })));
+  }
+
+  queueCombatAction(action) {
+    this.pendingCombatActions.push({
+      action,
+      sourcePlayerId: this.localPlayerId,
+    });
+  }
+
+  consumeRemoteBlockEdits() {
+    return this.pendingRemoteBlockEdits.splice(0);
+  }
+
+  bindTransport() {
+    if (!this.transport) {
+      return;
+    }
+
+    this.transport.on?.(PACKET_TYPES.welcome, (packet) => {
+      this.connected = true;
+      this.serverMetrics = {
+        ...(this.serverMetrics ?? {}),
+        serverTickRate: packet.payload?.serverTickRate,
+        clientCount: packet.payload?.clientCount,
+      };
+    });
+    this.transport.on?.(PACKET_TYPES.serverSnapshot, (packet) => {
+      this.connected = true;
+      this.applyServerSnapshot(packet.payload);
+    });
+    this.transport.on?.(PACKET_TYPES.playerLeft, (packet) => {
+      this.remotePlayerSystem.removeRemotePlayer?.(packet.payload?.playerId);
+    });
+    this.transport.on?.(PACKET_TYPES.error, () => {
+      this.connected = false;
+    });
+  }
+
+  flushOutboundPackets({ playerSnapshot, loadedChunkKeys }) {
+    if (!this.transport) {
+      this.pendingBlockEdits = [];
+      this.pendingCombatActions = [];
+      return;
+    }
+
+    this.transport.send(createPlayerSnapshotPacket(playerSnapshot));
+    this.sendChunkInterestIfChanged(loadedChunkKeys);
+
+    if (this.pendingBlockEdits.length > 0) {
+      this.transport.send(createBlockEditPacket({
+        edits: this.pendingBlockEdits,
+        sourcePlayerId: this.localPlayerId,
+      }));
+      this.pendingBlockEdits = [];
+    }
+
+    for (const combatAction of this.pendingCombatActions) {
+      this.transport.send(createCombatActionPacket({
+        action: combatAction.action,
+        sourcePlayerId: this.localPlayerId,
+        tick: this.serverTickSystem.getMetrics().serverTick,
+      }));
+    }
+
+    this.pendingCombatActions = [];
+  }
+
+  sendChunkInterestIfChanged(loadedChunkKeys) {
+    const chunkInterestKey = loadedChunkKeys.join('|');
+
+    if (chunkInterestKey === this.lastChunkInterestKey) {
+      return;
+    }
+
+    this.lastChunkInterestKey = chunkInterestKey;
+    this.transport.send(createChunkInterestPacket({
+      playerId: this.localPlayerId,
+      loadedChunkKeys,
+    }));
   }
 
   createSnapshot({ entitySnapshots = [], chunkSnapshot = null } = {}) {
     const remotePlayerStats = this.remotePlayerSystem.getStats();
     const serverTickMetrics = this.serverTickSystem.getMetrics();
     const ownershipSnapshot = this.ownership.getSnapshot();
+    const transportMetrics = this.transport?.getMetrics?.() ?? createEmptyTransportMetrics();
 
     return {
       mode: this.mode,
-      connected: this.connected,
+      connected: this.connected || transportMetrics.connected,
       authoritativeServerReady: ownershipSnapshot.authoritativeServer,
       clientPredictionReady: ownershipSnapshot.clientPredictionReady,
       interpolationReady: ownershipSnapshot.interpolationReady,
-      latencyMs: this.latencyMs,
+      latencyMs: transportMetrics.latencyMs ?? this.latencyMs,
       localPlayerId: this.localPlayerId,
       nickname: this.nickname,
+      serverUrl: transportMetrics.url,
+      connectionState: transportMetrics.connectionState,
       remotePlayers: remotePlayerStats.remotePlayers,
       replicatedPlayerStates: remotePlayerStats.replicatedPlayerStates,
       replicatedEntities: entitySnapshots.length,
@@ -106,15 +232,76 @@ export class NetworkSession {
       sentBatches: serverTickMetrics.sentBatches,
       lastBatchEntityCount: serverTickMetrics.lastBatchEntityCount,
       lastBatchChunkCount: serverTickMetrics.lastBatchChunkCount,
+      packetsPerSecond: transportMetrics.packetsPerSecond,
+      packetsSent: transportMetrics.packetsSent,
+      packetsReceived: transportMetrics.packetsReceived,
+      bytesSent: transportMetrics.bytesSent,
+      bytesReceived: transportMetrics.bytesReceived,
+      queuedPackets: transportMetrics.queuedPackets,
+      syncErrors: transportMetrics.syncErrors,
+      lastNetworkError: transportMetrics.lastError,
+      pendingRemoteBlockEdits: this.pendingRemoteBlockEdits.length,
       deltaMode: this.lastReplicationBatch?.deltaMode ?? 'hash-delta-prep',
       lastUpdatedRemotePlayer: remotePlayerStats.lastUpdatedPlayerId,
       ownershipMode: 'server-authoritative',
+      serverMetrics: this.serverMetrics,
     };
   }
 
   getSnapshot() {
     return this.snapshot;
   }
+}
+
+function createOptionalTransport({ mode, serverUrl, localPlayerId, nickname }) {
+  if (mode !== NETWORK_MODES.client) {
+    return null;
+  }
+
+  return new WebSocketClientTransport({
+    url: serverUrl,
+    playerId: localPlayerId,
+    nickname,
+  });
+}
+
+function resolveNetworkMode() {
+  if (typeof window === 'undefined') {
+    return NETWORK_MODES.localPreview;
+  }
+
+  const url = new URL(window.location.href);
+
+  return url.searchParams.get('multiplayer') === '1' || url.searchParams.get('network') === '1'
+    ? NETWORK_MODES.client
+    : NETWORK_MODES.localPreview;
+}
+
+function resolveServerUrl() {
+  if (typeof window === 'undefined') {
+    return DEFAULT_MULTIPLAYER_URL;
+  }
+
+  const url = new URL(window.location.href);
+
+  return url.searchParams.get('server') ?? DEFAULT_MULTIPLAYER_URL;
+}
+
+function createEmptyTransportMetrics() {
+  return {
+    url: 'local',
+    connectionState: 'localPreview',
+    connected: false,
+    packetsPerSecond: 0,
+    packetsSent: 0,
+    packetsReceived: 0,
+    bytesSent: 0,
+    bytesReceived: 0,
+    queuedPackets: 0,
+    latencyMs: 0,
+    syncErrors: 0,
+    lastError: 'none',
+  };
 }
 
 function now() {

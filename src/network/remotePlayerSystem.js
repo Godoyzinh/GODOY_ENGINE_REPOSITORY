@@ -32,6 +32,7 @@ export class RemotePlayerSystem {
 
     remotePlayer.applyRemoteSnapshot(playerSnapshot);
     this.lastUpdatedPlayerId = playerSnapshot.playerId;
+    this.stats = this.createStats();
   }
 
   applyServerSnapshot(serverSnapshot) {
@@ -40,6 +41,20 @@ export class RemotePlayerSystem {
     for (const playerSnapshot of playerSnapshots) {
       this.applyPlayerSnapshot(playerSnapshot);
     }
+  }
+
+  removeRemotePlayer(playerId) {
+    const remotePlayer = this.remotePlayers.get(playerId);
+
+    if (!remotePlayer) {
+      return false;
+    }
+
+    this.group.remove(remotePlayer.object);
+    this.remotePlayers.delete(playerId);
+    this.stats = this.createStats();
+
+    return true;
   }
 
   update(deltaTime) {

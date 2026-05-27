@@ -105,6 +105,8 @@ export class Engine {
       toolSystem: this.toolSystem,
       onBlockMined: (minedBlock) => this.handleBlockMined(minedBlock),
       onStructurePlaced: (structurePlacement) => this.saveSystem.recordStructurePlacement(structurePlacement),
+      onBlocksPlaced: (blockEdits) => this.networkSession.queueBlockEdits(blockEdits),
+      onBlockRemoved: (blockEdit) => this.networkSession.queueBlockEdits([blockEdit]),
     });
     this.debugOverlay = new DebugOverlay({ rootElement });
     this.hotbarUI = new HotbarUI({
@@ -175,10 +177,20 @@ export class Engine {
     } else if (event.code === 'KeyR') {
       this.craftingSystem.craftFirstAvailable();
     } else if (event.code === 'KeyQ') {
-      this.combatSystem.tryPlayerMeleeAttack({
+      const wasAttackStarted = this.combatSystem.tryPlayerMeleeAttack({
         playerPosition: this.playerController.position,
         selectedStack: this.inventorySystem.getSelectedStack(),
         entitySystem: this.entitySystem,
+      });
+      this.networkSession.queueCombatAction({
+        type: 'melee',
+        state: wasAttackStarted ? 'attack' : 'attempt',
+        selectedSlot: this.playerState.selectedSlot,
+        position: {
+          x: this.playerController.position.x,
+          y: this.playerController.position.y,
+          z: this.playerController.position.z,
+        },
       });
       event.preventDefault();
     } else if (event.code === 'KeyT') {
@@ -258,6 +270,7 @@ export class Engine {
       entitySystem: this.entitySystem,
       terrainReplicationSnapshot: this.terrainGenerator.getReplicationSnapshot(),
     });
+    this.applyRemoteBlockEdits(this.networkSession.consumeRemoteBlockEdits());
     this.ambientAudioSystem.update({
       weatherSnapshot,
       dayNightSnapshot,
@@ -364,5 +377,16 @@ export class Engine {
       },
     });
     this.persistenceSnapshot = this.saveSystem.getPersistenceStats();
+  }
+
+  applyRemoteBlockEdits(blockEdits) {
+    for (const blockEdit of blockEdits) {
+      this.terrainGenerator.setBlockAtWorldPosition(
+        blockEdit.worldX,
+        blockEdit.y,
+        blockEdit.worldZ,
+        blockEdit.blockId,
+      );
+    }
   }
 }

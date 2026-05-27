@@ -46,8 +46,11 @@ export class DebugOverlay {
       ${this.createRow('Weather', `${weatherSnapshot.state} ${Math.round(weatherSnapshot.intensity * 100)}%`)}
       ${this.createRow('Ambience', weatherSnapshot.ambience)}
       ${this.createRow('Audio', audioSnapshot.ambientLayer)}
-      ${this.createRow('Net Mode', networkSnapshot.mode)}
-      ${this.createRow('Latency', `${networkSnapshot.latencyMs}ms`)}
+      ${this.createRow('Net Mode', `${networkSnapshot.mode} ${networkSnapshot.connectionState}`)}
+      ${this.createRow('Latency', `${Math.round(networkSnapshot.latencyMs)}ms`)}
+      ${this.createRow('Packets/s', networkSnapshot.packetsPerSecond)}
+      ${this.createRow('Net KB', `${formatKilobytes(networkSnapshot.bytesSent)}/${formatKilobytes(networkSnapshot.bytesReceived)}`)}
+      ${this.createRow('Sync Errors', networkSnapshot.syncErrors)}
       ${this.createRow('Server Tick', `${networkSnapshot.serverTick}@${networkSnapshot.serverTickRate}`)}
       ${this.createRow('Tick Cost', `${networkSnapshot.serverTickMs.toFixed(2)}ms`)}
       ${this.createRow('Tier', progressionSnapshot.currentTier)}
@@ -75,6 +78,7 @@ export class DebugOverlay {
       ${this.createRow('Synced Chunks', networkSnapshot.syncedChunks)}
       ${this.createRow('Rep Ent', networkSnapshot.replicatedEntities)}
       ${this.createRow('Rep Players', networkSnapshot.replicatedPlayerStates)}
+      ${this.createRow('Remote Edits', networkSnapshot.pendingRemoteBlockEdits)}
       ${this.createRow('Sync Batch', `${networkSnapshot.lastBatchEntityCount}/${networkSnapshot.lastBatchChunkCount}`)}
       ${this.createRow('Entities', entityStats.activeEntities)}
       ${this.createRow('Ent Pool', entityStats.pooledEntities)}
@@ -149,4 +153,8 @@ function formatCombatEvent(combatSnapshot) {
   }
 
   return lastAttack.state;
+}
+
+function formatKilobytes(bytes) {
+  return (bytes / 1024).toFixed(1);
 }
