@@ -31,8 +31,13 @@ export class TerrainGenerator {
     this.stats = this.chunkManager.stats;
   }
 
-  update({ focusPosition, camera }) {
-    this.chunkManager.update({ focusPosition, camera });
+  update({ focusPosition, camera, elapsedTime = 0, weatherSnapshot = null }) {
+    this.chunkManager.update({
+      focusPosition,
+      camera,
+      elapsedTime,
+      weatherSnapshot,
+    });
     this.stats = this.chunkManager.stats;
   }
 

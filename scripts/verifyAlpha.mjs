@@ -4,6 +4,7 @@ const checks = [
   ['build', ['run', 'build']],
   ['settings smoke', ['run', 'smoke:settings']],
   ['camera/collision smoke', ['run', 'smoke:camera']],
+  ['visual/game-feel smoke', ['run', 'smoke:visual']],
   ['inventory smoke', ['run', 'smoke:inventory']],
   ['save migration smoke', ['run', 'smoke:save']],
   ['multiplayer smoke', ['run', 'smoke:multiplayer']],

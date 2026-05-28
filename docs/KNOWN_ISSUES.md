@@ -7,7 +7,7 @@
 - The main menu checks `/health` before entering multiplayer, but full in-game reconnect QA is still a manual Alpha pass.
 - Studio tools operate on voxel blocks and prefabs; full object hierarchy and script editor are future work.
 - Publish flow stores metadata locally/server-side but does not upload to a remote marketplace.
-- Audio is currently hook-based; real sound asset playback is future work.
+- Audio currently uses lightweight procedural cues plus hooks; authored sound assets and mixing are future work.
 
 ## Performance
 

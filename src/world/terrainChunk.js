@@ -4,6 +4,12 @@ import { getBlockKey, getWorldCoordinate } from './chunkMath.js';
 import { BLOCK_SIZE, CHUNK_SIZE, MIN_GENERATED_Y } from './worldConstants.js';
 
 const sharedGeometry = new BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+const animatedBlockIds = new Set([
+  BLOCK_IDS.water,
+  BLOCK_IDS.grassPlant,
+  BLOCK_IDS.campfire,
+]);
+const animatedMatrix = new Matrix4();
 
 export class TerrainChunk {
   constructor({ chunkX, chunkZ, terrainNoise, natureGenerator, structureGenerator, savedEdits }) {
@@ -221,6 +227,7 @@ export class TerrainChunk {
       mesh.userData.chunk = this;
       mesh.userData.blockId = blockId;
       mesh.userData.blockPositions = blockEntries;
+      mesh.userData.blockScale = blockScale;
 
       for (let index = 0; index < blockEntries.length; index += 1) {
         const block = blockEntries[index];
@@ -312,4 +319,75 @@ export class TerrainChunk {
       blockId,
     }));
   }
+
+  updateAnimatedBlocks({ elapsedTime, windStrength = 1 }) {
+    let animatedBlocks = 0;
+
+    for (const mesh of this.meshes) {
+      const blockId = mesh.userData.blockId;
+
+      if (!mesh.visible || !animatedBlockIds.has(blockId)) {
+        continue;
+      }
+
+      const blockScale = mesh.userData.blockScale ?? BLOCK_DEFINITIONS[blockId].scale ?? { x: 1, y: 1, z: 1 };
+      const blockPositions = mesh.userData.blockPositions ?? [];
+
+      for (let index = 0; index < blockPositions.length; index += 1) {
+        const block = blockPositions[index];
+        const animation = getBlockAnimation({
+          block,
+          blockId,
+          blockScale,
+          elapsedTime,
+          windStrength,
+        });
+
+        animatedMatrix.makeScale(animation.scale.x, animation.scale.y, animation.scale.z);
+        animatedMatrix.setPosition(animation.position.x, animation.position.y, animation.position.z);
+        mesh.setMatrixAt(index, animatedMatrix);
+      }
+
+      mesh.instanceMatrix.needsUpdate = true;
+      animatedBlocks += blockPositions.length;
+    }
+
+    return animatedBlocks;
+  }
+}
+
+function getBlockAnimation({ block, blockId, blockScale, elapsedTime, windStrength }) {
+  const phase = elapsedTime + block.worldX * 0.41 + block.worldZ * 0.33;
+  const position = {
+    x: block.worldX + 0.5,
+    y: block.y + blockScale.y / 2,
+    z: block.worldZ + 0.5,
+  };
+  const scale = {
+    x: blockScale.x,
+    y: blockScale.y,
+    z: blockScale.z,
+  };
+
+  if (blockId === BLOCK_IDS.grassPlant) {
+    const sway = Math.sin(phase * 2.2) * 0.055 * windStrength;
+
+    position.x += sway;
+    position.z += Math.cos(phase * 1.6) * 0.025 * windStrength;
+    scale.y *= 0.96 + Math.sin(phase * 1.8) * 0.035;
+  } else if (blockId === BLOCK_IDS.water) {
+    const wave = Math.sin(phase * 1.45) * 0.5 + 0.5;
+
+    position.y += wave * 0.055;
+    scale.y *= 0.94 + wave * 0.08;
+  } else if (blockId === BLOCK_IDS.campfire) {
+    const pulse = Math.sin(phase * 5.8) * 0.5 + 0.5;
+
+    position.y += pulse * 0.035;
+    scale.y *= 0.9 + pulse * 0.24;
+  }
+
+  position.y = block.y + scale.y / 2 + (position.y - (block.y + blockScale.y / 2));
+
+  return { position, scale };
 }

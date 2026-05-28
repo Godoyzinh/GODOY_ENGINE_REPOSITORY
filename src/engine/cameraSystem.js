@@ -9,6 +9,7 @@ const MOUSE_SENSITIVITY = 0.0035;
 const CAMERA_DISTANCE = 10.5;
 const CAMERA_SMOOTHING = 0.16;
 const CAMERA_GROUND_CLEARANCE = 0.75;
+const MAX_SHAKE = 0.18;
 
 export class CameraSystem {
   constructor({ width, height, domElement = null }) {
@@ -16,10 +17,15 @@ export class CameraSystem {
     this.lookAtOffset = new Vector3(0, 1.5, 0);
     this.targetPosition = new Vector3();
     this.desiredPosition = new Vector3();
+    this.baseCameraPosition = new Vector3();
+    this.viewOffset = new Vector3();
+    this.lookTarget = new Vector3();
     this.domElement = domElement;
     this.collisionSampler = null;
     this.yaw = 0;
     this.pitch = MathUtils.degToRad(34);
+    this.bobPhase = 0;
+    this.shakeIntensity = 0;
     this.isInputEnabled = true;
 
     this.handlePointerDown = this.handlePointerDown.bind(this);
@@ -51,13 +57,29 @@ export class CameraSystem {
     this.camera.updateProjectionMatrix();
   }
 
-  update({ targetPosition }) {
+  update({
+    targetPosition,
+    deltaTime = 0,
+    movementSpeed = 0,
+    isGrounded = true,
+    isSprinting = false,
+    isFlying = false,
+  }) {
     this.targetPosition.copy(targetPosition).add(this.lookAtOffset);
     this.updateDesiredPosition();
     this.resolveCameraCollision();
+    this.updateViewOffset({
+      deltaTime,
+      movementSpeed,
+      isGrounded,
+      isSprinting,
+      isFlying,
+    });
 
-    this.camera.position.lerp(this.desiredPosition, CAMERA_SMOOTHING);
-    this.camera.lookAt(this.targetPosition);
+    this.baseCameraPosition.lerp(this.desiredPosition, CAMERA_SMOOTHING);
+    this.camera.position.copy(this.baseCameraPosition).add(this.viewOffset);
+    this.lookTarget.copy(this.targetPosition).addScaledVector(this.viewOffset, 0.35);
+    this.camera.lookAt(this.lookTarget);
   }
 
   updateDesiredPosition() {
@@ -85,6 +107,28 @@ export class CameraSystem {
     }
 
     this.desiredPosition.y = Math.max(this.desiredPosition.y, groundHeight + CAMERA_GROUND_CLEARANCE);
+  }
+
+  updateViewOffset({ deltaTime, movementSpeed, isGrounded, isSprinting, isFlying }) {
+    const bobSpeed = isSprinting ? 12 : 8.4;
+    const bobAmount = isFlying || !isGrounded ? 0 : MathUtils.clamp(movementSpeed / 11, 0, 1);
+    const targetBobY = Math.sin(this.bobPhase * 2) * 0.045 * bobAmount;
+    const targetBobX = Math.cos(this.bobPhase) * 0.024 * bobAmount;
+
+    if (bobAmount > 0.04) {
+      this.bobPhase += deltaTime * bobSpeed * MathUtils.clamp(movementSpeed / 7, 0.35, 1.6);
+    }
+
+    this.shakeIntensity = Math.max(0, this.shakeIntensity - deltaTime * 1.8);
+    this.viewOffset.set(
+      targetBobX + (Math.random() - 0.5) * this.shakeIntensity,
+      targetBobY + (Math.random() - 0.5) * this.shakeIntensity,
+      (Math.random() - 0.5) * this.shakeIntensity * 0.45,
+    );
+  }
+
+  addShake(amount) {
+    this.shakeIntensity = MathUtils.clamp(this.shakeIntensity + amount, 0, MAX_SHAKE);
   }
 
   handlePointerDown() {

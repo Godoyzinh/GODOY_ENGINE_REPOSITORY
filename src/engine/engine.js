@@ -1,14 +1,18 @@
 import { Timer } from 'three';
 import { AmbientAudioSystem } from '../audio/ambientAudioSystem.js';
+import { AudioFeedbackSystem } from '../audio/audioFeedbackSystem.js';
 import { VoxelInteractionSystem } from '../building/voxelInteractionSystem.js';
 import { CombatSystem } from '../combat/combatSystem.js';
 import { DamageSystem } from '../combat/damageSystem.js';
 import { CraftingSystem } from '../crafting/craftingSystem.js';
 import { FurnaceSystem } from '../crafting/furnaceSystem.js';
+import { AmbientParticleSystem } from './ambientParticleSystem.js';
 import { CameraSystem } from './cameraSystem.js';
+import { FeedbackParticleSystem } from './feedbackParticleSystem.js';
 import { LightingSystem } from './lightingSystem.js';
 import { RendererSystem } from './rendererSystem.js';
 import { SceneSystem } from './sceneSystem.js';
+import { SkySystem } from './skySystem.js';
 import { EntitySystem } from '../entities/entitySystem.js';
 import { LootSystem, LOOT_TABLE_IDS } from '../loot/lootSystem.js';
 import { NetworkSession } from '../network/networkSession.js';
@@ -35,7 +39,7 @@ import { DayNightSystem } from '../world/dayNightSystem.js';
 import { TerrainGenerator } from '../world/terrainGenerator.js';
 import { WeatherSystem } from '../world/weatherSystem.js';
 import { WorldSimulationSystem } from '../world/worldSimulationSystem.js';
-import { BLOCK_IDS } from '../world/blockTypes.js';
+import { BLOCK_DEFINITIONS, BLOCK_IDS } from '../world/blockTypes.js';
 
 const MAX_DELTA_TIME = 0.05;
 const PERSISTENCE_INTERVAL_SECONDS = 4;
@@ -58,6 +62,9 @@ export class Engine {
       domElement: this.rendererSystem.domElement,
     });
     this.lightingSystem = new LightingSystem();
+    this.skySystem = new SkySystem();
+    this.ambientParticleSystem = new AmbientParticleSystem();
+    this.feedbackParticleSystem = new FeedbackParticleSystem();
     this.saveSystem = new SaveSystem();
     this.savedStudioState = this.saveSystem.loadStudioState();
     this.worldSimulationSystem = new WorldSimulationSystem({
@@ -89,6 +96,7 @@ export class Engine {
       camera: this.cameraSystem.camera,
       damageSystem: this.damageSystem,
       toolSystem: this.toolSystem,
+      onHit: (hitEvent) => this.handleCombatHit(hitEvent),
     });
     this.craftingSystem = new CraftingSystem({ inventorySystem: this.inventorySystem });
     this.furnaceSystem = new FurnaceSystem({
@@ -103,6 +111,7 @@ export class Engine {
     });
     this.entitySystem.restoreEntities(this.saveSystem.loadEntityStates());
     this.ambientAudioSystem = new AmbientAudioSystem();
+    this.audioFeedbackSystem = new AudioFeedbackSystem();
     this.networkSession = new NetworkSession({
       localPlayerId: LOCAL_PLAYER_ID,
       nickname: 'Godoy Player',
@@ -132,7 +141,7 @@ export class Engine {
       toolSystem: this.toolSystem,
       onBlockMined: (minedBlock) => this.handleBlockMined(minedBlock),
       onStructurePlaced: (structurePlacement) => this.saveSystem.recordStructurePlacement(structurePlacement),
-      onBlocksPlaced: (blockEdits) => this.networkSession.queueBlockEdits(blockEdits),
+      onBlocksPlaced: (blockEdits) => this.handleBlocksPlaced(blockEdits),
       onBlockRemoved: (blockEdit) => this.networkSession.queueBlockEdits([blockEdit]),
     });
     this.studioToolSystem = new StudioToolSystem({
@@ -160,6 +169,7 @@ export class Engine {
       onStudioMode: () => this.openStudioMode(),
       onSettingsChanged: (nextSettingsSnapshot) => this.applySettings(nextSettingsSnapshot),
       onMenuVisibilityChanged: (isMenuOpen) => this.setGameplayInputEnabled(!isMenuOpen),
+      onUiAction: () => this.audioFeedbackSystem.playCue('ui'),
     });
     this.hotbarUI = new HotbarUI({
       rootElement,
@@ -175,6 +185,7 @@ export class Engine {
       entitySystem: this.entitySystem,
     });
 
+    this.sceneSystem.add(this.skySystem.group);
     this.sceneSystem.add(this.lightingSystem.group);
     this.sceneSystem.add(this.terrainGenerator.group);
     this.sceneSystem.add(this.entitySystem.group);
@@ -182,6 +193,8 @@ export class Engine {
     this.sceneSystem.add(this.voxelInteractionSystem.group);
     this.sceneSystem.add(this.studioToolSystem.group);
     this.sceneSystem.add(this.playerController.object);
+    this.sceneSystem.add(this.ambientParticleSystem.group);
+    this.sceneSystem.add(this.feedbackParticleSystem.group);
 
     this.handleResize = this.handleResize.bind(this);
     this.handleKeyDown = this.handleKeyDown.bind(this);
@@ -222,6 +235,10 @@ export class Engine {
     this.hotbarUI.dispose();
     this.survivalHud.dispose();
     this.combatHud.dispose();
+    this.skySystem.dispose();
+    this.ambientParticleSystem.dispose();
+    this.feedbackParticleSystem.dispose();
+    this.audioFeedbackSystem.dispose();
   }
 
   handleKeyDown(event) {
@@ -230,15 +247,21 @@ export class Engine {
     }
 
     if (event.code === 'KeyE') {
-      this.survivalSystem.consumeSelectedItem();
+      if (this.survivalSystem.consumeSelectedItem()) {
+        this.audioFeedbackSystem.playCue('ui');
+      }
     } else if (event.code === 'KeyR') {
       this.craftingSystem.craftFirstAvailable();
+      this.audioFeedbackSystem.playCue('ui');
     } else if (event.code === 'KeyQ') {
       const wasAttackStarted = this.combatSystem.tryPlayerMeleeAttack({
         playerPosition: this.playerController.position,
         selectedStack: this.inventorySystem.getSelectedStack(),
         entitySystem: this.entitySystem,
       });
+      if (!wasAttackStarted) {
+        this.audioFeedbackSystem.playCue('ui');
+      }
       this.networkSession.queueCombatAction({
         type: 'melee',
         state: wasAttackStarted ? 'attack' : 'attempt',
@@ -252,8 +275,10 @@ export class Engine {
       event.preventDefault();
     } else if (event.code === 'KeyT') {
       this.worldSimulationSystem.requestSleep();
+      this.audioFeedbackSystem.playCue('ui');
     } else if (event.code === 'F3') {
       this.toggleDebugOverlay();
+      this.audioFeedbackSystem.playCue('ui');
       event.preventDefault();
     }
   }
@@ -318,6 +343,7 @@ export class Engine {
     this.rendererSystem.applySettings(settingsSnapshot);
     this.terrainGenerator.applySettings(settingsSnapshot);
     this.ambientAudioSystem.applySettings(settingsSnapshot);
+    this.audioFeedbackSystem.applySettings(settingsSnapshot);
     this.debugOverlay.setVisible(settingsSnapshot.debugOverlay);
   }
 
@@ -352,12 +378,25 @@ export class Engine {
       activeBiome: this.terrainGenerator.stats.activeBiome,
     });
     const weatherSnapshot = this.weatherSystem.getSnapshot();
-    this.lightingSystem.update(dayNightSnapshot, weatherSnapshot);
+    this.lightingSystem.update(dayNightSnapshot, weatherSnapshot, this.playerController.position);
     this.sceneSystem.applyEnvironment(dayNightSnapshot, weatherSnapshot);
     this.playerController.update(deltaTime, {
       movementYaw: this.cameraSystem.getMovementYaw(),
     });
     const landingImpact = this.playerController.consumeLandingImpact();
+
+    if (landingImpact > 4) {
+      const landingIntensity = Math.min(2.4, landingImpact / 10);
+
+      this.playerController.triggerLandingFeedback(landingImpact);
+      this.cameraSystem.addShake(0.025 + landingIntensity * 0.018);
+      this.feedbackParticleSystem.emitLanding({
+        position: this.playerController.position,
+        intensity: landingIntensity,
+      });
+      this.audioFeedbackSystem.playCue('landing');
+    }
+
     this.survivalSystem.update({
       deltaTime,
       playerController: this.playerController,
@@ -368,10 +407,22 @@ export class Engine {
     this.terrainGenerator.update({
       focusPosition: this.playerController.position,
       camera: this.cameraSystem.camera,
+      elapsedTime,
+      weatherSnapshot,
     });
     this.physicsWorld.update(deltaTime);
     this.cameraSystem.update({
       targetPosition: this.playerController.cameraTarget,
+      deltaTime,
+      movementSpeed: this.playerController.movementSystem.horizontalVelocity.length(),
+      isGrounded: this.playerState.isGrounded,
+      isSprinting: this.playerState.isSprinting,
+      isFlying: this.playerState.isFlying,
+    });
+    this.skySystem.update({
+      dayNightSnapshot,
+      weatherSnapshot,
+      cameraPosition: this.cameraSystem.camera.position,
     });
     this.voxelInteractionSystem.update(deltaTime);
     this.creatorPermissionSystem.updateFromServerMetadata(this.networkSession.getWorldMetadata());
@@ -409,6 +460,22 @@ export class Engine {
       survivalSnapshot,
       combatSnapshot,
     });
+    this.audioFeedbackSystem.update({
+      deltaTime,
+      playerController: this.playerController,
+      weatherSnapshot,
+      dayNightSnapshot,
+      terrainStats: this.terrainGenerator.stats,
+    });
+    this.ambientParticleSystem.update({
+      deltaTime,
+      elapsedTime,
+      focusPosition: this.playerController.position,
+      weatherSnapshot,
+      dayNightSnapshot,
+      terrainStats: this.terrainGenerator.stats,
+    });
+    this.feedbackParticleSystem.update(deltaTime);
     this.updatePersistence(deltaTime);
     this.sceneSystem.update(deltaTime, elapsedTime);
     this.rendererSystem.render(this.sceneSystem.scene, this.cameraSystem.camera);
@@ -439,7 +506,7 @@ export class Engine {
       permissionsSnapshot: this.creatorPermissionSystem.getSnapshot(),
       persistenceSnapshot: this.persistenceSnapshot,
       worldSimulationSnapshot,
-      audioSnapshot: this.ambientAudioSystem.getSnapshot(),
+      audioSnapshot: this.createAudioDebugSnapshot(),
       networkSnapshot: this.networkSession.getSnapshot(),
     });
 
@@ -453,6 +520,18 @@ export class Engine {
       z: targetBlock.worldZ + 0.5,
     };
 
+    this.feedbackParticleSystem.emitBlockBreak({
+      position: {
+        x: targetBlock.worldX + 0.5,
+        y: targetBlock.y + 0.5,
+        z: targetBlock.worldZ + 0.5,
+      },
+      blockDefinition,
+    });
+    this.playerController.triggerMiningFeedback();
+    this.cameraSystem.addShake(0.035);
+    this.audioFeedbackSystem.playCue('mining');
+
     if (blockDefinition.id === BLOCK_IDS.lootChest) {
       this.spawnChestLoot({ targetBlock, dropPosition });
     }
@@ -461,6 +540,40 @@ export class Engine {
       itemStack: dropStack,
       position: dropPosition,
     });
+  }
+
+  handleBlocksPlaced(blockEdits) {
+    this.networkSession.queueBlockEdits(blockEdits);
+
+    const firstPlacement = blockEdits[0];
+
+    if (!firstPlacement) {
+      return;
+    }
+
+    const blockDefinition = BLOCK_DEFINITIONS[firstPlacement.blockId];
+
+    this.feedbackParticleSystem.emitHit({
+      position: {
+        x: firstPlacement.worldX + 0.5,
+        y: firstPlacement.y + 0.5,
+        z: firstPlacement.worldZ + 0.5,
+      },
+      color: blockDefinition?.color ?? '#8ee6b5',
+    });
+    this.audioFeedbackSystem.playCue('ui');
+  }
+
+  handleCombatHit({ position }) {
+    this.feedbackParticleSystem.emitHit({
+      position: {
+        x: position.x,
+        y: position.y + 0.8,
+        z: position.z,
+      },
+    });
+    this.cameraSystem.addShake(0.045);
+    this.audioFeedbackSystem.playCue('hit');
   }
 
   spawnChestLoot({ targetBlock, dropPosition }) {
@@ -533,5 +646,22 @@ export class Engine {
         blockEdit.blockId,
       );
     }
+  }
+
+  createAudioDebugSnapshot() {
+    const ambientAudioSnapshot = this.ambientAudioSystem.getSnapshot();
+    const feedbackAudioSnapshot = this.audioFeedbackSystem.getSnapshot();
+
+    return {
+      ...ambientAudioSnapshot,
+      feedback: feedbackAudioSnapshot,
+      pendingCues: [
+        ...new Set([
+          ...(ambientAudioSnapshot.pendingCues ?? []),
+          ...(feedbackAudioSnapshot.pendingCues ?? []),
+        ]),
+      ],
+      hookCount: (ambientAudioSnapshot.hookCount ?? 0) + 1,
+    };
   }
 }

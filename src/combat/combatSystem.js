@@ -25,10 +25,11 @@ const TOOL_COMBAT_PROFILES = {
 };
 
 export class CombatSystem {
-  constructor({ camera, damageSystem, toolSystem }) {
+  constructor({ camera, damageSystem, toolSystem, onHit = null }) {
     this.camera = camera;
     this.damageSystem = damageSystem;
     this.toolSystem = toolSystem;
+    this.onHit = onHit;
     this.attackCooldownRemaining = 0;
     this.attackCooldownDuration = DEFAULT_COOLDOWN_SECONDS;
     this.lastAttack = {
@@ -110,6 +111,12 @@ export class CombatSystem {
       targetName: target.name,
       damage: profile.damage,
       age: 0,
+    });
+    this.onHit?.({
+      target,
+      damage: profile.damage,
+      position: target.transform.position.clone(),
+      knockback,
     });
 
     return true;

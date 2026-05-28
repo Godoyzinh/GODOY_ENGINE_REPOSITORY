@@ -1,5 +1,22 @@
 # Changelog
 
+## Visual Identity And Game Feel
+
+### Added
+
+- Stylized sky gradient with sun and moon visuals.
+- Lightweight ambient particle system for biome/weather atmosphere.
+- Voxel feedback particles for mining, block placement, hits, and landing.
+- Procedural audio feedback foundation for footsteps, mining, hits, landing, ambient pressure, and UI cues.
+- Visual/game-feel smoke test added to the Alpha verification suite.
+
+### Changed
+
+- Lighting and fog now react more smoothly to day/night and weather.
+- Grass plants, water, and campfires receive lightweight per-instance animation.
+- Player avatar animation now includes idle, walk, jump, landing, and mining feedback states.
+- Third-person camera now has subtle movement bob and impact shake.
+
 ## UX, Camera, And Collision Fixes
 
 ### Added

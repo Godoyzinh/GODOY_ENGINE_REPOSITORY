@@ -60,6 +60,7 @@ export class DebugOverlay {
       ${this.createRow('Weather', `${weatherSnapshot.state} ${Math.round(weatherSnapshot.intensity * 100)}%`)}
       ${this.createRow('Ambience', weatherSnapshot.ambience)}
       ${this.createRow('Audio', `${audioSnapshot.ambientLayer} ${Math.round(audioSnapshot.volume * 100)}%`)}
+      ${this.createRow('Audio Cue', audioSnapshot.feedback?.lastCue ?? 'none')}
       ${this.createRow('Net Mode', `${networkSnapshot.mode} ${networkSnapshot.connectionState}`)}
       ${this.createRow('World', networkSnapshot.worldId ?? 'local')}
       ${this.createRow('Hosted', networkSnapshot.hostedWorlds)}
@@ -98,6 +99,7 @@ export class DebugOverlay {
       ${this.createRow('Queue', terrainStats.chunksQueued)}
       ${this.createRow('Biome', terrainStats.activeBiome)}
       ${this.createRow('Blocks', terrainStats.blocksVisible)}
+      ${this.createRow('Animated', terrainStats.animatedBlocks ?? 0)}
       ${this.createRow('Structures', terrainStats.structuresGenerated)}
       ${this.createRow('Pool', terrainStats.pooledChunks)}
       ${this.createRow('Saved', terrainStats.savedChunks)}

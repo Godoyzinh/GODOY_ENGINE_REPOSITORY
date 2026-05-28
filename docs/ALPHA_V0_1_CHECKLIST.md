@@ -17,6 +17,8 @@ Use this checklist before tagging or sharing an Alpha build.
 - Technical debug overlay is hidden by default and toggles with `F3`.
 - Third-person mouse orbit moves freely and WASD follows camera direction.
 - Tree canopies do not launch the player upward.
+- Sky, weather ambience, water/grass animation, character motion, and feedback particles render cleanly.
+- Procedural audio cues fire after interacting with the page.
 - Save migration smoke test passes.
 - Inventory/crafting smoke test passes.
 

@@ -85,7 +85,19 @@ export class PlayerController {
       movementSpeed,
       playerHeightScale: playerHeight / PLAYER_STANDING_HEIGHT,
       yaw: this.avatarYaw,
+      isGrounded: this.movementSystem.isGrounded,
+      verticalVelocity: this.velocity.y,
     });
+  }
+
+  triggerLandingFeedback(landingImpact) {
+    if (landingImpact > 4) {
+      this.avatar.triggerLanding(Math.min(2.4, landingImpact / 10));
+    }
+  }
+
+  triggerMiningFeedback() {
+    this.avatar.triggerMining();
   }
 }
 

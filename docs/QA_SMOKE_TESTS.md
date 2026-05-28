@@ -8,6 +8,7 @@ Run these before tagging an Alpha build.
 - `npm run verify:alpha` completes successfully.
 - `npm run smoke:settings` validates settings normalization and persistence.
 - `npm run smoke:camera` validates camera-relative movement, paused input, and vertical snap protection.
+- `npm run smoke:visual` validates sky, ambient particles, feedback particles, and procedural audio hooks.
 - `npm run smoke:inventory` validates hotbar/backpack stacking, crafting output, and selected consumable use.
 - `npm run smoke:save` validates save migration and persisted simulation state.
 - Open `http://127.0.0.1:5173/`.
@@ -29,6 +30,8 @@ Run these before tagging an Alpha build.
 - Hotbar selection works with number keys and scroll wheel.
 - Crafting and consumable use still work.
 - Combat hit/cooldown UI still updates.
+- Sky gradient, sun/moon visuals, fog, ambient particles, and light water/grass motion render without console errors.
+- Footsteps, mining, hit, landing, ambient, and UI audio cues trigger after browser audio is unlocked by player input.
 
 ## Studio
 

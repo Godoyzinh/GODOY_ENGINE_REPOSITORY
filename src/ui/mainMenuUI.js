@@ -12,6 +12,7 @@ export class MainMenuUI {
     onStudioMode,
     onSettingsChanged,
     onMenuVisibilityChanged,
+    onUiAction = null,
   }) {
     this.rootElement = rootElement;
     this.settingsSystem = settingsSystem;
@@ -21,6 +22,7 @@ export class MainMenuUI {
     this.onStudioMode = onStudioMode;
     this.onSettingsChanged = onSettingsChanged;
     this.onMenuVisibilityChanged = onMenuVisibilityChanged;
+    this.onUiAction = onUiAction;
     this.isMenuOpen = true;
     this.isJoiningMultiplayer = false;
     this.statusMessage = null;
@@ -271,10 +273,14 @@ export class MainMenuUI {
 
   bindPanelEvents() {
     for (const button of this.element.querySelectorAll('[data-panel]')) {
-      button.addEventListener('click', () => this.openPanel(button.dataset.panel));
+      button.addEventListener('click', () => {
+        this.onUiAction?.('panel');
+        this.openPanel(button.dataset.panel);
+      });
     }
 
     this.element.querySelector('[data-action="play-solo"]')?.addEventListener('click', () => {
+      this.onUiAction?.('play');
       this.onPlaySolo?.();
       this.closeMenu();
     });
@@ -283,6 +289,7 @@ export class MainMenuUI {
         return;
       }
 
+      this.onUiAction?.('join');
       this.isJoiningMultiplayer = true;
       this.statusMessage = 'Checking dedicated server...';
       this.render();
@@ -298,17 +305,22 @@ export class MainMenuUI {
       this.render();
     });
     this.element.querySelector('[data-action="studio-mode"]')?.addEventListener('click', () => {
+      this.onUiAction?.('studio');
       this.onStudioMode?.();
       this.closeMenu();
     });
     this.element.querySelector('[data-action="finish-onboarding"]')?.addEventListener('click', () => {
+      this.onUiAction?.('onboarding');
       this.settingsSystem.markFirstLaunchComplete();
       this.onSettingsChanged?.(this.settingsSystem.getSnapshot());
       this.closeMenu();
     });
 
     for (const input of this.element.querySelectorAll('[data-setting]')) {
-      input.addEventListener('change', () => this.updateSettingFromInput(input));
+      input.addEventListener('change', () => {
+        this.onUiAction?.('setting');
+        this.updateSettingFromInput(input);
+      });
       input.addEventListener('input', () => {
         if (input.type === 'range') {
           this.updateSettingFromInput(input);

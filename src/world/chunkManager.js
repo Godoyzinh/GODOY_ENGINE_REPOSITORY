@@ -52,6 +52,7 @@ export class ChunkManager {
       activeBiome: 'Plains',
       structuresGenerated: 0,
       renderDistancePreset: this.renderDistancePreset,
+      animatedBlocks: 0,
     };
   }
 
@@ -66,11 +67,12 @@ export class ChunkManager {
     this.lastFocusChunkKey = null;
   }
 
-  update({ focusPosition, camera }) {
+  update({ focusPosition, camera, elapsedTime = 0, weatherSnapshot = null }) {
     this.updateChunkQueues(focusPosition);
     this.processQueues();
     this.rebuildDirtyChunks();
     this.updateVisibility(camera);
+    this.updateAnimatedBlocks({ elapsedTime, weatherSnapshot });
     this.updateActiveBiome(focusPosition);
     this.updateStats();
   }
@@ -212,6 +214,17 @@ export class ChunkManager {
     }
 
     this.stats.chunksVisible = chunksVisible;
+  }
+
+  updateAnimatedBlocks({ elapsedTime, weatherSnapshot }) {
+    const windStrength = 1 + (weatherSnapshot?.intensity ?? 0) * 0.75;
+    let animatedBlocks = 0;
+
+    for (const chunk of this.chunks.values()) {
+      animatedBlocks += chunk.updateAnimatedBlocks({ elapsedTime, windStrength });
+    }
+
+    this.stats.animatedBlocks = animatedBlocks;
   }
 
   getHeightAt(worldX, worldZ) {

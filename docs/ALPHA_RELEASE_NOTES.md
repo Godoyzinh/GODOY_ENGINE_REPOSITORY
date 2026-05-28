@@ -10,6 +10,8 @@ This Alpha packages the project as a playable sandbox survival creation prototyp
 - Solo and multiplayer launch flow with dedicated server health feedback.
 - Settings for graphics quality, render distance, audio volume, controls help, and debug visibility.
 - Third-person orbit camera, camera-relative movement, and a simple voxel humanoid avatar.
+- Stylized sky gradient, sun/moon visuals, tuned fog/lighting, ambient particles, and light voxel game-feel effects.
+- Procedural audio cue foundation for footsteps, mining, hits, landing, ambient pressure, and UI interaction.
 - Minimal gameplay HUD by default with technical debug data hidden behind settings or `F3`.
 - In-game Studio entry point with existing selection, prefab, undo/redo, and publish foundations.
 - Dedicated server command and admin endpoints.

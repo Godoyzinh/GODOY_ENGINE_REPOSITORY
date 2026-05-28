@@ -33,13 +33,19 @@ export class SceneSystem {
     }
 
     const daylight = dayNightSnapshot.daylight;
-    const skyColor = daylight > 0.35 ? '#86b8f0' : '#17223b';
-    const fogColor = daylight > 0.35 ? '#86b8f0' : '#101827';
+    const skyColor = new Color('#17223b').lerp(new Color('#86b8f0'), daylight);
+    const fogColor = new Color('#101827').lerp(new Color('#9bcdf2'), daylight);
+    const weatherIntensity = weatherSnapshot?.intensity ?? 0;
     const fogMultiplier = weatherSnapshot?.fogMultiplier ?? 1;
+    const isRainOrFog = weatherSnapshot?.isRaining || weatherSnapshot?.isFoggy;
 
-    this.scene.background.set(skyColor);
-    this.scene.fog.color.set(fogColor);
-    this.scene.fog.near = (dayNightSnapshot.isNight ? 32 : 45) / fogMultiplier;
-    this.scene.fog.far = (dayNightSnapshot.isNight ? 110 : 140) / fogMultiplier;
+    if (isRainOrFog) {
+      fogColor.lerp(new Color('#b8c5ce'), weatherIntensity * 0.28);
+    }
+
+    this.scene.background.copy(skyColor);
+    this.scene.fog.color.copy(fogColor);
+    this.scene.fog.near = (dayNightSnapshot.isNight ? 28 : 42) / fogMultiplier;
+    this.scene.fog.far = (dayNightSnapshot.isNight ? 105 : 150) / fogMultiplier;
   }
 }
