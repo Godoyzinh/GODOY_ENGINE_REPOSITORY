@@ -20,6 +20,8 @@ export class MainMenuUI {
     this.onStudioMode = onStudioMode;
     this.onSettingsChanged = onSettingsChanged;
     this.isMenuOpen = true;
+    this.isJoiningMultiplayer = false;
+    this.statusMessage = null;
     this.activePanel = settingsSystem.getSnapshot().firstLaunchComplete ? 'main' : 'onboarding';
     this.element = document.createElement('div');
     this.element.className = 'main-menu';
@@ -57,6 +59,7 @@ export class MainMenuUI {
 
   openPanel(panelId) {
     this.activePanel = panelId;
+    this.statusMessage = null;
     this.isMenuOpen = true;
     this.render();
   }
@@ -114,7 +117,9 @@ export class MainMenuUI {
     return `
       <div class="main-menu__actions">
         <button class="main-menu__button main-menu__button--primary" data-action="play-solo">Play Solo</button>
-        <button class="main-menu__button" data-action="join-multiplayer">Join Multiplayer</button>
+        <button class="main-menu__button" data-action="join-multiplayer" ${this.isJoiningMultiplayer ? 'disabled' : ''}>
+          ${this.isJoiningMultiplayer ? 'Checking Server...' : 'Join Multiplayer'}
+        </button>
         <button class="main-menu__button" data-action="studio-mode">Studio Mode</button>
         <button class="main-menu__button" data-panel="settings">Settings</button>
         <button class="main-menu__button" data-panel="credits">Credits</button>
@@ -123,6 +128,7 @@ export class MainMenuUI {
         <span>Mode: ${this.networkMode}</span>
         <span>Debug: ${this.settingsSystem.getSnapshot().debugOverlay ? 'on' : 'off'}</span>
       </div>
+      ${this.statusMessage ? `<div class="main-menu__notice" role="status">${this.statusMessage}</div>` : ''}
     `;
   }
 
@@ -260,8 +266,24 @@ export class MainMenuUI {
       this.onPlaySolo?.();
       this.closeMenu();
     });
-    this.element.querySelector('[data-action="join-multiplayer"]')?.addEventListener('click', () => {
-      this.onJoinMultiplayer?.(DEFAULT_SERVER_URL);
+    this.element.querySelector('[data-action="join-multiplayer"]')?.addEventListener('click', async () => {
+      if (this.isJoiningMultiplayer) {
+        return;
+      }
+
+      this.isJoiningMultiplayer = true;
+      this.statusMessage = 'Checking dedicated server...';
+      this.render();
+
+      const result = await Promise.resolve(this.onJoinMultiplayer?.(DEFAULT_SERVER_URL));
+
+      if (result?.ok) {
+        return;
+      }
+
+      this.isJoiningMultiplayer = false;
+      this.statusMessage = result?.message ?? 'Multiplayer launch unavailable.';
+      this.render();
     });
     this.element.querySelector('[data-action="studio-mode"]')?.addEventListener('click', () => {
       this.onStudioMode?.();

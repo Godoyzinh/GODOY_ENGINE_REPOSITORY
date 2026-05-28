@@ -1,7 +1,7 @@
 import { normalizeDrop } from '../items/itemRegistry.js';
 import { getBlockDefinition, getBlockDrop } from '../world/blockRegistry.js';
 
-const MINING_COOLDOWN_SECONDS = 0.16;
+const MINING_COOLDOWN_SECONDS = 0.12;
 
 export class MiningSystem {
   constructor({ toolSystem }) {

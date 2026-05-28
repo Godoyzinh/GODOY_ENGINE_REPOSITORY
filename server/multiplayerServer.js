@@ -76,6 +76,11 @@ export function createMultiplayerServer(options = {}) {
   }
 
   function handleHttpRequest(request, response) {
+    if (request.method === 'OPTIONS') {
+      respondNoContent(response);
+      return;
+    }
+
     if (request.url === '/health') {
       respondJson(response, {
         ok: true,
@@ -704,10 +709,22 @@ function respondJson(response, payload) {
   const body = JSON.stringify(payload);
 
   response.writeHead(200, {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
     'Content-Type': 'application/json',
     'Content-Length': Buffer.byteLength(body),
   });
   response.end(body);
+}
+
+function respondNoContent(response) {
+  response.writeHead(204, {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  });
+  response.end();
 }
 
 function decodeWebSocketFrames(buffer) {

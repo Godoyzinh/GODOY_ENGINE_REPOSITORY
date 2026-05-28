@@ -7,10 +7,11 @@ This Alpha packages the project as a playable sandbox survival creation prototyp
 ## Highlights
 
 - Main menu and first-launch onboarding.
-- Solo and multiplayer launch flow.
+- Solo and multiplayer launch flow with dedicated server health feedback.
 - Settings for graphics quality, render distance, audio volume, controls help, and debug visibility.
 - In-game Studio entry point with existing selection, prefab, undo/redo, and publish foundations.
 - Dedicated server command and admin endpoints.
+- Alpha verification script covering build, settings, inventory/crafting, save migration, and server smoke checks.
 - Release build output split into app and Three.js chunks.
 
 ## How To Play
@@ -32,9 +33,12 @@ This Alpha packages the project as a playable sandbox survival creation prototyp
 ```bash
 npm run dedicated:server
 npm run multiplayer:server
+npm run verify:alpha
 ```
 
 Both commands currently start the same dedicated server entry point.
+
+`npm run verify:alpha` runs the Alpha release smoke suite.
 
 ## WebGL Fallback
 

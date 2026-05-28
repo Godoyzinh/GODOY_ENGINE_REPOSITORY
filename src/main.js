@@ -15,8 +15,10 @@ try {
   appElement.innerHTML = `
     <div class="engine-error">
       <strong>Godoy Engine</strong>
-      <span>WebGL is unavailable in this browser context.</span>
+      <span>Rendering could not start. Check WebGL support, hardware acceleration, and the browser console.</span>
+      <small></small>
     </div>
   `;
+  appElement.querySelector('.engine-error small').textContent = error.message;
   console.error(error);
 }

@@ -50,7 +50,7 @@ export const TOOL_DEFINITIONS = {
 };
 
 const WRONG_TOOL_MULTIPLIER = 0.55;
-const BASE_MINING_SECONDS = 0.65;
+const BASE_MINING_SECONDS = 0.58;
 const MIN_MINING_SECONDS = 0.12;
 
 export class ToolSystem {

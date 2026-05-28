@@ -91,9 +91,19 @@ npm run build
 
 The build separates Three.js into its own output chunk for cleaner Alpha packaging.
 
+## Alpha Verification
+
+```bash
+npm run verify:alpha
+```
+
+This runs the production build plus settings, inventory/crafting, save migration, and dedicated server smoke checks.
+
 ## QA Docs
 
 - [Alpha Release Notes](docs/ALPHA_RELEASE_NOTES.md)
+- [Alpha v0.1 Checklist](docs/ALPHA_V0_1_CHECKLIST.md)
 - [Smoke Tests](docs/QA_SMOKE_TESTS.md)
 - [Known Issues](docs/KNOWN_ISSUES.md)
+- [AI Agent Workflow](docs/AI_AGENT_WORKFLOW.md)
 - [Technical Standards](docs/TECHNICAL_STANDARDS.md)

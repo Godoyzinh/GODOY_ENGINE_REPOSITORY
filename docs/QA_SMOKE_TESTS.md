@@ -5,6 +5,10 @@ Run these before tagging an Alpha build.
 ## Client
 
 - `npm run build` completes successfully.
+- `npm run verify:alpha` completes successfully.
+- `npm run smoke:settings` validates settings normalization and persistence.
+- `npm run smoke:inventory` validates hotbar/backpack stacking, crafting output, and selected consumable use.
+- `npm run smoke:save` validates save migration and persisted simulation state.
 - Open `http://127.0.0.1:5173/`.
 - Main menu appears on first launch.
 - Play Solo hides the menu and the world renders.
@@ -12,6 +16,7 @@ Run these before tagging an Alpha build.
 - First-launch onboarding can be dismissed and stays dismissed after reload.
 - `Esc` opens the menu after play starts.
 - `F1` opens controls help.
+- Join Multiplayer reports that the dedicated server is offline when `npm run dedicated:server` is not running.
 
 ## Gameplay
 
@@ -33,6 +38,7 @@ Run these before tagging an Alpha build.
 
 ## Multiplayer
 
+- `npm run smoke:multiplayer` validates server health, admin status, and reconnect registry behavior.
 - Start server with `npm run dedicated:server`.
 - Health endpoint returns `ok: true`.
 - Two browser tabs can join `?multiplayer=1`.
@@ -44,5 +50,6 @@ Run these before tagging an Alpha build.
 ## Packaging
 
 - `npm run build` outputs app and Three.js chunks.
+- `npm run verify:alpha` runs clean before release.
 - README command flow is accurate.
 - Alpha release notes and known issues are present.

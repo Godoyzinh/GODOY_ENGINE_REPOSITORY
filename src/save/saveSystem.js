@@ -1,5 +1,5 @@
 export class SaveSystem {
-  constructor({ storage = window.localStorage, storageKey = 'godoyEngine.world.v1' } = {}) {
+  constructor({ storage = resolveStorage(), storageKey = 'godoyEngine.world.v1' } = {}) {
     this.storage = storage;
     this.storageKey = storageKey;
     this.state = this.normalizeState(this.loadState());
@@ -321,5 +321,22 @@ function prepareCompressedChunkEdits(edits) {
     format: 'palette-index-prep',
     palette,
     editCount: edits.length,
+  };
+}
+
+function resolveStorage() {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage;
+  }
+
+  return createMemoryStorage();
+}
+
+function createMemoryStorage() {
+  const entries = new Map();
+
+  return {
+    getItem: (key) => entries.get(key) ?? null,
+    setItem: (key, value) => entries.set(key, value),
   };
 }

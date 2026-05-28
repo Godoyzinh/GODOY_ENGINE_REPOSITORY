@@ -2,10 +2,10 @@ import { DAMAGE_TYPES } from '../combat/damageSystem.js';
 import { getConsumableEffect } from '../items/itemRegistry.js';
 import { PLAYER_MODES } from './playerState.js';
 
-const HUNGER_DRAIN_PER_SECOND = 0.18;
-const PRESSURE_HUNGER_DRAIN_PER_SECOND = 0.08;
-const SPRINT_STAMINA_DRAIN_PER_SECOND = 18;
-const STAMINA_REGEN_PER_SECOND = 14;
+const HUNGER_DRAIN_PER_SECOND = 0.12;
+const PRESSURE_HUNGER_DRAIN_PER_SECOND = 0.05;
+const SPRINT_STAMINA_DRAIN_PER_SECOND = 16;
+const STAMINA_REGEN_PER_SECOND = 15;
 const CROUCH_STAMINA_REGEN_BONUS = 5;
 const HEALTH_REGEN_PER_SECOND = 2.5;
 const STARVATION_DAMAGE_INTERVAL = 2.5;

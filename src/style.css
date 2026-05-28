@@ -121,12 +121,25 @@ canvas {
   color: #071017;
 }
 
+.main-menu__button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .main-menu__status {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   color: #aeb8c7;
   font: 11px/1.2 "Cascadia Mono", Consolas, monospace;
+}
+
+.main-menu__notice {
+  border: 1px solid rgba(255, 202, 102, 0.42);
+  padding: 10px 12px;
+  background: rgba(255, 202, 102, 0.1);
+  color: #ffd98e;
+  font: 12px/1.4 "Cascadia Mono", Consolas, monospace;
 }
 
 .settings-panel,
@@ -564,4 +577,10 @@ canvas {
 .engine-error span {
   color: #aeb8c7;
   font-size: 14px;
+}
+
+.engine-error small {
+  max-width: min(520px, calc(100vw - 32px));
+  color: #ffd98e;
+  font: 12px/1.4 "Cascadia Mono", Consolas, monospace;
 }

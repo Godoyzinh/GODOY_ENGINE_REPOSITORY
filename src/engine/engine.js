@@ -12,6 +12,7 @@ import { SceneSystem } from './sceneSystem.js';
 import { EntitySystem } from '../entities/entitySystem.js';
 import { LootSystem, LOOT_TABLE_IDS } from '../loot/lootSystem.js';
 import { NetworkSession } from '../network/networkSession.js';
+import { checkServerHealth } from '../network/serverHealth.js';
 import { PlayerController } from '../player/playerController.js';
 import { InventorySystem } from '../player/inventorySystem.js';
 import { PlayerState } from '../player/playerState.js';
@@ -264,12 +265,23 @@ export class Engine {
     this.applySettings(this.settingsSystem.getSnapshot());
   }
 
-  joinMultiplayer(serverUrl) {
+  async joinMultiplayer(serverUrl) {
+    const serverHealth = await checkServerHealth(serverUrl);
+
+    if (!serverHealth.ok) {
+      return serverHealth;
+    }
+
     const url = new URL(window.location.href);
 
     url.searchParams.set('multiplayer', '1');
     url.searchParams.set('server', serverUrl);
     window.location.href = url.toString();
+
+    return {
+      ok: true,
+      message: serverHealth.message,
+    };
   }
 
   openStudioMode() {
