@@ -19,6 +19,7 @@ import { SurvivalSystem } from '../player/survivalSystem.js';
 import { PhysicsWorld } from '../physics/physicsWorld.js';
 import { ProgressionSystem } from '../progression/progressionSystem.js';
 import { SaveSystem } from '../save/saveSystem.js';
+import { SettingsSystem } from '../settings/settingsSystem.js';
 import { CreatorPermissionSystem } from '../studio/creatorPermissions.js';
 import { PrefabRegistry } from '../studio/prefabRegistry.js';
 import { StudioToolSystem } from '../studio/studioToolSystem.js';
@@ -26,6 +27,7 @@ import { WorldPublishingSystem } from '../studio/worldPublishingSystem.js';
 import { DebugOverlay } from '../ui/debugOverlay.js';
 import { CombatHud } from '../ui/combatHud.js';
 import { HotbarUI } from '../ui/hotbarUI.js';
+import { MainMenuUI } from '../ui/mainMenuUI.js';
 import { SurvivalHud } from '../ui/survivalHud.js';
 import { ToolSystem } from '../tools/toolSystem.js';
 import { DayNightSystem } from '../world/dayNightSystem.js';
@@ -45,8 +47,10 @@ export class Engine {
     this.isRunning = false;
     this.animationFrameId = null;
 
+    this.settingsSystem = new SettingsSystem();
+    const settingsSnapshot = this.settingsSystem.getSnapshot();
     this.sceneSystem = new SceneSystem();
-    this.rendererSystem = new RendererSystem({ rootElement });
+    this.rendererSystem = new RendererSystem({ rootElement, settingsSnapshot });
     this.cameraSystem = new CameraSystem({
       width: this.rendererSystem.width,
       height: this.rendererSystem.height,
@@ -60,7 +64,10 @@ export class Engine {
     this.dayNightSystem = new DayNightSystem({
       savedState: this.saveSystem.loadWorldSimulationState()?.dayNight,
     });
-    this.terrainGenerator = new TerrainGenerator({ saveSystem: this.saveSystem });
+    this.terrainGenerator = new TerrainGenerator({
+      saveSystem: this.saveSystem,
+      settingsSnapshot,
+    });
     this.weatherSystem = new WeatherSystem({
       worldSeed: this.terrainGenerator.worldSeed,
       savedState: this.saveSystem.loadWeatherState(),
@@ -141,6 +148,15 @@ export class Engine {
       }),
     });
     this.debugOverlay = new DebugOverlay({ rootElement });
+    this.mainMenuUI = new MainMenuUI({
+      rootElement,
+      settingsSystem: this.settingsSystem,
+      networkMode: this.networkSession.mode,
+      onPlaySolo: () => this.playSolo(),
+      onJoinMultiplayer: (serverUrl) => this.joinMultiplayer(serverUrl),
+      onStudioMode: () => this.openStudioMode(),
+      onSettingsChanged: (nextSettingsSnapshot) => this.applySettings(nextSettingsSnapshot),
+    });
     this.hotbarUI = new HotbarUI({
       rootElement,
       inventorySystem: this.inventorySystem,
@@ -168,6 +184,7 @@ export class Engine {
     this.update = this.update.bind(this);
     this.persistenceSaveTimer = 0;
     this.persistenceSnapshot = this.saveSystem.getPersistenceStats();
+    this.applySettings(settingsSnapshot);
   }
 
   start() {
@@ -195,6 +212,7 @@ export class Engine {
     this.playerController.dispose();
     this.voxelInteractionSystem.dispose();
     this.studioToolSystem.dispose();
+    this.mainMenuUI.dispose();
     this.inventorySystem.dispose();
     this.hotbarUI.dispose();
     this.survivalHud.dispose();
@@ -230,6 +248,43 @@ export class Engine {
     } else if (event.code === 'KeyT') {
       this.worldSimulationSystem.requestSleep();
     }
+  }
+
+  playSolo() {
+    const url = new URL(window.location.href);
+
+    if (url.searchParams.has('multiplayer') || url.searchParams.has('network')) {
+      url.searchParams.delete('multiplayer');
+      url.searchParams.delete('network');
+      url.searchParams.delete('server');
+      window.location.href = url.toString();
+      return;
+    }
+
+    this.applySettings(this.settingsSystem.getSnapshot());
+  }
+
+  joinMultiplayer(serverUrl) {
+    const url = new URL(window.location.href);
+
+    url.searchParams.set('multiplayer', '1');
+    url.searchParams.set('server', serverUrl);
+    window.location.href = url.toString();
+  }
+
+  openStudioMode() {
+    if (!this.studioToolSystem.isActive) {
+      this.studioToolSystem.toggleStudioMode();
+    }
+
+    this.applySettings(this.settingsSystem.getSnapshot());
+  }
+
+  applySettings(settingsSnapshot) {
+    this.rendererSystem.applySettings(settingsSnapshot);
+    this.terrainGenerator.applySettings(settingsSnapshot);
+    this.ambientAudioSystem.applySettings(settingsSnapshot);
+    this.debugOverlay.setVisible(settingsSnapshot.debugOverlay);
   }
 
   handleResize() {

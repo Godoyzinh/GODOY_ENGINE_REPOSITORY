@@ -7,7 +7,7 @@ import { TerrainNoise } from './terrainNoise.js';
 import { DEFAULT_WORLD_SEED } from './worldConstants.js';
 
 export class TerrainGenerator {
-  constructor({ saveSystem }) {
+  constructor({ saveSystem, settingsSnapshot = null }) {
     this.group = new Group();
     this.group.name = 'TerrainGenerator';
     this.worldSeed = saveSystem.getWorldSeed(DEFAULT_WORLD_SEED);
@@ -25,6 +25,9 @@ export class TerrainGenerator {
       structureGenerator: this.structureGenerator,
       saveSystem,
     });
+    if (settingsSnapshot) {
+      this.chunkManager.applySettings(settingsSnapshot);
+    }
     this.stats = this.chunkManager.stats;
   }
 
@@ -70,5 +73,10 @@ export class TerrainGenerator {
       stats: this.stats,
       loadedChunkKeys: this.chunkManager.getLoadedChunkKeys(),
     };
+  }
+
+  applySettings(settingsSnapshot) {
+    this.chunkManager.applySettings(settingsSnapshot);
+    this.stats = this.chunkManager.stats;
   }
 }

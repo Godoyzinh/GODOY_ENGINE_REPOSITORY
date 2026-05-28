@@ -1,10 +1,16 @@
 export class DebugOverlay {
   constructor({ rootElement }) {
     this.framesPerSecond = 60;
+    this.isVisible = true;
     this.element = document.createElement('div');
     this.element.id = 'debug-overlay';
     this.element.className = 'debug-overlay';
     rootElement.appendChild(this.element);
+  }
+
+  setVisible(isVisible) {
+    this.isVisible = isVisible;
+    this.element.classList.toggle('debug-overlay--hidden', !isVisible);
   }
 
   update({
@@ -37,6 +43,10 @@ export class DebugOverlay {
     const instantFramesPerSecond = 1 / Math.max(deltaTime, 0.001);
     this.framesPerSecond = Math.round(this.framesPerSecond * 0.9 + instantFramesPerSecond * 0.1);
 
+    if (!this.isVisible) {
+      return;
+    }
+
     this.element.innerHTML = `
       <div class="debug-overlay__title">GODOY ENGINE DEBUG</div>
       ${this.createRow('FPS', this.framesPerSecond)}
@@ -49,7 +59,7 @@ export class DebugOverlay {
       ${this.createRow('Pressure', dayNightSnapshot.ambientPressure.toFixed(2))}
       ${this.createRow('Weather', `${weatherSnapshot.state} ${Math.round(weatherSnapshot.intensity * 100)}%`)}
       ${this.createRow('Ambience', weatherSnapshot.ambience)}
-      ${this.createRow('Audio', audioSnapshot.ambientLayer)}
+      ${this.createRow('Audio', `${audioSnapshot.ambientLayer} ${Math.round(audioSnapshot.volume * 100)}%`)}
       ${this.createRow('Net Mode', `${networkSnapshot.mode} ${networkSnapshot.connectionState}`)}
       ${this.createRow('World', networkSnapshot.worldId ?? 'local')}
       ${this.createRow('Hosted', networkSnapshot.hostedWorlds)}
@@ -83,6 +93,7 @@ export class DebugOverlay {
       ${this.createRow('Grounded', playerState.isGrounded ? 'Yes' : 'No')}
       ${this.createRow('Move', getMovementLabel(playerState))}
       ${this.createRow('Chunks', terrainStats.chunksLoaded)}
+      ${this.createRow('Render Dist', terrainStats.renderDistancePreset)}
       ${this.createRow('Visible', terrainStats.chunksVisible)}
       ${this.createRow('Queue', terrainStats.chunksQueued)}
       ${this.createRow('Biome', terrainStats.activeBiome)}

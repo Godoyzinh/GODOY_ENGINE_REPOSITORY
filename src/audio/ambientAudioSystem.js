@@ -8,10 +8,15 @@ const SURVIVAL_SOUND_EVENTS = {
 
 export class AmbientAudioSystem {
   constructor() {
+    this.volume = 0.75;
     this.lastSurvivalEvent = null;
     this.lastCombatEvent = null;
     this.pendingCues = [];
     this.snapshot = this.createSnapshot();
+  }
+
+  applySettings(settingsSnapshot) {
+    this.volume = settingsSnapshot.audioVolume;
   }
 
   update({
@@ -84,6 +89,7 @@ export class AmbientAudioSystem {
       biomeAmbience: `${biomeName.toLowerCase()}-ambience`,
       survivalFeedbackReady: survivalSnapshot?.health < survivalSnapshot?.maxHealth || survivalSnapshot?.hunger <= 35,
       pendingCues: [...new Set(this.pendingCues)],
+      volume: this.volume,
       hookCount: 4,
     };
   }

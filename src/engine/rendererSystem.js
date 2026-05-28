@@ -1,12 +1,12 @@
 import { ACESFilmicToneMapping, PCFShadowMap, SRGBColorSpace, WebGLRenderer } from 'three';
 
-const MAX_PIXEL_RATIO = 2;
-
 export class RendererSystem {
-  constructor({ rootElement }) {
+  constructor({ rootElement, settingsSnapshot = null }) {
     this.rootElement = rootElement;
     this.width = rootElement.clientWidth || window.innerWidth;
     this.height = rootElement.clientHeight || window.innerHeight;
+    this.maxPixelRatio = settingsSnapshot?.graphics?.maxPixelRatio ?? 2;
+    this.shadowsEnabled = settingsSnapshot?.graphics?.shadows !== false;
 
     this.renderer = new WebGLRenderer({
       antialias: true,
@@ -14,7 +14,7 @@ export class RendererSystem {
     });
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = this.shadowsEnabled;
     this.renderer.shadowMap.type = PCFShadowMap;
     this.domElement = this.renderer.domElement;
 
@@ -25,8 +25,15 @@ export class RendererSystem {
   resize(width, height) {
     this.width = width;
     this.height = height;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.maxPixelRatio));
     this.renderer.setSize(width, height, false);
+  }
+
+  applySettings(settingsSnapshot) {
+    this.maxPixelRatio = settingsSnapshot.graphics.maxPixelRatio;
+    this.shadowsEnabled = settingsSnapshot.graphics.shadows;
+    this.renderer.shadowMap.enabled = this.shadowsEnabled;
+    this.resize(this.width, this.height);
   }
 
   render(scene, camera) {
