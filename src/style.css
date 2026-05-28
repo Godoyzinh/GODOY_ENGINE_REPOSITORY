@@ -296,6 +296,10 @@ canvas {
   backdrop-filter: blur(10px);
 }
 
+.combat-hud--hidden {
+  display: none;
+}
+
 .combat-hud__cooldown,
 .combat-hud__target {
   display: grid;

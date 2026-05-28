@@ -225,6 +225,26 @@ export class ChunkManager {
     return chunk.getHighestSolidY(getLocalCoordinate(worldX), getLocalCoordinate(worldZ)) + 1;
   }
 
+  getGroundHeightAt(worldX, worldZ, { currentY = Infinity, maxStepHeight = Infinity } = {}) {
+    const maxTopY = currentY + maxStepHeight;
+    const chunkKey = getChunkKey(getChunkCoordinate(worldX), getChunkCoordinate(worldZ));
+    const chunk = this.chunks.get(chunkKey);
+
+    if (!chunk) {
+      const generatedGroundHeight = this.terrainNoise.getHeightAt(worldX, worldZ) + 1;
+
+      return generatedGroundHeight <= maxTopY ? generatedGroundHeight : null;
+    }
+
+    const highestGroundY = chunk.getHighestGroundColliderYBelow(
+      getLocalCoordinate(worldX),
+      getLocalCoordinate(worldZ),
+      maxTopY,
+    );
+
+    return highestGroundY === null ? null : highestGroundY + 1;
+  }
+
   getBiomeAt(worldX, worldZ) {
     return this.terrainNoise.getBiomeAt(worldX, worldZ);
   }

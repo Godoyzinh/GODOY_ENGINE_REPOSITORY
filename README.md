@@ -66,9 +66,10 @@ http://127.0.0.1:8787/admin/status
 - `Esc`: main menu
 - `F1`: controls help
 - `WASD`: move
-- Mouse: look
+- Mouse: third-person orbit camera
 - Left mouse: mine / interact
 - Right mouse: place block
+- `F3`: toggle technical debug overlay
 - `1-9` or mouse wheel: hotbar selection
 - `E`: consume selected item
 - `R`: craft first available recipe
@@ -97,7 +98,7 @@ The build separates Three.js into its own output chunk for cleaner Alpha packagi
 npm run verify:alpha
 ```
 
-This runs the production build plus settings, inventory/crafting, save migration, and dedicated server smoke checks.
+This runs the production build plus settings, camera/collision, inventory/crafting, save migration, and dedicated server smoke checks.
 
 ## QA Docs
 

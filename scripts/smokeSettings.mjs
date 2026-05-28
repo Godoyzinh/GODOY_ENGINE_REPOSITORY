@@ -3,6 +3,11 @@ import { GRAPHICS_QUALITY, RENDER_DISTANCE_PRESETS, SettingsSystem } from '../sr
 
 const storage = createMemoryStorage();
 const settingsSystem = new SettingsSystem({ storage });
+const defaultSettings = settingsSystem.getSnapshot();
+
+assert.equal(defaultSettings.debugOverlay, false);
+assert.equal(defaultSettings.controlsHelp, true);
+assert.equal(defaultSettings.settingsVersion, 2);
 
 settingsSystem.updateSettings({
   graphicsQuality: 'ultra',
@@ -36,6 +41,17 @@ assert.equal(reloadedSettings.renderDistancePreset, RENDER_DISTANCE_PRESETS.near
 assert.equal(reloadedSettings.audioVolume, 0.35);
 assert.equal(reloadedSettings.renderDistance.loadRadius, 1);
 assert.equal(reloadedSettings.graphics.shadows, false);
+
+const legacyStorage = createMemoryStorage();
+legacyStorage.setItem('godoyEngine.settings.v1', JSON.stringify({
+  debugOverlay: true,
+  controlsHelp: false,
+}));
+const migratedSettings = new SettingsSystem({ storage: legacyStorage }).getSnapshot();
+
+assert.equal(migratedSettings.debugOverlay, false);
+assert.equal(migratedSettings.controlsHelp, false);
+assert.equal(migratedSettings.settingsVersion, 2);
 
 console.log('smoke:settings ok');
 

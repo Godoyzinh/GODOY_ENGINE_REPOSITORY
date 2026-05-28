@@ -1,5 +1,6 @@
-import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Vector3 } from 'three';
+import { Group, MathUtils, Vector3 } from 'three';
 import { MovementSystem, PLAYER_STANDING_HEIGHT } from './movementSystem.js';
+import { PlayerAvatar } from './playerAvatar.js';
 
 export class PlayerController {
   constructor({ camera, terrainSampler, playerState }) {
@@ -12,16 +13,13 @@ export class PlayerController {
     this.position = this.movementSystem.position;
     this.velocity = this.movementSystem.velocity;
     this.cameraTarget = new Vector3();
+    this.cameraTargetOffset = new Vector3(0, 1.2, 0);
+    this.avatarYaw = 0;
     this.handleKeyDown = this.handleKeyDown.bind(this);
     this.handleKeyUp = this.handleKeyUp.bind(this);
 
-    this.body = new Mesh(
-      new BoxGeometry(0.8, PLAYER_STANDING_HEIGHT, 0.8),
-      new MeshStandardMaterial({ color: '#ffcf69', roughness: 0.8 }),
-    );
-    this.body.castShadow = true;
-    this.body.position.y = PLAYER_STANDING_HEIGHT / 2;
-    this.object.add(this.body);
+    this.avatar = new PlayerAvatar();
+    this.object.add(this.avatar.group);
 
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('keyup', this.handleKeyUp);
@@ -30,6 +28,10 @@ export class PlayerController {
   dispose() {
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
+  }
+
+  setInputEnabled(isInputEnabled) {
+    this.movementSystem.setInputEnabled(isInputEnabled);
   }
 
   handleKeyDown(event) {
@@ -47,11 +49,12 @@ export class PlayerController {
     }
   }
 
-  update(deltaTime) {
+  update(deltaTime, { movementYaw = 0 } = {}) {
+    this.movementSystem.setCameraYaw(movementYaw);
     this.movementSystem.update(deltaTime);
-    this.updateBodyPose();
+    this.updateAvatar(deltaTime);
     this.object.position.copy(this.position);
-    this.cameraTarget.copy(this.position);
+    this.cameraTarget.copy(this.position).add(this.cameraTargetOffset);
   }
 
   consumeLandingImpact() {
@@ -61,13 +64,33 @@ export class PlayerController {
   respawn(position = undefined) {
     this.movementSystem.respawn(position);
     this.object.position.copy(this.position);
-    this.cameraTarget.copy(this.position);
+    this.cameraTarget.copy(this.position).add(this.cameraTargetOffset);
   }
 
-  updateBodyPose() {
+  updateAvatar(deltaTime) {
     const playerHeight = this.movementSystem.getCurrentHeight();
+    const moveDirection = this.movementSystem.lastMoveDirection;
+    const movementSpeed = this.movementSystem.horizontalVelocity.length();
 
-    this.body.scale.y = playerHeight / PLAYER_STANDING_HEIGHT;
-    this.body.position.y = playerHeight / 2;
+    if (moveDirection.lengthSq() > 0.001) {
+      this.avatarYaw = lerpAngle(
+        this.avatarYaw,
+        Math.atan2(-moveDirection.x, -moveDirection.z),
+        0.22,
+      );
+    }
+
+    this.avatar.update({
+      deltaTime,
+      movementSpeed,
+      playerHeightScale: playerHeight / PLAYER_STANDING_HEIGHT,
+      yaw: this.avatarYaw,
+    });
   }
+}
+
+function lerpAngle(currentAngle, targetAngle, alpha) {
+  const delta = MathUtils.euclideanModulo(targetAngle - currentAngle + Math.PI, Math.PI * 2) - Math.PI;
+
+  return currentAngle + delta * alpha;
 }

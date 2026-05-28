@@ -11,6 +11,7 @@ export class MainMenuUI {
     onJoinMultiplayer,
     onStudioMode,
     onSettingsChanged,
+    onMenuVisibilityChanged,
   }) {
     this.rootElement = rootElement;
     this.settingsSystem = settingsSystem;
@@ -19,6 +20,7 @@ export class MainMenuUI {
     this.onJoinMultiplayer = onJoinMultiplayer;
     this.onStudioMode = onStudioMode;
     this.onSettingsChanged = onSettingsChanged;
+    this.onMenuVisibilityChanged = onMenuVisibilityChanged;
     this.isMenuOpen = true;
     this.isJoiningMultiplayer = false;
     this.statusMessage = null;
@@ -32,6 +34,7 @@ export class MainMenuUI {
     this.handleKeyDown = this.handleKeyDown.bind(this);
     window.addEventListener('keydown', this.handleKeyDown);
     this.render();
+    this.notifyMenuVisibilityChanged();
   }
 
   dispose() {
@@ -49,10 +52,12 @@ export class MainMenuUI {
       this.isMenuOpen = !this.isMenuOpen;
       this.activePanel = 'main';
       this.render();
+      this.notifyMenuVisibilityChanged();
     } else if (event.code === 'F1') {
       this.isMenuOpen = true;
       this.activePanel = 'controls';
       this.render();
+      this.notifyMenuVisibilityChanged();
       event.preventDefault();
     }
   }
@@ -62,11 +67,13 @@ export class MainMenuUI {
     this.statusMessage = null;
     this.isMenuOpen = true;
     this.render();
+    this.notifyMenuVisibilityChanged();
   }
 
   closeMenu() {
     this.isMenuOpen = false;
     this.render();
+    this.notifyMenuVisibilityChanged();
   }
 
   render() {
@@ -114,9 +121,11 @@ export class MainMenuUI {
   }
 
   renderMainPanel() {
+    const primaryActionLabel = this.settingsSystem.getSnapshot().firstLaunchComplete ? 'Resume Game' : 'Play Solo';
+
     return `
       <div class="main-menu__actions">
-        <button class="main-menu__button main-menu__button--primary" data-action="play-solo">Play Solo</button>
+        <button class="main-menu__button main-menu__button--primary" data-action="play-solo">${primaryActionLabel}</button>
         <button class="main-menu__button" data-action="join-multiplayer" ${this.isJoiningMultiplayer ? 'disabled' : ''}>
           ${this.isJoiningMultiplayer ? 'Checking Server...' : 'Join Multiplayer'}
         </button>
@@ -173,12 +182,13 @@ export class MainMenuUI {
     return `
       <div class="controls-panel">
         ${this.renderControlGroup('Gameplay', [
-          ['WASD', 'Move'],
-          ['Mouse', 'Look'],
+          ['WASD', 'Move relative to camera'],
+          ['Mouse', 'Orbit camera / look'],
           ['Left Mouse', 'Mine / attack target block'],
           ['Right Mouse', 'Place selected block'],
           ['1-9 / Wheel', 'Select hotbar slot'],
           ['E / R / Q / T', 'Consume, craft, melee, sleep'],
+          ['F3', 'Toggle debug overlay'],
         ])}
         ${this.renderControlGroup('Studio', [
           ['`', 'Toggle Studio'],
@@ -228,6 +238,8 @@ export class MainMenuUI {
     this.hintElement.innerHTML = `
       <span>Esc Menu</span>
       <span>F1 Controls</span>
+      <span>Left Mine</span>
+      <span>Right Place</span>
       <span>\` Studio</span>
     `;
   }
@@ -319,6 +331,10 @@ export class MainMenuUI {
 
     this.onSettingsChanged?.(settings);
     this.render();
+  }
+
+  notifyMenuVisibilityChanged() {
+    this.onMenuVisibilityChanged?.(this.isMenuOpen);
   }
 }
 

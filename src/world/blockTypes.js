@@ -132,6 +132,7 @@ export const BLOCK_DEFINITIONS = {
     toolType: 'hand',
     drop: { itemType: 'consumable', itemId: 'berries', count: 1 },
     collision: true,
+    groundCollision: false,
     transparent: false,
     renderable: true,
     occludes: true,
@@ -264,6 +265,10 @@ export const BLOCK_DEFINITIONS = {
 
 export function isSolidBlock(blockId) {
   return blockId !== BLOCK_IDS.air && BLOCK_DEFINITIONS[blockId]?.collision === true;
+}
+
+export function isGroundColliderBlock(blockId) {
+  return isSolidBlock(blockId) && BLOCK_DEFINITIONS[blockId]?.groundCollision !== false;
 }
 
 export function isRenderableBlock(blockId) {

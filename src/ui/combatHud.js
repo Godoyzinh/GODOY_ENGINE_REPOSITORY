@@ -16,6 +16,11 @@ export class CombatHud {
     const combatSnapshot = this.combatSystem.getSnapshot();
     const targetSnapshot = this.entitySystem.getFocusedCombatTarget();
     const serializedState = JSON.stringify({ combatSnapshot, targetSnapshot });
+    const shouldShow = Boolean(targetSnapshot) ||
+      combatSnapshot.cooldownRemaining > 0 ||
+      combatSnapshot.damageIndicators.length > 0;
+
+    this.element.classList.toggle('combat-hud--hidden', !shouldShow);
 
     if (serializedState === this.lastRenderedState) {
       return;

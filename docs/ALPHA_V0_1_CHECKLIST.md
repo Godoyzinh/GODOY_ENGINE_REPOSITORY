@@ -14,6 +14,9 @@ Use this checklist before tagging or sharing an Alpha build.
 - Join Multiplayer shows a clear offline message when the dedicated server is not running.
 - Two multiplayer tabs can connect after the dedicated server starts.
 - Settings persist after reload.
+- Technical debug overlay is hidden by default and toggles with `F3`.
+- Third-person mouse orbit moves freely and WASD follows camera direction.
+- Tree canopies do not launch the player upward.
 - Save migration smoke test passes.
 - Inventory/crafting smoke test passes.
 

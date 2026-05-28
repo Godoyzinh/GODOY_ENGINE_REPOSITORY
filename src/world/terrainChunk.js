@@ -1,5 +1,5 @@
 import { BoxGeometry, InstancedMesh, Matrix4 } from 'three';
-import { BLOCK_DEFINITIONS, BLOCK_IDS, isOccludingBlock, isRenderableBlock, isSolidBlock } from './blockTypes.js';
+import { BLOCK_DEFINITIONS, BLOCK_IDS, isGroundColliderBlock, isOccludingBlock, isRenderableBlock, isSolidBlock } from './blockTypes.js';
 import { getBlockKey, getWorldCoordinate } from './chunkMath.js';
 import { BLOCK_SIZE, CHUNK_SIZE, MIN_GENERATED_Y } from './worldConstants.js';
 
@@ -173,6 +173,29 @@ export class TerrainChunk {
       const [blockLocalX, blockY, blockLocalZ] = blockKey.split(',').map(Number);
 
       if (blockLocalX === localX && blockLocalZ === localZ && blockY > highestY) {
+        highestY = blockY;
+      }
+    }
+
+    return highestY;
+  }
+
+  getHighestGroundColliderYBelow(localX, localZ, maxTopY) {
+    let highestY = null;
+
+    for (const [blockKey, blockId] of this.blocks) {
+      if (!isGroundColliderBlock(blockId)) {
+        continue;
+      }
+
+      const [blockLocalX, blockY, blockLocalZ] = blockKey.split(',').map(Number);
+
+      if (
+        blockLocalX === localX &&
+        blockLocalZ === localZ &&
+        blockY + 1 <= maxTopY &&
+        (highestY === null || blockY > highestY)
+      ) {
         highestY = blockY;
       }
     }

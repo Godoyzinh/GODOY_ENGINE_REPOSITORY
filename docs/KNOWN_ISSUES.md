@@ -15,6 +15,11 @@
 - Large worlds are JSON-persisted during Alpha; binary chunk compression is future work.
 - The release build splits Three.js into a separate chunk, but the engine is still a substantial prototype bundle.
 
+## Fixed In Current Alpha
+
+- Tree canopy columns no longer count as high walkable ground for player vertical snapping.
+- Technical debug data is hidden by default and kept behind menu settings or `F3`.
+
 ## WebGL Fallback
 
 If the app shows the WebGL fallback screen:

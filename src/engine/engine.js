@@ -55,6 +55,7 @@ export class Engine {
     this.cameraSystem = new CameraSystem({
       width: this.rendererSystem.width,
       height: this.rendererSystem.height,
+      domElement: this.rendererSystem.domElement,
     });
     this.lightingSystem = new LightingSystem();
     this.saveSystem = new SaveSystem();
@@ -69,6 +70,7 @@ export class Engine {
       saveSystem: this.saveSystem,
       settingsSnapshot,
     });
+    this.cameraSystem.setCollisionSampler(this.terrainGenerator);
     this.weatherSystem = new WeatherSystem({
       worldSeed: this.terrainGenerator.worldSeed,
       savedState: this.saveSystem.loadWeatherState(),
@@ -157,6 +159,7 @@ export class Engine {
       onJoinMultiplayer: (serverUrl) => this.joinMultiplayer(serverUrl),
       onStudioMode: () => this.openStudioMode(),
       onSettingsChanged: (nextSettingsSnapshot) => this.applySettings(nextSettingsSnapshot),
+      onMenuVisibilityChanged: (isMenuOpen) => this.setGameplayInputEnabled(!isMenuOpen),
     });
     this.hotbarUI = new HotbarUI({
       rootElement,
@@ -211,6 +214,7 @@ export class Engine {
     window.removeEventListener('keydown', this.handleKeyDown);
     cancelAnimationFrame(this.animationFrameId);
     this.playerController.dispose();
+    this.cameraSystem.dispose();
     this.voxelInteractionSystem.dispose();
     this.studioToolSystem.dispose();
     this.mainMenuUI.dispose();
@@ -248,7 +252,25 @@ export class Engine {
       event.preventDefault();
     } else if (event.code === 'KeyT') {
       this.worldSimulationSystem.requestSleep();
+    } else if (event.code === 'F3') {
+      this.toggleDebugOverlay();
+      event.preventDefault();
     }
+  }
+
+  setGameplayInputEnabled(isEnabled) {
+    this.playerController?.setInputEnabled(isEnabled);
+    this.cameraSystem?.setInputEnabled(isEnabled);
+  }
+
+  toggleDebugOverlay() {
+    const settings = this.settingsSystem.getSnapshot();
+    const nextSettings = this.settingsSystem.updateSettings({
+      debugOverlay: !settings.debugOverlay,
+    });
+
+    this.applySettings(nextSettings);
+    this.mainMenuUI.render();
   }
 
   playSolo() {
@@ -332,7 +354,9 @@ export class Engine {
     const weatherSnapshot = this.weatherSystem.getSnapshot();
     this.lightingSystem.update(dayNightSnapshot, weatherSnapshot);
     this.sceneSystem.applyEnvironment(dayNightSnapshot, weatherSnapshot);
-    this.playerController.update(deltaTime);
+    this.playerController.update(deltaTime, {
+      movementYaw: this.cameraSystem.getMovementYaw(),
+    });
     const landingImpact = this.playerController.consumeLandingImpact();
     this.survivalSystem.update({
       deltaTime,

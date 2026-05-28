@@ -11,13 +11,15 @@ export const RENDER_DISTANCE_PRESETS = {
 };
 
 const STORAGE_KEY = 'godoyEngine.settings.v1';
+const SETTINGS_VERSION = 2;
 
 const DEFAULT_SETTINGS = {
+  settingsVersion: SETTINGS_VERSION,
   graphicsQuality: GRAPHICS_QUALITY.medium,
   renderDistancePreset: RENDER_DISTANCE_PRESETS.balanced,
   audioVolume: 0.75,
   controlsHelp: true,
-  debugOverlay: true,
+  debugOverlay: false,
   firstLaunchComplete: false,
 };
 
@@ -120,10 +122,12 @@ export class SettingsSystem {
 
 function normalizeSettings(settings) {
   const sourceSettings = settings ?? DEFAULT_SETTINGS;
+  const isLegacySettings = sourceSettings.settingsVersion !== SETTINGS_VERSION;
 
   return {
     ...DEFAULT_SETTINGS,
     ...sourceSettings,
+    settingsVersion: SETTINGS_VERSION,
     graphicsQuality: Object.values(GRAPHICS_QUALITY).includes(sourceSettings.graphicsQuality)
       ? sourceSettings.graphicsQuality
       : DEFAULT_SETTINGS.graphicsQuality,
@@ -132,9 +136,17 @@ function normalizeSettings(settings) {
       : DEFAULT_SETTINGS.renderDistancePreset,
     audioVolume: clamp(Number(sourceSettings.audioVolume ?? DEFAULT_SETTINGS.audioVolume), 0, 1),
     controlsHelp: sourceSettings.controlsHelp !== false,
-    debugOverlay: sourceSettings.debugOverlay !== false,
+    debugOverlay: normalizeDebugOverlay(sourceSettings, isLegacySettings),
     firstLaunchComplete: sourceSettings.firstLaunchComplete === true,
   };
+}
+
+function normalizeDebugOverlay(sourceSettings, isLegacySettings) {
+  if (isLegacySettings || sourceSettings.debugOverlay === undefined) {
+    return DEFAULT_SETTINGS.debugOverlay;
+  }
+
+  return sourceSettings.debugOverlay === true;
 }
 
 function resolveStorage() {

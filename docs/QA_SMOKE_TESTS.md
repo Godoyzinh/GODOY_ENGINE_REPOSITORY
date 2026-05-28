@@ -7,6 +7,7 @@ Run these before tagging an Alpha build.
 - `npm run build` completes successfully.
 - `npm run verify:alpha` completes successfully.
 - `npm run smoke:settings` validates settings normalization and persistence.
+- `npm run smoke:camera` validates camera-relative movement, paused input, and vertical snap protection.
 - `npm run smoke:inventory` validates hotbar/backpack stacking, crafting output, and selected consumable use.
 - `npm run smoke:save` validates save migration and persisted simulation state.
 - Open `http://127.0.0.1:5173/`.
@@ -16,11 +17,14 @@ Run these before tagging an Alpha build.
 - First-launch onboarding can be dismissed and stays dismissed after reload.
 - `Esc` opens the menu after play starts.
 - `F1` opens controls help.
+- `F3` toggles the technical debug overlay.
 - Join Multiplayer reports that the dedicated server is offline when `npm run dedicated:server` is not running.
 
 ## Gameplay
 
 - Player can move, jump, sprint, crouch, and fly in creative mode.
+- Mouse orbit rotates the third-person camera, and movement follows camera direction.
+- Passing near tree canopies/trunks does not snap the player upward.
 - Blocks can be mined and placed.
 - Hotbar selection works with number keys and scroll wheel.
 - Crafting and consumable use still work.

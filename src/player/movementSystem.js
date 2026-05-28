@@ -8,6 +8,8 @@ const FLY_SPRINT_SPEED = 17;
 const GRAVITY = -26;
 const MAX_FALL_SPEED = -34;
 const JUMP_FORCE = 10;
+const MAX_STEP_UP_HEIGHT = 1.05;
+const GROUND_CLEARANCE = 0.05;
 export const PLAYER_STANDING_HEIGHT = 1.8;
 export const PLAYER_CROUCH_HEIGHT = 1.15;
 
@@ -17,8 +19,12 @@ export class MovementSystem {
     this.playerState = playerState;
     this.position = new Vector3(0, 8, 0);
     this.velocity = new Vector3();
+    this.horizontalVelocity = new Vector3();
+    this.lastMoveDirection = new Vector3(0, 0, -1);
     this.spawnPosition = new Vector3(0, 8, 0);
     this.lastLandingImpact = 0;
+    this.cameraYaw = 0;
+    this.isInputEnabled = true;
     this.input = {
       forward: false,
       backward: false,
@@ -31,7 +37,31 @@ export class MovementSystem {
     this.isGrounded = false;
   }
 
+  setInputEnabled(isInputEnabled) {
+    this.isInputEnabled = isInputEnabled;
+
+    if (!isInputEnabled) {
+      this.clearInput();
+    }
+  }
+
+  clearInput() {
+    for (const inputName of Object.keys(this.input)) {
+      this.input[inputName] = false;
+    }
+
+    this.horizontalVelocity.set(0, 0, 0);
+  }
+
+  setCameraYaw(cameraYaw) {
+    this.cameraYaw = cameraYaw;
+  }
+
   setInput(code, isPressed) {
+    if (!this.isInputEnabled) {
+      return false;
+    }
+
     const inputMap = {
       KeyW: 'forward',
       ArrowUp: 'forward',
@@ -59,6 +89,10 @@ export class MovementSystem {
   }
 
   handleActionKey(code, event) {
+    if (!this.isInputEnabled) {
+      return false;
+    }
+
     if (code === 'KeyF' && !event.repeat) {
       this.playerState.toggleFlyMode();
       this.velocity.y = 0;
@@ -94,16 +128,23 @@ export class MovementSystem {
     const moveVector = this.getHorizontalMoveVector();
 
     if (moveVector.lengthSq() === 0) {
+      this.horizontalVelocity.set(0, 0, 0);
+      this.velocity.x = 0;
+      this.velocity.z = 0;
       return;
     }
 
-    moveVector.normalize().multiplyScalar(this.getGroundSpeed() * deltaTime);
-    this.position.add(moveVector);
+    moveVector.normalize();
+    this.lastMoveDirection.copy(moveVector);
+    this.horizontalVelocity.copy(moveVector).multiplyScalar(this.getGroundSpeed());
+    this.velocity.x = this.horizontalVelocity.x;
+    this.velocity.z = this.horizontalVelocity.z;
+    this.position.addScaledVector(moveVector, this.getGroundSpeed() * deltaTime);
   }
 
   applyVerticalMovement(deltaTime) {
-    const groundHeight = this.terrainSampler.getHeightAt(this.position.x, this.position.z);
-    const minimumY = groundHeight + 0.05;
+    const groundHeight = this.getResolvedGroundHeight();
+    const minimumY = groundHeight === null ? null : groundHeight + GROUND_CLEARANCE;
 
     if (this.input.jump && this.isGrounded) {
       this.velocity.y = JUMP_FORCE;
@@ -113,12 +154,12 @@ export class MovementSystem {
     this.velocity.y = Math.max(this.velocity.y + GRAVITY * deltaTime, MAX_FALL_SPEED);
     this.position.y += this.velocity.y * deltaTime;
 
-    if (this.position.y <= minimumY && this.velocity.y <= 0) {
+    if (minimumY !== null && this.position.y <= minimumY && this.velocity.y <= 0) {
       this.lastLandingImpact = Math.abs(this.velocity.y);
       this.position.y = minimumY;
       this.velocity.y = 0;
       this.isGrounded = true;
-    } else if (this.position.y > minimumY + 0.08) {
+    } else if (minimumY === null || this.position.y > minimumY + 0.08) {
       this.isGrounded = false;
     }
   }
@@ -130,19 +171,46 @@ export class MovementSystem {
     moveVector.y = verticalInput;
 
     if (moveVector.lengthSq() > 0) {
-      moveVector.normalize().multiplyScalar(this.getFlySpeed() * deltaTime);
-      this.position.add(moveVector);
+      moveVector.normalize();
+      this.lastMoveDirection.copy(moveVector).setY(0).normalize();
+      this.horizontalVelocity.set(moveVector.x, 0, moveVector.z).multiplyScalar(this.getFlySpeed());
+      this.position.addScaledVector(moveVector, this.getFlySpeed() * deltaTime);
+    } else {
+      this.horizontalVelocity.set(0, 0, 0);
     }
 
-    this.velocity.set(0, 0, 0);
+    this.velocity.set(
+      moveVector.x * this.getFlySpeed(),
+      moveVector.y * this.getFlySpeed(),
+      moveVector.z * this.getFlySpeed(),
+    );
     this.isGrounded = false;
   }
 
   getHorizontalMoveVector() {
-    const moveX = Number(this.input.right) - Number(this.input.left);
-    const moveZ = Number(this.input.backward) - Number(this.input.forward);
+    const strafeInput = Number(this.input.right) - Number(this.input.left);
+    const forwardInput = Number(this.input.forward) - Number(this.input.backward);
+    const forwardVector = new Vector3(-Math.sin(this.cameraYaw), 0, -Math.cos(this.cameraYaw));
+    const rightVector = new Vector3(Math.cos(this.cameraYaw), 0, -Math.sin(this.cameraYaw));
 
-    return new Vector3(moveX, 0, moveZ);
+    return forwardVector.multiplyScalar(forwardInput).add(rightVector.multiplyScalar(strafeInput));
+  }
+
+  getResolvedGroundHeight() {
+    const sampledGroundHeight = this.terrainSampler.getGroundHeightAt?.(this.position.x, this.position.z, {
+      currentY: this.position.y,
+      maxStepHeight: MAX_STEP_UP_HEIGHT,
+    }) ?? this.terrainSampler.getHeightAt(this.position.x, this.position.z);
+
+    if (sampledGroundHeight === null || sampledGroundHeight === undefined) {
+      return null;
+    }
+
+    if (sampledGroundHeight - this.position.y > MAX_STEP_UP_HEIGHT) {
+      return null;
+    }
+
+    return sampledGroundHeight;
   }
 
   getGroundSpeed() {

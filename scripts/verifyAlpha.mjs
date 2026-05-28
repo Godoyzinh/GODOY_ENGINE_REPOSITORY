@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 const checks = [
   ['build', ['run', 'build']],
   ['settings smoke', ['run', 'smoke:settings']],
+  ['camera/collision smoke', ['run', 'smoke:camera']],
   ['inventory smoke', ['run', 'smoke:inventory']],
   ['save migration smoke', ['run', 'smoke:save']],
   ['multiplayer smoke', ['run', 'smoke:multiplayer']],

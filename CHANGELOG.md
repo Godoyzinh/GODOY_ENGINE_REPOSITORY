@@ -1,5 +1,21 @@
 # Changelog
 
+## UX, Camera, And Collision Fixes
+
+### Added
+
+- Third-person orbit camera with mouse rotation and camera-relative movement.
+- Voxel humanoid player avatar foundation for future skins.
+- Camera/collision smoke test for movement direction, pause gating, and vertical snap protection.
+
+### Changed
+
+- Technical debug overlay is hidden by default and can be toggled with `F3` or settings.
+- Legacy Alpha settings migrate the debug overlay back to hidden for a cleaner first impression.
+- Combat HUD hides itself when there is no active target, cooldown, or damage feedback.
+- Player ground detection now limits upward snapping and ignores tree canopy blocks as walkable support.
+- Pause/menu flow now gates camera and movement input while open.
+
 ## Alpha Stabilization
 
 ### Added

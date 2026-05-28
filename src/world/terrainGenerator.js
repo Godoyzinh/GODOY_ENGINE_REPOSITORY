@@ -40,6 +40,10 @@ export class TerrainGenerator {
     return this.chunkManager.getHeightAt(x, z);
   }
 
+  getGroundHeightAt(x, z, options) {
+    return this.chunkManager.getGroundHeightAt(x, z, options);
+  }
+
   getBiomeAt(x, z) {
     return this.chunkManager.getBiomeAt(x, z);
   }
