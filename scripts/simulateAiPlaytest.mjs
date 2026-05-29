@@ -24,6 +24,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     mode: result.snapshot.mode.id,
     durationSeconds: result.snapshot.elapsedSeconds,
     actions: result.snapshot.actionCounts,
+    planner: {
+      currentGoal: result.snapshot.planner?.currentGoal,
+      progressionTierReached: result.snapshot.planner?.progressionTierReached,
+      goalsCompleted: result.snapshot.planner?.goalsCompleted?.map((goal) => goal.id) ?? [],
+      goalsFailed: result.snapshot.planner?.goalsFailed?.map((goal) => goal.id) ?? [],
+      bottlenecks: result.snapshot.planner?.bottlenecks?.length ?? 0,
+    },
     failures: result.snapshot.failureCounts,
     issues: result.report.issues.length,
     tasks: result.report.aiTasks.length,

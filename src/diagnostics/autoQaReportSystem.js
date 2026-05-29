@@ -101,6 +101,7 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
   const deaths = telemetrySnapshot.counts?.deaths ?? 0;
   const simulationFailures = runtimeSnapshot.simulation?.failures ?? [];
   const simulationFailureCounts = runtimeSnapshot.simulation?.failureCounts ?? {};
+  const plannerSnapshot = runtimeSnapshot.simulation?.planner ?? null;
 
   if (consoleErrorCount > 0) {
     issues.push({
@@ -169,6 +170,28 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
       title: 'Investigate simulation console errors',
       summary: `${simulationFailureCounts.consoleErrors} console error event(s) were observed by the autonomous playtest.`,
       evidence: 'Autonomous playtest failure detector reported console errors.',
+    });
+  }
+
+  for (const failedGoal of plannerSnapshot?.goalsFailed ?? []) {
+    issues.push({
+      code: `goal-failed-${failedGoal.id}`,
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: `Review failed AI goal: ${failedGoal.label}`,
+      summary: failedGoal.reason ?? `${failedGoal.label} did not complete during the autonomous playtest.`,
+      evidence: `Time spent: ${failedGoal.timeSpentSeconds}s; failed at ${failedGoal.failedAtSeconds}s.`,
+    });
+  }
+
+  for (const bottleneck of (plannerSnapshot?.bottlenecks ?? []).slice(0, 6)) {
+    issues.push({
+      code: bottleneck.code,
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'low',
+      title: `Review AI progression bottleneck: ${bottleneck.goalName}`,
+      summary: bottleneck.summary,
+      evidence: `Count: ${bottleneck.count}; first seen at ${bottleneck.firstAtSeconds}s; last seen at ${bottleneck.lastAtSeconds}s.`,
     });
   }
 
@@ -269,6 +292,58 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
       'firstAtSeconds',
       'lastAtSeconds',
       'count',
+    ])),
+    planner: sanitizeGoalPlannerSnapshot(simulationSnapshot.planner),
+  };
+}
+
+function sanitizeGoalPlannerSnapshot(plannerSnapshot = null) {
+  if (!plannerSnapshot) {
+    return null;
+  }
+
+  return {
+    currentGoal: plannerSnapshot.currentGoal,
+    currentGoalId: plannerSnapshot.currentGoalId,
+    currentSubgoal: plannerSnapshot.currentSubgoal,
+    reason: plannerSnapshot.reason,
+    progress: plannerSnapshot.progress,
+    target: plannerSnapshot.target,
+    progressionTierReached: plannerSnapshot.progressionTierReached,
+    goalsCompleted: (plannerSnapshot.goalsCompleted ?? []).slice(0, 24).map((goal) => pick(goal, [
+      'id',
+      'label',
+      'priority',
+      'completedAtSeconds',
+      'timeSpentSeconds',
+    ])),
+    goalsFailed: (plannerSnapshot.goalsFailed ?? []).slice(0, 24).map((goal) => pick(goal, [
+      'id',
+      'label',
+      'priority',
+      'failedAtSeconds',
+      'timeSpentSeconds',
+      'reason',
+    ])),
+    timeSpentByGoal: { ...(plannerSnapshot.timeSpentByGoal ?? {}) },
+    bottlenecks: (plannerSnapshot.bottlenecks ?? []).slice(0, 16).map((bottleneck) => pick(bottleneck, [
+      'code',
+      'goalId',
+      'goalName',
+      'summary',
+      'firstAtSeconds',
+      'lastAtSeconds',
+      'count',
+    ])),
+    allGoals: (plannerSnapshot.allGoals ?? []).map((goal) => pick(goal, [
+      'id',
+      'label',
+      'priority',
+      'status',
+      'progress',
+      'requirements',
+      'successCriteria',
+      'failureCriteria',
     ])),
   };
 }

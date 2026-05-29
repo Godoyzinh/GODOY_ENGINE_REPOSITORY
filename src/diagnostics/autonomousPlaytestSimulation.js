@@ -1,4 +1,5 @@
 import { resolvePlaytestMode } from './playtestSimulationModes.js';
+import { SurvivalGoalPlanner } from './survivalGoalPlanner.js';
 
 const DEFAULT_STEP_SECONDS = 0.25;
 const POSITION_SAMPLE_SECONDS = 5;
@@ -32,6 +33,7 @@ export class AutonomousPlaytestSimulation {
     this.positionSamples = [];
     this.lastPosition = null;
     this.nextPositionSampleAt = 0;
+    this.goalPlanner = new SurvivalGoalPlanner();
   }
 
   start({ modeId = 'quick', durationSeconds = null } = {}) {
@@ -54,6 +56,7 @@ export class AutonomousPlaytestSimulation {
     this.positionSamples = [];
     this.lastPosition = null;
     this.nextPositionSampleAt = 0;
+    this.goalPlanner.reset();
     this.status = 'running';
     this.telemetrySystem.recordGameplayEvent('auto-test-start', {
       mode: this.mode.id,
@@ -144,25 +147,43 @@ export class AutonomousPlaytestSimulation {
   }
 
   updateActions(deltaTime) {
-    this.performAction('explore', () => this.adapter.explore?.({
+    const context = this.adapter.getPlanningState?.({
+      elapsedSeconds: this.elapsedSeconds,
+      mode: this.mode,
+    }) ?? {};
+    const plan = this.goalPlanner.update({
+      deltaTime,
+      elapsedSeconds: this.elapsedSeconds,
+      context,
+    });
+
+    if (plan.action !== 'blocked') {
+      this.performPlannedAction(plan, context, deltaTime);
+    }
+
+    this.updateTimedAction('saveLoad', deltaTime, 20, () => this.adapter.checkSaveLoad?.());
+  }
+
+  performPlannedAction(plan, context, deltaTime) {
+    const actionName = mapPlanActionToAction(plan.action);
+    const result = this.performAction(actionName, () => this.adapter.executeGoalStep?.({
+      plan,
+      context,
       deltaTime,
       elapsedSeconds: this.elapsedSeconds,
       mode: this.mode,
     }));
 
-    this.updateTimedAction('mine', deltaTime, 4, () => this.adapter.mineBlock?.({
+    this.goalPlanner.recordStepResult({
+      plan,
+      result,
       elapsedSeconds: this.elapsedSeconds,
-    }));
-    this.updateTimedAction('place', deltaTime, 7, () => this.adapter.placeBlock?.({
-      elapsedSeconds: this.elapsedSeconds,
-    }));
-    this.updateTimedAction('collect', deltaTime, 5, () => this.adapter.collectDrops?.());
-    this.updateTimedAction('craft', deltaTime, 11, () => this.adapter.craftBasicItem?.());
-    this.updateTimedAction('combat', deltaTime, 9, () => this.adapter.fightHostile?.({
-      elapsedSeconds: this.elapsedSeconds,
-    }));
-    this.updateTimedAction('survive', deltaTime, 6, () => this.adapter.survive?.());
-    this.updateTimedAction('saveLoad', deltaTime, 20, () => this.adapter.checkSaveLoad?.());
+    });
+    this.telemetrySystem.recordGameplayEvent('auto-goal-step', {
+      goal: plan.goalId,
+      action: plan.action,
+      result: result.ok ? 'ok' : 'blocked',
+    });
   }
 
   updateTimedAction(actionName, deltaTime, intervalSeconds, callback) {
@@ -180,11 +201,21 @@ export class AutonomousPlaytestSimulation {
     const result = callback?.() ?? { ok: false, skipped: true };
 
     if (result.ok) {
-      this.actionCounts[actionName] += Number(result.count ?? 1);
+      this.incrementActionCount(actionName, result.count ?? 1);
       this.telemetrySystem.recordGameplayEvent(`auto-${actionName}`, {
         result: result.event ?? 'ok',
         count: result.count ?? 1,
       });
+
+      for (const secondaryAction of result.secondaryActions ?? []) {
+        const secondaryActionName = mapPlanActionToAction(secondaryAction.action ?? secondaryAction.name);
+
+        this.incrementActionCount(secondaryActionName, secondaryAction.count ?? 1);
+        this.telemetrySystem.recordGameplayEvent(`auto-${secondaryActionName}`, {
+          result: secondaryAction.event ?? 'planned-support',
+          count: secondaryAction.count ?? 1,
+        });
+      }
     }
 
     for (const failure of result.failures ?? []) {
@@ -192,6 +223,14 @@ export class AutonomousPlaytestSimulation {
     }
 
     return result;
+  }
+
+  incrementActionCount(actionName, count = 1) {
+    if (!Object.prototype.hasOwnProperty.call(this.actionCounts, actionName)) {
+      return;
+    }
+
+    this.actionCounts[actionName] += Number(count ?? 1);
   }
 
   detectFailures() {
@@ -335,6 +374,7 @@ export class AutonomousPlaytestSimulation {
       actionCounts: { ...this.actionCounts },
       failureCounts: { ...this.failureCounts },
       failures: this.failures.map((failure) => ({ ...failure })),
+      planner: this.goalPlanner.getSnapshot(),
       lastResult: this.lastResult ? { ...this.lastResult } : null,
     };
   }
@@ -342,12 +382,6 @@ export class AutonomousPlaytestSimulation {
 
 function createActionTimers() {
   return {
-    mine: 3.2,
-    place: 5.8,
-    collect: 2.5,
-    craft: 8,
-    combat: 6,
-    survive: 0,
     saveLoad: 12,
   };
 }
@@ -363,6 +397,34 @@ function createActionCounts() {
     survive: 0,
     saveLoad: 0,
   };
+}
+
+function mapPlanActionToAction(planAction) {
+  if (planAction === 'gatherWood' || planAction === 'gatherStone' || planAction === 'gatherOre' || planAction === 'gatherFuel') {
+    return 'mine';
+  }
+
+  if (planAction === 'craftPlanks' || planAction === 'craftTools' || planAction === 'obtainFurnace' || planAction === 'smeltOre' || planAction === 'upgradeEquipment') {
+    return 'craft';
+  }
+
+  if (planAction === 'buildShelter') {
+    return 'place';
+  }
+
+  if (planAction === 'surviveNight') {
+    return 'survive';
+  }
+
+  if (planAction === 'fightHostile') {
+    return 'combat';
+  }
+
+  if (planAction === 'navigate') {
+    return 'explore';
+  }
+
+  return planAction;
 }
 
 function createFailureCounts() {

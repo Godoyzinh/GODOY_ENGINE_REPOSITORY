@@ -58,6 +58,10 @@ function classifyIssue(issue) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
+  if (issue.code.includes('goal-')) {
+    return AI_TASK_CATEGORIES.gameplay;
+  }
+
   if (issue.code.includes('console')) {
     return AI_TASK_CATEGORIES.bug;
   }
@@ -76,6 +80,10 @@ function proposeChange(issue) {
 
   if (issue.code === 'player-deaths') {
     return 'Review hostile pressure, survival drain, spawn safety, and onboarding hints for early player sessions.';
+  }
+
+  if (issue.code.includes('goal-failed') || issue.code.includes('goal-step-blocked') || issue.code.includes('goal-requirements-blocked')) {
+    return 'Inspect the AI planner requirement chain, adapter execution result, and inventory/world state for this progression goal.';
   }
 
   if (issue.code.includes('stuck') || issue.code.includes('collision')) {

@@ -16,9 +16,31 @@ assert.ok(report.simulationResult, 'exported report should include full simulati
 assert.ok(snapshot.actionCounts.explore > 0, 'bot should explore');
 assert.ok(snapshot.actionCounts.mine > 0, 'bot should mine');
 assert.ok(snapshot.actionCounts.place > 0, 'bot should place blocks');
+assert.ok(snapshot.actionCounts.collect > 0, 'bot should collect planned drops');
 assert.ok(snapshot.actionCounts.combat > 0, 'bot should test combat');
 assert.ok(snapshot.actionCounts.saveLoad > 0, 'bot should test save/load');
+assert.ok(snapshot.planner, 'bot should include goal planner state');
+assert.ok(snapshot.planner.goalsCompleted.length >= 4, 'bot should complete early survival goals');
+assert.equal(snapshot.planner.goalsFailed.length, 0, 'quick smoke should not fail progression goals');
+assert.notEqual(snapshot.planner.progressionTierReached, 'starter', 'bot should reach a progression tier');
+assert.ok(snapshot.planner.currentGoal, 'bot should expose current goal');
+assert.ok(snapshot.planner.currentSubgoal, 'bot should expose current subgoal');
+assert.ok(snapshot.planner.reason, 'bot should explain goal reasoning');
+assert.ok(snapshot.planner.target, 'bot should expose the current target');
+assert.ok(Object.keys(snapshot.planner.timeSpentByGoal).length >= 9, 'bot should track time spent per goal');
 assert.ok(report.telemetry.counts.gameplayEvents > 0, 'telemetry should receive simulated events');
+assert.ok(report.runtimeStats.simulation.planner, 'report should include sanitized planner stats');
+assert.deepEqual(
+  report.runtimeStats.simulation.planner.goalsCompleted.map((goal) => goal.id),
+  snapshot.planner.goalsCompleted.map((goal) => goal.id),
+  'report should preserve completed goal ids',
+);
+assert.equal(
+  report.runtimeStats.simulation.planner.progressionTierReached,
+  snapshot.planner.progressionTierReached,
+  'report should preserve progression tier',
+);
+assert.ok(Array.isArray(report.runtimeStats.simulation.planner.bottlenecks), 'report should include bottlenecks list');
 assert.ok(Array.isArray(report.aiTasks), 'report should include AI task proposals');
 assert.equal(JSON.stringify(report).includes(['C:', 'Users'].join('\\\\')), false, 'report should avoid local machine paths');
 

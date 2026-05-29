@@ -24,6 +24,8 @@ Use this checklist before tagging or sharing an Alpha build.
 - Technical debug overlay is hidden by default and toggles with `F3`.
 - Feedback panel generates a local AI Session Report and can copy or download JSON.
 - Feedback panel can start a Quick autonomous playtest without blocking the main UI.
+- Feedback panel shows autonomous AI goal, subgoal, reason, progress, and target while a run is active.
+- Autonomous playtest reports include completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
 - Third-person mouse orbit moves freely and WASD follows camera direction.
 - Tree canopies do not launch the player upward.
 - Sky, weather ambience, water/grass animation, character motion, and feedback particles render cleanly.

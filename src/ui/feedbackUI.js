@@ -95,9 +95,38 @@ export class FeedbackUI {
         <div class="feedback-ui__progress" aria-hidden="true">
           <span style="width: ${progressPercent}%"></span>
         </div>
+        ${this.renderAiGoalOverlay(snapshot?.planner)}
         <button type="button" data-action="run-auto-test" ${isRunning ? 'disabled' : ''}>
           ${isRunning ? 'Running Auto Test' : 'Run Auto Test'}
         </button>
+      </div>
+    `;
+  }
+
+  renderAiGoalOverlay(plannerSnapshot) {
+    if (!plannerSnapshot) {
+      return '';
+    }
+
+    const goalProgressPercent = Math.round((plannerSnapshot.progress ?? 0) * 100);
+
+    return `
+      <div class="feedback-ui__ai-plan" aria-label="AI survival plan">
+        <div class="feedback-ui__ai-plan-title">AI Plan</div>
+        ${this.renderAiPlanRow('Current Goal', plannerSnapshot.currentGoal)}
+        ${this.renderAiPlanRow('Current Subgoal', plannerSnapshot.currentSubgoal)}
+        ${this.renderAiPlanRow('Reason', plannerSnapshot.reason)}
+        ${this.renderAiPlanRow('Progress', `${goalProgressPercent}%`)}
+        ${this.renderAiPlanRow('Target', plannerSnapshot.target)}
+      </div>
+    `;
+  }
+
+  renderAiPlanRow(label, value) {
+    return `
+      <div class="feedback-ui__ai-plan-row">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value ?? 'None')}</strong>
       </div>
     `;
   }
