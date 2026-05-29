@@ -1,0 +1,12 @@
+[build]
+command = "npm run build:client"
+publish = "dist"
+
+[build.environment]
+VITE_GODOY_RELEASE_CHANNEL = "Public Alpha"
+VITE_GODOY_RELEASE_VERSION = "v0.1.0-alpha"
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200

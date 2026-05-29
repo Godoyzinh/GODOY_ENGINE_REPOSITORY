@@ -13,6 +13,7 @@ export class MainMenuUI {
     onSettingsChanged,
     onMenuVisibilityChanged,
     onUiAction = null,
+    runtimeConfig = null,
   }) {
     this.rootElement = rootElement;
     this.settingsSystem = settingsSystem;
@@ -23,6 +24,12 @@ export class MainMenuUI {
     this.onSettingsChanged = onSettingsChanged;
     this.onMenuVisibilityChanged = onMenuVisibilityChanged;
     this.onUiAction = onUiAction;
+    this.runtimeConfig = runtimeConfig ?? {
+      releaseLabel: 'Public Alpha v0.1.0-alpha',
+      releaseVersion: 'v0.1.0-alpha',
+      multiplayerServerUrl: DEFAULT_SERVER_URL,
+      feedbackUrl: '',
+    };
     this.isMenuOpen = true;
     this.isJoiningMultiplayer = false;
     this.statusMessage = null;
@@ -92,7 +99,7 @@ export class MainMenuUI {
       <div class="main-menu__backdrop"></div>
       <section class="main-menu__panel">
         <div class="main-menu__header">
-          <span class="main-menu__kicker">Alpha Build</span>
+          <span class="main-menu__kicker">${this.runtimeConfig.releaseLabel}</span>
           <h1>Godoy Engine</h1>
           <p>Sandbox survival, multiplayer hosting, studio tools, and publishing foundation.</p>
         </div>
@@ -136,8 +143,10 @@ export class MainMenuUI {
         <button class="main-menu__button" data-panel="credits">Credits</button>
       </div>
       <div class="main-menu__status">
+        <span>Version: ${this.runtimeConfig.releaseVersion}</span>
         <span>Mode: ${this.networkMode}</span>
         <span>Debug: ${this.settingsSystem.getSnapshot().debugOverlay ? 'on' : 'off'}</span>
+        ${this.renderFeedbackStatus()}
       </div>
       ${this.statusMessage ? `<div class="main-menu__notice" role="status">${this.statusMessage}</div>` : ''}
     `;
@@ -294,7 +303,7 @@ export class MainMenuUI {
       this.statusMessage = 'Checking dedicated server...';
       this.render();
 
-      const result = await Promise.resolve(this.onJoinMultiplayer?.(DEFAULT_SERVER_URL));
+      const result = await Promise.resolve(this.onJoinMultiplayer?.(this.getConfiguredServerUrl()));
 
       if (result?.ok) {
         return;
@@ -348,6 +357,18 @@ export class MainMenuUI {
   notifyMenuVisibilityChanged() {
     this.onMenuVisibilityChanged?.(this.isMenuOpen);
   }
+
+  getConfiguredServerUrl() {
+    return this.runtimeConfig.multiplayerServerUrl;
+  }
+
+  renderFeedbackStatus() {
+    if (this.runtimeConfig.feedbackUrl) {
+      return `<a href="${escapeAttribute(this.runtimeConfig.feedbackUrl)}" target="_blank" rel="noreferrer">Feedback</a>`;
+    }
+
+    return '<span>Feedback: placeholder</span>';
+  }
 }
 
 function formatOption(option) {
@@ -355,4 +376,12 @@ function formatOption(option) {
     .split('-')
     .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
     .join(' ');
+}
+
+function escapeAttribute(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
 }

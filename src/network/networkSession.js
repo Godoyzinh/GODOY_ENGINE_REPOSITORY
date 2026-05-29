@@ -1,9 +1,9 @@
 import {
-  DEFAULT_MULTIPLAYER_URL,
   DEFAULT_LATENCY_PLACEHOLDER_MS,
   NETWORK_MODES,
   PACKET_TYPES,
 } from './networkConstants.js';
+import { getRuntimeConfig } from '../config/runtimeConfig.js';
 import {
   createBlockEditPacket,
   createAckPacket,
@@ -380,7 +380,7 @@ function mergeWorldMetadata(worlds, world) {
 }
 
 function createOptionalTransport({ mode, serverUrl, localPlayerId, nickname }) {
-  if (mode !== NETWORK_MODES.client) {
+  if (mode !== NETWORK_MODES.client || !serverUrl) {
     return null;
   }
 
@@ -404,13 +404,7 @@ function resolveNetworkMode() {
 }
 
 function resolveServerUrl() {
-  if (typeof window === 'undefined') {
-    return DEFAULT_MULTIPLAYER_URL;
-  }
-
-  const url = new URL(window.location.href);
-
-  return url.searchParams.get('server') ?? DEFAULT_MULTIPLAYER_URL;
+  return getRuntimeConfig().multiplayerServerUrl;
 }
 
 function createEmptyTransportMetrics() {

@@ -5,6 +5,7 @@
 - Multiplayer transport is still a foundation layer, not production netcode.
 - Client prediction and rollback are preparation-level only.
 - The main menu checks `/health` before entering multiplayer, but full in-game reconnect QA is still a manual Alpha pass.
+- Public multiplayer requires a deployed WebSocket server and `VITE_GODOY_WS_URL`; static client deploys do not host multiplayer by themselves.
 - Studio tools operate on voxel blocks and prefabs; full object hierarchy and script editor are future work.
 - Publish flow stores metadata locally/server-side but does not upload to a remote marketplace.
 - Audio currently uses lightweight procedural cues plus hooks; authored sound assets and mixing are future work.
@@ -35,3 +36,4 @@ If the app shows the WebGL fallback screen:
 - Keep `docs/FULL_CODE_SNAPSHOT.md` out of release commits unless a full source snapshot is intentionally requested.
 - Dedicated server persistence writes to `server-data/`, which is intentionally ignored by Git.
 - Use `npm run verify:alpha` before release commits.
+- Keep `.env` files local; only `.env.example` should be committed.

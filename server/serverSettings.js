@@ -3,8 +3,9 @@ import { DEFAULT_SERVER_TICK_RATE, DEFAULT_WORLD_ID, SESSION_RECOVERY_SECONDS } 
 
 export function loadServerSettings(overrides = {}) {
   const tickRate = readNumberEnv('GODOY_SERVER_TICK_RATE', DEFAULT_SERVER_TICK_RATE);
-  const port = readNumberEnv('GODOY_MULTIPLAYER_PORT', 8787);
-  const host = process.env.GODOY_MULTIPLAYER_HOST ?? '127.0.0.1';
+  const platformPort = readNumberEnv('PORT', 8787);
+  const port = readNumberEnv('GODOY_MULTIPLAYER_PORT', platformPort);
+  const host = process.env.GODOY_MULTIPLAYER_HOST ?? process.env.HOST ?? '127.0.0.1';
   const dataDirectory = process.env.GODOY_SERVER_DATA_DIR ?? path.join(process.cwd(), 'server-data');
 
   return {

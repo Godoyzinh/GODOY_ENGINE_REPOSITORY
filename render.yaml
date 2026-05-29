@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: godoy-engine-alpha-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GODOY_MULTIPLAYER_HOST
+        value: 0.0.0.0
+      - key: GODOY_SERVER_TICK_RATE
+        value: 20
+      - key: GODOY_DEFAULT_WORLD_ID
+        value: public-alpha
+      - key: GODOY_PERSIST_WORLDS
+        value: 1

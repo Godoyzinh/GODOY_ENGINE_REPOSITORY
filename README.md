@@ -2,7 +2,7 @@
 
 AI-native sandbox engine inspired by Roblox, Minecraft, and creation platforms.
 
-Current phase: Alpha foundation.
+Current phase: Public Alpha v0.1.0-alpha prep.
 
 ## What Is Included
 
@@ -98,7 +98,42 @@ The build separates Three.js into its own output chunk for cleaner Alpha packagi
 npm run verify:alpha
 ```
 
-This runs the production build plus settings, camera/collision, inventory/crafting, save migration, and dedicated server smoke checks.
+This runs the production build plus release config, WebGL fallback, settings, camera/collision, visual/game-feel, inventory/crafting, save migration, and dedicated server smoke checks.
+
+## Public Alpha Deploy
+
+The public Alpha uses a split deployment:
+
+- Client: Vercel or Netlify static Vite build.
+- Server: Render or Railway Node WebSocket service.
+
+Client build variables:
+
+```txt
+VITE_GODOY_RELEASE_VERSION=v0.1.0-alpha
+VITE_GODOY_RELEASE_CHANNEL=Public Alpha
+VITE_GODOY_WS_URL=wss://YOUR_HOSTED_SERVER
+VITE_GODOY_FEEDBACK_URL=https://YOUR_FEEDBACK_FORM_OR_ISSUE_TRACKER
+```
+
+Server runtime variables:
+
+```txt
+GODOY_MULTIPLAYER_HOST=0.0.0.0
+GODOY_SERVER_TICK_RATE=20
+GODOY_DEFAULT_WORLD_ID=public-alpha
+GODOY_PERSIST_WORLDS=1
+```
+
+Deploy configs are included for `vercel.json`, `netlify.toml`, `render.yaml`, and `railway.json`.
+
+Public test flow:
+
+1. Deploy the dedicated server and confirm `/health` returns `ok: true`.
+2. Set `VITE_GODOY_WS_URL` on the client host.
+3. Deploy the client.
+4. Open the deployed client and use Join Multiplayer.
+5. Test two tabs against the deployed URL.
 
 ## QA Docs
 
@@ -106,5 +141,6 @@ This runs the production build plus settings, camera/collision, inventory/crafti
 - [Alpha v0.1 Checklist](docs/ALPHA_V0_1_CHECKLIST.md)
 - [Smoke Tests](docs/QA_SMOKE_TESTS.md)
 - [Known Issues](docs/KNOWN_ISSUES.md)
+- [Deployment Guide](docs/DEPLOYMENT.md)
 - [AI Agent Workflow](docs/AI_AGENT_WORKFLOW.md)
 - [Technical Standards](docs/TECHNICAL_STANDARDS.md)

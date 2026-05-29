@@ -15,6 +15,14 @@ export async function checkServerHealth(serverUrl, {
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_HEALTH_TIMEOUT_MS,
 } = {}) {
+  if (!serverUrl) {
+    return {
+      ok: false,
+      healthUrl: '',
+      message: 'Public multiplayer server URL is not configured. Set VITE_GODOY_WS_URL before deploying the client.',
+    };
+  }
+
   const healthUrl = getServerHealthUrl(serverUrl);
 
   if (!fetchImpl) {

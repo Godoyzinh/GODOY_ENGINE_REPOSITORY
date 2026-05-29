@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, WebGLRenderer } from 'three';
+import { ACESFilmicToneMapping, PCFShadowMap, SRGBColorSpace, WebGLRenderer } from 'three';
 
 export class RendererSystem {
   constructor({ rootElement, settingsSnapshot = null }) {
@@ -15,7 +15,7 @@ export class RendererSystem {
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = this.shadowsEnabled;
-    this.renderer.shadowMap.type = PCFSoftShadowMap;
+    this.renderer.shadowMap.type = PCFShadowMap;
     this.domElement = this.renderer.domElement;
 
     this.rootElement.appendChild(this.renderer.domElement);

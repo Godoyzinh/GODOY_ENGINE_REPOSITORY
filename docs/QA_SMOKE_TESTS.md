@@ -6,6 +6,9 @@ Run these before tagging an Alpha build.
 
 - `npm run build` completes successfully.
 - `npm run verify:alpha` completes successfully.
+- `npm run smoke:production-build` validates generated Alpha client artifacts.
+- `npm run smoke:runtime-config` validates dev/prod WebSocket URL behavior.
+- `npm run smoke:webgl` validates the WebGL fallback copy and escaping.
 - `npm run smoke:settings` validates settings normalization and persistence.
 - `npm run smoke:camera` validates camera-relative movement, paused input, and vertical snap protection.
 - `npm run smoke:visual` validates sky, ambient particles, feedback particles, and procedural audio hooks.
@@ -13,6 +16,8 @@ Run these before tagging an Alpha build.
 - `npm run smoke:save` validates save migration and persisted simulation state.
 - Open `http://127.0.0.1:5173/`.
 - Main menu appears on first launch.
+- Public Alpha banner and version display are visible.
+- Loading screen is replaced after runtime boot.
 - Play Solo hides the menu and the world renders.
 - Settings change graphics quality, render distance, audio volume, controls help, and debug visibility.
 - First-launch onboarding can be dismissed and stays dismissed after reload.
@@ -20,6 +25,7 @@ Run these before tagging an Alpha build.
 - `F1` opens controls help.
 - `F3` toggles the technical debug overlay.
 - Join Multiplayer reports that the dedicated server is offline when `npm run dedicated:server` is not running.
+- Join Multiplayer reports a clear configuration message when a public client lacks `VITE_GODOY_WS_URL`.
 
 ## Gameplay
 
@@ -59,4 +65,6 @@ Run these before tagging an Alpha build.
 - `npm run build` outputs app and Three.js chunks.
 - `npm run verify:alpha` runs clean before release.
 - README command flow is accurate.
+- `docs/DEPLOYMENT.md` matches deployment config files.
 - Alpha release notes and known issues are present.
+- No staged docs include machine-local absolute paths or secret-like tokens.

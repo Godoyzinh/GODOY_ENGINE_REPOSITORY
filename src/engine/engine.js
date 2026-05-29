@@ -29,10 +29,12 @@ import { CreatorPermissionSystem } from '../studio/creatorPermissions.js';
 import { PrefabRegistry } from '../studio/prefabRegistry.js';
 import { StudioToolSystem } from '../studio/studioToolSystem.js';
 import { WorldPublishingSystem } from '../studio/worldPublishingSystem.js';
+import { getRuntimeConfig } from '../config/runtimeConfig.js';
 import { DebugOverlay } from '../ui/debugOverlay.js';
 import { CombatHud } from '../ui/combatHud.js';
 import { HotbarUI } from '../ui/hotbarUI.js';
 import { MainMenuUI } from '../ui/mainMenuUI.js';
+import { ReleaseBannerUI } from '../ui/releaseBannerUI.js';
 import { SurvivalHud } from '../ui/survivalHud.js';
 import { ToolSystem } from '../tools/toolSystem.js';
 import { DayNightSystem } from '../world/dayNightSystem.js';
@@ -51,6 +53,7 @@ export class Engine {
     this.timer = new Timer();
     this.isRunning = false;
     this.animationFrameId = null;
+    this.runtimeConfig = getRuntimeConfig();
 
     this.settingsSystem = new SettingsSystem();
     const settingsSnapshot = this.settingsSystem.getSnapshot();
@@ -115,6 +118,7 @@ export class Engine {
     this.networkSession = new NetworkSession({
       localPlayerId: LOCAL_PLAYER_ID,
       nickname: 'Godoy Player',
+      serverUrl: this.runtimeConfig.multiplayerServerUrl,
     });
     this.creatorPermissionSystem = new CreatorPermissionSystem({
       localPlayerId: LOCAL_PLAYER_ID,
@@ -170,6 +174,11 @@ export class Engine {
       onSettingsChanged: (nextSettingsSnapshot) => this.applySettings(nextSettingsSnapshot),
       onMenuVisibilityChanged: (isMenuOpen) => this.setGameplayInputEnabled(!isMenuOpen),
       onUiAction: () => this.audioFeedbackSystem.playCue('ui'),
+      runtimeConfig: this.runtimeConfig,
+    });
+    this.releaseBannerUI = new ReleaseBannerUI({
+      rootElement,
+      runtimeConfig: this.runtimeConfig,
     });
     this.hotbarUI = new HotbarUI({
       rootElement,
@@ -235,6 +244,7 @@ export class Engine {
     this.hotbarUI.dispose();
     this.survivalHud.dispose();
     this.combatHud.dispose();
+    this.releaseBannerUI.dispose();
     this.skySystem.dispose();
     this.ambientParticleSystem.dispose();
     this.feedbackParticleSystem.dispose();
@@ -313,6 +323,13 @@ export class Engine {
   }
 
   async joinMultiplayer(serverUrl) {
+    if (!serverUrl) {
+      return {
+        ok: false,
+        message: 'Public multiplayer server URL is not configured. Set VITE_GODOY_WS_URL for the deployed client.',
+      };
+    }
+
     const serverHealth = await checkServerHealth(serverUrl);
 
     if (!serverHealth.ok) {

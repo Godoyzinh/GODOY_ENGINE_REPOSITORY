@@ -1,5 +1,21 @@
 # Changelog
 
+## Public Alpha Prep And Deploy Readiness
+
+### Added
+
+- Vercel, Netlify, Render, and Railway deployment configuration.
+- Runtime config support for public WebSocket URLs, release labels, and feedback links.
+- Public Alpha banner, version display, feedback placeholder, and improved loading/fallback surfaces.
+- Production build, runtime config, and WebGL fallback smoke tests.
+- Deployment guide and public test flow documentation.
+
+### Changed
+
+- Package version is now `0.1.0-alpha`.
+- Dedicated server supports platform `PORT` and deployment host binding.
+- Alpha verification now includes public deploy readiness checks.
+
 ## Visual Identity And Game Feel
 
 ### Added
