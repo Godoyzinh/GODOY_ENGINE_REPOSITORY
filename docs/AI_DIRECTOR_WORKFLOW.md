@@ -11,11 +11,40 @@ The AI Director foundation turns local play sessions into reviewable development
 5. Copy or download the report.
 6. Convert useful generated tasks into GitHub issues or PR plans.
 
+## Autonomous Playtest Loop
+
+The autonomous playtest simulation lets the game exercise itself and generate an AI Session Report.
+
+Run from the game:
+
+1. Open the `Feedback` panel.
+2. Choose Quick, Standard, or Stress.
+3. Click `Run Auto Test`.
+4. Wait for the report to complete.
+5. Review, copy, or download the JSON.
+
+Run from the CLI:
+
+```bash
+npm run simulate:ai
+npm run simulate:ai -- --mode=standard
+npm run simulate:ai -- --mode=stress
+```
+
+Simulation modes:
+
+- Quick Smoke: 60 seconds.
+- Standard Test: 5 minutes.
+- Stress Test: 15 minutes.
+
+The CLI writes JSON reports into `reports/`. Generated report files are ignored by Git.
+
 ## What The Report Contains
 
 - FPS and session duration.
 - Console error and warning summaries.
 - Counts for deaths, mining, building, combat, and report exports.
+- Autonomous playtest actions, failures, and completion state when a bot run generated the report.
 - Recent sanitized gameplay events.
 - Runtime stats for renderer, settings, terrain, entities, survival, networking, and persistence.
 - Browser/system capabilities needed for QA.
@@ -25,6 +54,7 @@ The AI Director foundation turns local play sessions into reviewable development
 
 - Reports stay local unless the player copies or downloads them.
 - The runtime never sends reports to external APIs.
+- Autonomous playtests never commit, push, or modify source files.
 - Reports exclude player identity, full page URLs, auth tokens, chat text, and stack traces.
 - Players should review report JSON before posting it publicly.
 
@@ -64,3 +94,4 @@ The AI Director must not:
 - change deployment secrets
 - push directly to protected branches
 - create paid external API dependencies
+- edit source code during simulation

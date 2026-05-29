@@ -10,6 +10,7 @@
 - Publish flow stores metadata locally/server-side but does not upload to a remote marketplace.
 - Audio currently uses lightweight procedural cues plus hooks; authored sound assets and mixing are future work.
 - AI Session Reports are local QA artifacts and do not create GitHub issues or code changes automatically.
+- Autonomous playtests are deterministic QA probes, not full human playtesting replacements.
 
 ## Performance
 
@@ -36,6 +37,7 @@ If the app shows the WebGL fallback screen:
 
 - Keep `docs/FULL_CODE_SNAPSHOT.md` out of release commits unless a full source snapshot is intentionally requested.
 - Keep generated AI Session Report JSON out of release commits unless a maintainer explicitly requests a fixture.
+- Keep generated autonomous playtest reports in `reports/` out of release commits unless intentionally promoted to fixtures.
 - Dedicated server persistence writes to `server-data/`, which is intentionally ignored by Git.
 - Use `npm run verify:alpha` before release commits.
 - Keep `.env` files local; only `.env.example` should be committed.

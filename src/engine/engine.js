@@ -6,6 +6,8 @@ import { CombatSystem } from '../combat/combatSystem.js';
 import { DamageSystem } from '../combat/damageSystem.js';
 import { CraftingSystem } from '../crafting/craftingSystem.js';
 import { AutoQaReportSystem } from '../diagnostics/autoQaReportSystem.js';
+import { AutonomousPlaytestSimulation } from '../diagnostics/autonomousPlaytestSimulation.js';
+import { EnginePlaytestAdapter } from '../diagnostics/enginePlaytestAdapter.js';
 import { TelemetrySystem } from '../diagnostics/telemetrySystem.js';
 import { FurnaceSystem } from '../crafting/furnaceSystem.js';
 import { AmbientParticleSystem } from './ambientParticleSystem.js';
@@ -204,10 +206,20 @@ export class Engine {
       combatSystem: this.combatSystem,
       entitySystem: this.entitySystem,
     });
+    this.autonomousPlaytest = new AutonomousPlaytestSimulation({
+      adapter: new EnginePlaytestAdapter({ engine: this }),
+      telemetrySystem: this.telemetrySystem,
+      reportSystem: this.autoQaReportSystem,
+      recordFrames: false,
+    });
+    this.lastAutoTestReport = null;
+    this.autoTestUiUpdateTimer = 0;
     this.feedbackUI = new FeedbackUI({
       rootElement,
       reportSystem: this.autoQaReportSystem,
       getRuntimeSnapshot: () => this.createAutoQaRuntimeSnapshot(),
+      getAutoTestSnapshot: () => this.autonomousPlaytest.getSnapshot(),
+      onRunAutoTest: ({ modeId }) => this.startAutonomousPlaytest({ modeId }),
       runtimeConfig: this.runtimeConfig,
       onUiAction: (action) => {
         this.telemetrySystem.recordGameplayEvent('feedback', { action });
@@ -266,6 +278,7 @@ export class Engine {
     this.hotbarUI.dispose();
     this.survivalHud.dispose();
     this.combatHud.dispose();
+    this.autonomousPlaytest.stop('engine-stop');
     this.feedbackUI.dispose();
     this.releaseBannerUI.dispose();
     this.skySystem.dispose();
@@ -383,6 +396,20 @@ export class Engine {
     this.applySettings(this.settingsSystem.getSnapshot());
   }
 
+  startAutonomousPlaytest({ modeId = 'quick' } = {}) {
+    const result = this.autonomousPlaytest.start({ modeId });
+
+    if (result.ok) {
+      this.setGameplayInputEnabled(true);
+      this.mainMenuUI.closeMenu();
+      this.lastAutoTestReport = null;
+    }
+
+    this.feedbackUI.setAutoTestSnapshot(result.snapshot, this.lastAutoTestReport);
+
+    return result;
+  }
+
   applySettings(settingsSnapshot) {
     this.rendererSystem.applySettings(settingsSnapshot);
     this.terrainGenerator.applySettings(settingsSnapshot);
@@ -410,6 +437,11 @@ export class Engine {
     const elapsedTime = this.timer.getElapsed();
 
     this.telemetrySystem.updateFrame(deltaTime);
+    const autoTestUpdate = this.autonomousPlaytest.update(deltaTime);
+    if (autoTestUpdate.report) {
+      this.lastAutoTestReport = autoTestUpdate.report;
+    }
+    this.updateAutoTestFeedback(deltaTime, autoTestUpdate);
     this.dayNightSystem.update(deltaTime);
     this.worldSimulationSystem.update({
       deltaTime,
@@ -706,6 +738,18 @@ export class Engine {
         blockEdit.worldZ,
         blockEdit.blockId,
       );
+    }
+  }
+
+  updateAutoTestFeedback(deltaTime, autoTestUpdate) {
+    this.autoTestUiUpdateTimer += deltaTime;
+
+    if (
+      autoTestUpdate.completed ||
+      (this.autonomousPlaytest.status === 'running' && this.autoTestUiUpdateTimer >= 0.75)
+    ) {
+      this.autoTestUiUpdateTimer = 0;
+      this.feedbackUI.setAutoTestSnapshot(autoTestUpdate.snapshot, this.lastAutoTestReport);
     }
   }
 

@@ -10,6 +10,8 @@ Use this checklist before tagging or sharing an Alpha build.
 - `npm run smoke:runtime-config` passes.
 - `npm run smoke:webgl` passes.
 - `npm run smoke:ai-director` passes.
+- `npm run smoke:autoplaytest` passes.
+- `npm run simulate:ai` writes an ignored report into `reports/`.
 - `npm run dev` starts the client.
 - `npm run dedicated:server` starts the server.
 - `http://127.0.0.1:8787/health` returns `ok: true`.
@@ -21,6 +23,7 @@ Use this checklist before tagging or sharing an Alpha build.
 - Settings persist after reload.
 - Technical debug overlay is hidden by default and toggles with `F3`.
 - Feedback panel generates a local AI Session Report and can copy or download JSON.
+- Feedback panel can start a Quick autonomous playtest without blocking the main UI.
 - Third-person mouse orbit moves freely and WASD follows camera direction.
 - Tree canopies do not launch the player upward.
 - Sky, weather ambience, water/grass animation, character motion, and feedback particles render cleanly.
@@ -50,5 +53,6 @@ Use this checklist before tagging or sharing an Alpha build.
 - Alpha release notes are current.
 - No generated runtime data is staged.
 - No generated AI Session Report JSON is staged.
+- No generated autonomous playtest report JSON is staged.
 - `docs/FULL_CODE_SNAPSHOT.md` is excluded unless intentionally requested.
 - No secrets, tokens, or machine-local absolute paths are staged.

@@ -12,6 +12,7 @@ Current phase: Public Alpha v0.1.0-alpha prep.
 - In-game Studio tools with selection, transform helpers, prefabs, permissions, and publishing metadata
 - Alpha shell with main menu, onboarding, settings, controls help, and debug toggle
 - AI Director foundation with local telemetry, QA reports, feedback export, and task proposal generation
+- Autonomous playtest simulation with bot actions and report export
 
 ## Requirements
 
@@ -77,6 +78,7 @@ http://127.0.0.1:8787/admin/status
 - `Q`: melee attack
 - `T`: sleep / day skip
 - Feedback button: generate, copy, or download a local AI Session Report
+- Feedback panel `Run Auto Test`: run autonomous playtest simulation
 - `` ` ``: Studio mode
 - `F`: select block in Studio
 - `G`: cycle Studio tool
@@ -107,6 +109,23 @@ This runs the production build plus release config, WebGL fallback, AI Director,
 The in-game `Feedback` button generates a local AI Session Report. Reports include sanitized telemetry, runtime stats, browser capabilities, summarized issues, and proposed tasks classified as bug, UX, performance, gameplay, or polish.
 
 Reports are never uploaded automatically. Review the JSON before copying it into a GitHub issue or AI task proposal.
+
+## Autonomous Playtest Simulation
+
+Run a headless-friendly bot simulation:
+
+```bash
+npm run simulate:ai
+```
+
+Optional modes:
+
+```bash
+npm run simulate:ai -- --mode=standard
+npm run simulate:ai -- --mode=stress
+```
+
+Reports are written to `reports/` and ignored by Git by default. The simulation only generates telemetry, QA reports, and suggested tasks; it never commits, pushes, or edits source code at runtime.
 
 ## Public Alpha Deploy
 

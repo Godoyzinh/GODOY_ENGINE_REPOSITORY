@@ -10,6 +10,7 @@ Run these before tagging an Alpha build.
 - `npm run smoke:runtime-config` validates dev/prod WebSocket URL behavior.
 - `npm run smoke:webgl` validates the WebGL fallback copy and escaping.
 - `npm run smoke:ai-director` validates telemetry, local QA reports, and AI task generation.
+- `npm run smoke:autoplaytest` validates autonomous bot simulation and report export shape.
 - `npm run smoke:settings` validates settings normalization and persistence.
 - `npm run smoke:camera` validates camera-relative movement, paused input, and vertical snap protection.
 - `npm run smoke:visual` validates sky, ambient particles, feedback particles, and procedural audio hooks.
@@ -27,6 +28,7 @@ Run these before tagging an Alpha build.
 - `F3` toggles the technical debug overlay.
 - Feedback opens a compact AI Session Report panel.
 - Feedback report generation shows issue/task counts and keeps reports local until copied or downloaded.
+- Run Auto Test starts an autonomous playtest and produces an AI Director report when complete.
 - Join Multiplayer reports that the dedicated server is offline when `npm run dedicated:server` is not running.
 - Join Multiplayer reports a clear configuration message when a public client lacks `VITE_GODOY_WS_URL`.
 
@@ -41,6 +43,15 @@ Run these before tagging an Alpha build.
 - Combat hit/cooldown UI still updates.
 - Sky gradient, sun/moon visuals, fog, ambient particles, and light water/grass motion render without console errors.
 - Footsteps, mining, hit, landing, ambient, and UI audio cues trigger after browser audio is unlocked by player input.
+
+## Autonomous Playtest
+
+- `npm run simulate:ai` completes a Quick Smoke bot run and writes a JSON report into `reports/`.
+- `npm run simulate:ai -- --mode=standard` supports a 5 minute simulated session.
+- `npm run simulate:ai -- --mode=stress` supports a 15 minute simulated session.
+- Reports include bot actions for exploration, mining, placement, collection, crafting, combat, survival, and save/load checks.
+- Failure detection reports stuck states, vertical collision snaps, FPS drops, death loops, console errors, and save/load errors.
+- Generated files in `reports/` remain untracked unless intentionally promoted to a fixture.
 
 ## Studio
 

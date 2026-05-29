@@ -3,15 +3,21 @@ export class FeedbackUI {
     rootElement,
     reportSystem,
     getRuntimeSnapshot,
+    getAutoTestSnapshot = null,
+    onRunAutoTest = null,
     runtimeConfig = null,
     onUiAction = null,
   }) {
     this.reportSystem = reportSystem;
     this.getRuntimeSnapshot = getRuntimeSnapshot;
+    this.getAutoTestSnapshot = getAutoTestSnapshot;
+    this.onRunAutoTest = onRunAutoTest;
     this.runtimeConfig = runtimeConfig;
     this.onUiAction = onUiAction;
     this.isOpen = false;
     this.lastReport = null;
+    this.autoTestSnapshot = getAutoTestSnapshot?.() ?? null;
+    this.selectedAutoTestMode = 'quick';
     this.statusMessage = 'Reports stay local until you copy or download them.';
     this.element = document.createElement('div');
     this.element.className = 'feedback-ui';
@@ -37,6 +43,7 @@ export class FeedbackUI {
         <div class="feedback-ui__stats">
           ${this.renderReportStats()}
         </div>
+        ${this.renderAutoTestControls()}
         <div class="feedback-ui__actions">
           <button type="button" data-action="generate-report">Generate</button>
           <button type="button" data-action="copy-report" ${this.lastReport ? '' : 'disabled'}>Copy JSON</button>
@@ -60,6 +67,38 @@ export class FeedbackUI {
       <span>Issues: ${this.lastReport.issues.length}</span>
       <span>AI tasks: ${this.lastReport.aiTasks.length}</span>
       <span>FPS: ${this.lastReport.telemetry.fps.average}</span>
+    `;
+  }
+
+  renderAutoTestControls() {
+    if (!this.onRunAutoTest) {
+      return '';
+    }
+
+    const snapshot = this.autoTestSnapshot;
+    const isRunning = snapshot?.status === 'running';
+    const progressPercent = Math.round((snapshot?.progress ?? 0) * 100);
+    const statusLabel = snapshot
+      ? `${snapshot.mode.label}: ${snapshot.status} ${progressPercent}%`
+      : 'Quick Smoke: idle';
+
+    return `
+      <div class="feedback-ui__auto-test">
+        <div class="feedback-ui__auto-test-row">
+          <span>${escapeHtml(statusLabel)}</span>
+          <select data-action="auto-test-mode" ${isRunning ? 'disabled' : ''}>
+            <option value="quick" ${this.selectedAutoTestMode === 'quick' ? 'selected' : ''}>Quick 60s</option>
+            <option value="standard" ${this.selectedAutoTestMode === 'standard' ? 'selected' : ''}>Standard 5m</option>
+            <option value="stress" ${this.selectedAutoTestMode === 'stress' ? 'selected' : ''}>Stress 15m</option>
+          </select>
+        </div>
+        <div class="feedback-ui__progress" aria-hidden="true">
+          <span style="width: ${progressPercent}%"></span>
+        </div>
+        <button type="button" data-action="run-auto-test" ${isRunning ? 'disabled' : ''}>
+          ${isRunning ? 'Running Auto Test' : 'Run Auto Test'}
+        </button>
+      </div>
     `;
   }
 
@@ -95,6 +134,12 @@ export class FeedbackUI {
     this.element.querySelector('[data-action="download-report"]')?.addEventListener('click', () => {
       this.downloadReport();
     });
+    this.element.querySelector('[data-action="auto-test-mode"]')?.addEventListener('change', (event) => {
+      this.selectedAutoTestMode = event.target.value;
+    });
+    this.element.querySelector('[data-action="run-auto-test"]')?.addEventListener('click', () => {
+      this.runAutoTest();
+    });
   }
 
   generateReport() {
@@ -105,6 +150,30 @@ export class FeedbackUI {
     this.statusMessage = `Generated ${this.lastReport.id}. Review before sharing.`;
     this.onUiAction?.('feedback-generate');
     this.render();
+  }
+
+  runAutoTest() {
+    const result = this.onRunAutoTest?.({
+      modeId: this.selectedAutoTestMode,
+    });
+
+    this.autoTestSnapshot = result?.snapshot ?? this.getAutoTestSnapshot?.() ?? this.autoTestSnapshot;
+    this.statusMessage = result?.message ?? 'Autonomous playtest started.';
+    this.onUiAction?.('auto-test-run');
+    this.render();
+  }
+
+  setAutoTestSnapshot(snapshot, report = null) {
+    this.autoTestSnapshot = snapshot;
+
+    if (report) {
+      this.lastReport = report;
+      this.statusMessage = `Auto test complete: ${report.id}. Review before sharing.`;
+    }
+
+    if (this.isOpen) {
+      this.render();
+    }
   }
 
   async copyReportToClipboard() {
