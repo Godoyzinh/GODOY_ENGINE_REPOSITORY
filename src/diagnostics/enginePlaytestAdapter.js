@@ -1,6 +1,6 @@
 import { Vector3 } from 'three';
 import { FURNACE_RECIPE_IDS } from '../crafting/furnaceSystem.js';
-import { RECIPE_IDS } from '../crafting/recipeRegistry.js';
+import { getRecipe, RECIPE_IDS } from '../crafting/recipeRegistry.js';
 import { ITEM_IDS, ITEM_TYPES, normalizeDrop } from '../items/itemRegistry.js';
 import { TOOL_IDS } from '../tools/toolSystem.js';
 import { BLOCK_IDS } from '../world/blockTypes.js';
@@ -229,6 +229,10 @@ export class EnginePlaytestAdapter {
       };
     }
 
+    this.engine.telemetrySystem.recordGameplayEvent('combat', {
+      result: 'hit',
+      source: 'autonomous-playtest',
+    });
     this.engine.handleCombatHit({
       position: hostile.transform.position,
     });
@@ -236,6 +240,8 @@ export class EnginePlaytestAdapter {
     return {
       ok: true,
       event: hostile.name,
+      entityDamageApplied: true,
+      telemetryRecorded: true,
     };
   }
 
@@ -459,6 +465,7 @@ export class EnginePlaytestAdapter {
   }
 
   craftRecipe(recipeId) {
+    const recipe = getRecipe(recipeId);
     const wasCrafted = this.engine.craftingSystem.craft(recipeId);
 
     if (!wasCrafted) {
@@ -471,18 +478,11 @@ export class EnginePlaytestAdapter {
     return {
       ok: true,
       event: this.engine.craftingSystem.getSnapshot().lastCraftedRecipe ?? recipeId,
+      craftedItem: recipe?.output ?? null,
     };
   }
 
   craftToolsForGoal() {
-    if (this.getBasicToolCount() >= 2) {
-      return {
-        ok: true,
-        event: 'basic tools ready',
-        count: 0,
-      };
-    }
-
     return this.craftRecipe(RECIPE_IDS.sticks);
   }
 
@@ -598,9 +598,9 @@ export class EnginePlaytestAdapter {
   startSmeltingGoal() {
     if (this.engine.furnaceSystem.getSnapshot().activeJobs > 0) {
       return {
-        ok: true,
+        ok: false,
         event: 'smelting active',
-        count: 0,
+        skipped: true,
       };
     }
 

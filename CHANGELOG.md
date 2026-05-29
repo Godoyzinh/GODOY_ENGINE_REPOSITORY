@@ -1,5 +1,20 @@
 # Changelog
 
+## AI Planner Execution Validation
+
+### Fixed
+
+- Prevented autonomous craft actions from logging success when the inventory does not actually change.
+- Prevented combat success validation without confirmed entity damage.
+- Goal progress now uses resource deltas from the simulation start instead of pre-existing inventory counts.
+- Repeated same-action loops and 30 second no-progress goal states now produce AI Director bottlenecks and gameplay tasks.
+
+### Added
+
+- AI reports now include inventory initial/current/delta snapshots.
+- AI reports now include crafted items and failed craft attempts.
+- Autonomous playtest smoke coverage now verifies fake crafting loop detection and missing-sticks bottlenecks.
+
 ## Goal Oriented Survival AI
 
 ### Added

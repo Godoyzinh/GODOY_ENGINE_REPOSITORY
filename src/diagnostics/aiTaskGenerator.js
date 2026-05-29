@@ -58,7 +58,7 @@ function classifyIssue(issue) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
-  if (issue.code.includes('goal-')) {
+  if (issue.code.includes('goal-') || issue.code.includes('action-loop') || issue.code.includes('failed-ai-crafts') || issue.code.includes('missing-sticks')) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
@@ -82,7 +82,15 @@ function proposeChange(issue) {
     return 'Review hostile pressure, survival drain, spawn safety, and onboarding hints for early player sessions.';
   }
 
-  if (issue.code.includes('goal-failed') || issue.code.includes('goal-step-blocked') || issue.code.includes('goal-requirements-blocked')) {
+  if (
+    issue.code.includes('goal-failed') ||
+    issue.code.includes('goal-step-blocked') ||
+    issue.code.includes('goal-requirements-blocked') ||
+    issue.code.includes('goal-no-progress') ||
+    issue.code.includes('action-loop') ||
+    issue.code.includes('missing-sticks') ||
+    issue.code.includes('failed-ai-crafts')
+  ) {
     return 'Inspect the AI planner requirement chain, adapter execution result, and inventory/world state for this progression goal.';
   }
 

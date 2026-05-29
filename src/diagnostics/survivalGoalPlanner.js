@@ -12,6 +12,7 @@ export const SURVIVAL_GOAL_IDS = {
 
 const SHELTER_BLOCK_TARGET = 12;
 const NIGHT_SURVIVAL_TARGET_SECONDS = 6;
+const NO_PROGRESS_BOTTLENECK_SECONDS = 30;
 
 export const SURVIVAL_GOALS = [
   {
@@ -19,18 +20,18 @@ export const SURVIVAL_GOALS = [
     label: 'Gather Wood',
     priority: 100,
     requirements: ['Survival session is active.'],
-    successCriteria: ['Inventory has at least 3 wood blocks.'],
+    successCriteria: ['Inventory gains at least 3 wood blocks after the bot starts.'],
     failureCriteria: ['No wood progress for 90 seconds.'],
     target: '3 wood blocks',
     maxSeconds: 90,
     requirementsMet: () => true,
-    isSuccessful: (context) => getCount(context, 'wood') >= 3,
-    getProgress: (context) => getCount(context, 'wood') / 3,
+    isSuccessful: (context) => getDelta(context, 'wood') >= 3,
+    getProgress: (context) => getDelta(context, 'wood') / 3,
     createPlan: (context) => ({
       action: 'gatherWood',
       subgoal: 'Find a nearby tree and mine wood.',
       reason: 'Wood unlocks planks, sticks, shelter blocks, fuel, and early crafting.',
-      target: `${Math.min(getCount(context, 'wood'), 3)}/3 wood`,
+      target: `${Math.min(getDelta(context, 'wood'), 3)}/3 wood`,
     }),
   },
   {
@@ -38,37 +39,37 @@ export const SURVIVAL_GOALS = [
     label: 'Craft Planks',
     priority: 90,
     requirements: ['At least 1 wood block.'],
-    successCriteria: ['Inventory has at least 4 wood planks.'],
+    successCriteria: ['Inventory gains at least 4 wood planks after the bot starts.'],
     failureCriteria: ['No plank output for 45 seconds while wood is available.'],
     target: '4 wood planks',
     maxSeconds: 45,
-    requirementsMet: (context) => getCount(context, 'wood') >= 1 || getCount(context, 'planks') >= 4,
-    isSuccessful: (context) => getCount(context, 'planks') >= 4,
-    getProgress: (context) => getCount(context, 'planks') / 4,
+    requirementsMet: (context) => getCount(context, 'wood') >= 1 || getDelta(context, 'planks') >= 4,
+    isSuccessful: (context) => getDelta(context, 'planks') >= 4,
+    getProgress: (context) => getDelta(context, 'planks') / 4,
     createPlan: (context) => ({
       action: 'craftPlanks',
       subgoal: 'Craft wood into planks.',
       reason: 'Planks are the first material gate for tooling and shelter preparation.',
-      target: `${Math.min(getCount(context, 'planks'), 4)}/4 planks`,
+      target: `${Math.min(getDelta(context, 'planks'), 4)}/4 planks`,
     }),
   },
   {
     id: SURVIVAL_GOAL_IDS.craftTools,
     label: 'Craft Tools',
     priority: 80,
-    requirements: ['At least 2 planks or starter tools already available.'],
-    successCriteria: ['Basic axe and pickaxe access is available.'],
-    failureCriteria: ['No tool readiness progress for 60 seconds.'],
-    target: 'basic axe + pickaxe readiness',
+    requirements: ['At least 2 planks are available for the tool chain.'],
+    successCriteria: ['Inventory gains at least 2 sticks and actual basic tool items exist.'],
+    failureCriteria: ['No stick output or real tool readiness progress for 60 seconds.'],
+    target: '2 sticks + actual basic tools',
     maxSeconds: 60,
-    requirementsMet: (context) => getCount(context, 'planks') >= 2 || getCount(context, 'basicTools') >= 2,
-    isSuccessful: (context) => getCount(context, 'basicTools') >= 2,
-    getProgress: (context) => getCount(context, 'basicTools') / 2,
+    requirementsMet: (context) => getCount(context, 'planks') >= 2 || getDelta(context, 'sticks') >= 2,
+    isSuccessful: (context) => getCount(context, 'basicTools') >= 2 && getDelta(context, 'sticks') >= 2,
+    getProgress: (context) => getDelta(context, 'sticks') / 2,
     createPlan: (context) => ({
       action: 'craftTools',
       subgoal: 'Prepare basic tools from planks and sticks.',
       reason: 'Tools make stone gathering and combat checks part of a real survival route.',
-      target: `${Math.min(getCount(context, 'basicTools'), 2)}/2 basic tools`,
+      target: `${Math.min(getDelta(context, 'sticks'), 2)}/2 sticks`,
     }),
   },
   {
@@ -76,18 +77,18 @@ export const SURVIVAL_GOALS = [
     label: 'Gather Stone',
     priority: 70,
     requirements: ['A basic mining tool is available.'],
-    successCriteria: ['Inventory has at least 8 stone.'],
+    successCriteria: ['Inventory gains at least 8 stone after the bot starts.'],
     failureCriteria: ['No stone progress for 120 seconds.'],
     target: '8 stone',
     maxSeconds: 120,
     requirementsMet: (context) => getCount(context, 'basicTools') >= 1,
-    isSuccessful: (context) => getCount(context, 'stone') >= 8,
-    getProgress: (context) => getCount(context, 'stone') / 8,
+    isSuccessful: (context) => getDelta(context, 'stone') >= 8,
+    getProgress: (context) => getDelta(context, 'stone') / 8,
     createPlan: (context) => ({
       action: 'gatherStone',
       subgoal: 'Mine surface stone or rocks.',
       reason: 'Stone is needed for furnace access and stronger progression loops.',
-      target: `${Math.min(getCount(context, 'stone'), 8)}/8 stone`,
+      target: `${Math.min(getDelta(context, 'stone'), 8)}/8 stone`,
     }),
   },
   {
@@ -139,18 +140,18 @@ export const SURVIVAL_GOALS = [
     label: 'Obtain Furnace',
     priority: 50,
     requirements: ['At least 8 stone.'],
-    successCriteria: ['Inventory or world state has a furnace.'],
+    successCriteria: ['Inventory gains at least 1 furnace after the bot starts.'],
     failureCriteria: ['No furnace craft output for 60 seconds while stone is available.'],
     target: '1 furnace',
     maxSeconds: 60,
-    requirementsMet: (context) => getCount(context, 'stone') >= 8 || getCount(context, 'furnace') >= 1,
-    isSuccessful: (context) => getCount(context, 'furnace') >= 1,
-    getProgress: (context) => getCount(context, 'furnace'),
+    requirementsMet: (context) => getCount(context, 'stone') >= 8 || getDelta(context, 'furnace') >= 1,
+    isSuccessful: (context) => getDelta(context, 'furnace') >= 1,
+    getProgress: (context) => getDelta(context, 'furnace'),
     createPlan: (context) => ({
       action: 'obtainFurnace',
       subgoal: 'Craft a furnace from gathered stone.',
       reason: 'A furnace opens smelting, cooking, and equipment upgrade progression.',
-      target: `${Math.min(getCount(context, 'furnace'), 1)}/1 furnace`,
+      target: `${Math.min(getDelta(context, 'furnace'), 1)}/1 furnace`,
     }),
   },
   {
@@ -158,17 +159,17 @@ export const SURVIVAL_GOALS = [
     label: 'Smelt Ore',
     priority: 40,
     requirements: ['A furnace is available.'],
-    successCriteria: ['Inventory has at least 1 iron ingot.'],
+    successCriteria: ['Inventory gains at least 1 iron ingot after the bot starts.'],
     failureCriteria: ['No ore, fuel, or smelting progress for 120 seconds.'],
     target: '1 iron ingot',
     maxSeconds: 120,
     requirementsMet: (context) => getCount(context, 'furnace') >= 1,
-    isSuccessful: (context) => getCount(context, 'ironIngot') >= 1,
-    getProgress: (context) => getCount(context, 'ironIngot'),
+    isSuccessful: (context) => getDelta(context, 'ironIngot') >= 1,
+    getProgress: (context) => getDelta(context, 'ironIngot'),
     createPlan: (context) => createSmeltingPlan(context, {
       subgoal: 'Smelt the first iron ingot.',
       reason: 'A successful ingot proves the resource loop reaches metal progression.',
-      target: `${Math.min(getCount(context, 'ironIngot'), 1)}/1 ingot`,
+      target: `${Math.min(getDelta(context, 'ironIngot'), 1)}/1 ingot`,
     }),
   },
   {
@@ -176,13 +177,13 @@ export const SURVIVAL_GOALS = [
     label: 'Upgrade Equipment',
     priority: 30,
     requirements: ['Furnace access and basic tool chain are available.'],
-    successCriteria: ['At least one iron tool exists.'],
+    successCriteria: ['Inventory gains at least one iron tool after the bot starts.'],
     failureCriteria: ['No iron tool progress for 180 seconds.'],
     target: '1 iron tool',
     maxSeconds: 180,
     requirementsMet: (context) => getCount(context, 'furnace') >= 1 && getCount(context, 'basicTools') >= 1,
-    isSuccessful: (context) => getCount(context, 'ironTools') >= 1,
-    getProgress: (context) => getCount(context, 'ironTools'),
+    isSuccessful: (context) => getDelta(context, 'ironTools') >= 1,
+    getProgress: (context) => getDelta(context, 'ironTools'),
     createPlan: (context) => {
       if (getCount(context, 'sticks') < 2) {
         return {
@@ -205,7 +206,7 @@ export const SURVIVAL_GOALS = [
         action: 'upgradeEquipment',
         subgoal: 'Craft the first iron tool.',
         reason: 'Iron equipment confirms the survival progression chain can advance tiers.',
-        target: `${Math.min(getCount(context, 'ironTools'), 1)}/1 iron tool`,
+      target: `${Math.min(getDelta(context, 'ironTools'), 1)}/1 iron tool`,
       };
     },
   },
@@ -224,23 +225,30 @@ export class SurvivalGoalPlanner {
     this.failedGoalIds = new Set();
     this.timeSpentByGoal = Object.fromEntries(this.goals.map((goal) => [goal.id, 0]));
     this.lastProgressByGoal = new Map();
+    this.noProgressSecondsByGoal = new Map();
     this.repeatedSkipsByGoal = new Map();
     this.bottlenecks = [];
     this.activeGoalId = null;
     this.currentPlan = null;
+    this.initialInventory = null;
+    this.initialWorld = null;
     this.lastContext = {};
     this.progressionTierReached = 'starter';
   }
 
   update({ deltaTime, elapsedSeconds, context = {} }) {
-    this.lastContext = context;
-    this.completeSatisfiedGoals(context, elapsedSeconds);
-    this.progressionTierReached = resolveProgressionTier(context, this.completedGoalIds);
+    this.captureBaseline(context);
 
-    const goal = this.selectGoal(context);
+    const progressContext = this.createProgressContext(context);
+
+    this.lastContext = progressContext;
+    this.completeSatisfiedGoals(progressContext, elapsedSeconds);
+    this.progressionTierReached = resolveProgressionTier(progressContext, this.completedGoalIds);
+
+    const goal = this.selectGoal(progressContext);
 
     if (!goal) {
-      this.currentPlan = this.createBlockedPlan(context, elapsedSeconds);
+      this.currentPlan = this.createBlockedPlan(progressContext, elapsedSeconds);
       return this.currentPlan;
     }
 
@@ -251,9 +259,17 @@ export class SurvivalGoalPlanner {
 
     this.timeSpentByGoal[goal.id] = (this.timeSpentByGoal[goal.id] ?? 0) + deltaTime;
 
-    const progress = clamp01(goal.getProgress(context));
+    const progress = clamp01(goal.getProgress(progressContext));
     const lastProgress = this.lastProgressByGoal.get(goal.id) ?? progress;
     this.lastProgressByGoal.set(goal.id, progress);
+    this.updateProgressHealth({
+      goal,
+      progress,
+      lastProgress,
+      deltaTime,
+      elapsedSeconds,
+      context: progressContext,
+    });
 
     if (
       this.timeSpentByGoal[goal.id] > goal.maxSeconds &&
@@ -263,7 +279,7 @@ export class SurvivalGoalPlanner {
       return this.update({ deltaTime: 0, elapsedSeconds, context });
     }
 
-    const plan = goal.createPlan(context);
+    const plan = goal.createPlan(progressContext);
     this.currentPlan = {
       goalId: goal.id,
       goalName: goal.label,
@@ -304,6 +320,31 @@ export class SurvivalGoalPlanner {
     });
   }
 
+  recordBottleneck({ code, goalId, goalName, summary, atSeconds }) {
+    this.addBottleneck({
+      code,
+      goalId,
+      goalName,
+      summary,
+      atSeconds,
+    });
+  }
+
+  getInventorySnapshot(context = this.lastContext) {
+    const inventory = context.inventory ?? {};
+
+    return {
+      initial: { ...(this.initialInventory ?? {}) },
+      current: { ...inventory },
+      delta: Object.fromEntries(
+        Object.keys({
+          ...(this.initialInventory ?? {}),
+          ...inventory,
+        }).map((key) => [key, getDelta(context, key)]),
+      ),
+    };
+  }
+
   getSnapshot() {
     return {
       currentGoal: this.currentPlan?.goalName ?? 'Idle',
@@ -316,13 +357,16 @@ export class SurvivalGoalPlanner {
       goalsCompleted: this.completedGoals.map((goal) => ({ ...goal })),
       goalsFailed: this.failedGoals.map((goal) => ({ ...goal })),
       timeSpentByGoal: roundRecord(this.timeSpentByGoal),
+      noProgressSecondsByGoal: roundRecord(Object.fromEntries(this.noProgressSecondsByGoal.entries())),
       bottlenecks: this.bottlenecks.map((bottleneck) => ({ ...bottleneck })),
       allGoals: this.goals.map((goal) => ({
         id: goal.id,
         label: goal.label,
         priority: goal.priority,
         status: this.resolveGoalStatus(goal.id),
-        progress: round(clamp01(goal.getProgress(this.lastContext)), 3),
+        progress: this.completedGoalIds.has(goal.id)
+          ? 1
+          : round(clamp01(goal.getProgress(this.lastContext)), 3),
         requirements: [...goal.requirements],
         successCriteria: [...goal.successCriteria],
         failureCriteria: [...goal.failureCriteria],
@@ -357,6 +401,64 @@ export class SurvivalGoalPlanner {
       !this.failedGoalIds.has(goal.id) &&
       goal.requirementsMet(context)
     )) ?? null;
+  }
+
+  captureBaseline(context) {
+    if (this.initialInventory) {
+      return;
+    }
+
+    this.initialInventory = { ...(context.inventory ?? {}) };
+    this.initialWorld = { ...(context.world ?? {}) };
+  }
+
+  createProgressContext(context) {
+    const inventory = context.inventory ?? {};
+    const world = context.world ?? {};
+
+    return {
+      ...context,
+      inventory,
+      world,
+      progressDeltas: {
+        inventory: createDeltaRecord(inventory, this.initialInventory ?? {}),
+        world: createDeltaRecord(world, this.initialWorld ?? {}),
+      },
+    };
+  }
+
+  updateProgressHealth({ goal, progress, lastProgress, deltaTime, elapsedSeconds, context }) {
+    if (progress > lastProgress + 0.001) {
+      this.noProgressSecondsByGoal.set(goal.id, 0);
+      return;
+    }
+
+    const noProgressSeconds = (this.noProgressSecondsByGoal.get(goal.id) ?? 0) + deltaTime;
+
+    this.noProgressSecondsByGoal.set(goal.id, noProgressSeconds);
+
+    if (noProgressSeconds < NO_PROGRESS_BOTTLENECK_SECONDS) {
+      return;
+    }
+
+    if (goal.id === SURVIVAL_GOAL_IDS.craftTools && getDelta(context, 'sticks') < 1) {
+      this.addBottleneck({
+        code: 'missing-sticks',
+        goalId: goal.id,
+        goalName: goal.label,
+        summary: 'Target remained 0/2 sticks for more than 30 seconds.',
+        atSeconds: elapsedSeconds,
+      });
+      return;
+    }
+
+    this.addBottleneck({
+      code: `goal-no-progress:${goal.id}`,
+      goalId: goal.id,
+      goalName: goal.label,
+      summary: `${goal.label} made no measurable resource progress for ${NO_PROGRESS_BOTTLENECK_SECONDS}s.`,
+      atSeconds: elapsedSeconds,
+    });
   }
 
   createBlockedPlan(context, elapsedSeconds) {
@@ -463,7 +565,7 @@ function createSmeltingPlan(context, { subgoal, reason, target }) {
       action: 'gatherOre',
       subgoal: 'Locate and mine iron ore.',
       reason,
-      target: `${Math.min(getCount(context, 'ironOre'), 1)}/1 ore`,
+      target: `${Math.min(getDelta(context, 'ironOre'), 1)}/1 ore`,
     };
   }
 
@@ -485,23 +587,23 @@ function createSmeltingPlan(context, { subgoal, reason, target }) {
 }
 
 function resolveProgressionTier(context, completedGoalIds) {
-  if (getCount(context, 'ironTools') >= 1 || completedGoalIds.has(SURVIVAL_GOAL_IDS.upgradeEquipment)) {
+  if (getDelta(context, 'ironTools') >= 1 || completedGoalIds.has(SURVIVAL_GOAL_IDS.upgradeEquipment)) {
     return 'iron';
   }
 
-  if (getCount(context, 'ironIngot') >= 1 || completedGoalIds.has(SURVIVAL_GOAL_IDS.smeltOre)) {
+  if (getDelta(context, 'ironIngot') >= 1 || completedGoalIds.has(SURVIVAL_GOAL_IDS.smeltOre)) {
     return 'iron-prep';
   }
 
-  if (getCount(context, 'furnace') >= 1 || completedGoalIds.has(SURVIVAL_GOAL_IDS.obtainFurnace)) {
+  if (getDelta(context, 'furnace') >= 1 || completedGoalIds.has(SURVIVAL_GOAL_IDS.obtainFurnace)) {
     return 'stone-forge';
   }
 
-  if (getCount(context, 'stone') >= 8 || completedGoalIds.has(SURVIVAL_GOAL_IDS.gatherStone)) {
+  if (getDelta(context, 'stone') >= 8 || completedGoalIds.has(SURVIVAL_GOAL_IDS.gatherStone)) {
     return 'stone';
   }
 
-  if (getCount(context, 'planks') >= 4 || completedGoalIds.has(SURVIVAL_GOAL_IDS.craftPlanks)) {
+  if (getDelta(context, 'planks') >= 4 || completedGoalIds.has(SURVIVAL_GOAL_IDS.craftPlanks)) {
     return 'wood';
   }
 
@@ -510,6 +612,10 @@ function resolveProgressionTier(context, completedGoalIds) {
 
 function getCount(context, key) {
   return Number(context.inventory?.[key] ?? context.world?.[key] ?? 0);
+}
+
+function getDelta(context, key) {
+  return Number(context.progressDeltas?.inventory?.[key] ?? context.progressDeltas?.world?.[key] ?? 0);
 }
 
 function getStat(context, key, fallback) {
@@ -523,6 +629,18 @@ function clamp01(value) {
 function roundRecord(record) {
   return Object.fromEntries(
     Object.entries(record).map(([key, value]) => [key, round(value, 2)]),
+  );
+}
+
+function createDeltaRecord(currentRecord, initialRecord) {
+  return Object.fromEntries(
+    Object.keys({
+      ...initialRecord,
+      ...currentRecord,
+    }).map((key) => [
+      key,
+      Number(currentRecord[key] ?? 0) - Number(initialRecord[key] ?? 0),
+    ]),
   );
 }
 

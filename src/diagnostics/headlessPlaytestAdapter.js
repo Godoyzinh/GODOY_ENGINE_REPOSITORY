@@ -14,12 +14,12 @@ export class HeadlessPlaytestAdapter {
       ironOre: 0,
       ironIngot: 0,
       furnace: 0,
+      basicTools: 0,
+      ironTools: 0,
       berries: 4,
       drops: 0,
     };
     this.progression = {
-      basicTools: 0,
-      ironTools: 0,
       shelterBlocks: 0,
       nightSurvivedSeconds: 0,
       nightSurvived: false,
@@ -38,6 +38,7 @@ export class HeadlessPlaytestAdapter {
       health: 100,
       hunger: 100,
       stamina: 100,
+      hostileDamageDone: 0,
       saveSizeKb: 2.4,
       lastSavedStateSize: 0,
     };
@@ -141,6 +142,7 @@ export class HeadlessPlaytestAdapter {
 
   fightHostile() {
     this.stats.hostiles = Math.max(1, this.stats.hostiles);
+    this.stats.hostileDamageDone += 8;
     this.stats.health = Math.max(0, this.stats.health - 4 + Math.round(this.noise() * 3));
 
     if (this.stats.health <= 0) {
@@ -161,6 +163,7 @@ export class HeadlessPlaytestAdapter {
     return {
       ok: true,
       event: 'hit',
+      entityDamageApplied: true,
     };
   }
 
@@ -228,8 +231,8 @@ export class HeadlessPlaytestAdapter {
         furnace: this.inventory.furnace,
         berries: this.inventory.berries,
         food: this.inventory.berries,
-        basicTools: this.progression.basicTools,
-        ironTools: this.progression.ironTools,
+        basicTools: this.inventory.basicTools,
+        ironTools: this.inventory.ironTools,
         buildBlocks: this.inventory.dirt + this.inventory.stone + this.inventory.wood + this.inventory.planks,
       },
       survival: {
@@ -337,27 +340,37 @@ export class HeadlessPlaytestAdapter {
     return {
       ok: true,
       event: 'Wood Planks',
+      craftedItem: {
+        itemType: 'resource',
+        itemId: 'woodPlank',
+        name: 'Wood Planks',
+        count: 4,
+      },
     };
   }
 
   craftTools() {
-    if (this.inventory.planks < 2 && this.progression.basicTools < 2) {
+    if (this.inventory.planks < 2) {
       return {
         ok: false,
         skipped: true,
       };
     }
 
-    if (this.progression.basicTools < 2) {
-      this.inventory.planks -= 2;
-      this.inventory.sticks += 4;
-      this.progression.basicTools = 2;
-      this.progression.equipmentTier = 'wood';
-    }
+    this.inventory.planks -= 2;
+    this.inventory.sticks += 4;
+    this.inventory.basicTools = Math.max(this.inventory.basicTools, 2);
+    this.progression.equipmentTier = 'wood';
 
     return {
       ok: true,
-      event: 'basic tools',
+      event: 'Sticks',
+      craftedItem: {
+        itemType: 'resource',
+        itemId: 'stick',
+        name: 'Sticks',
+        count: 4,
+      },
     };
   }
 
@@ -411,11 +424,14 @@ export class HeadlessPlaytestAdapter {
     }
 
     if (Math.floor(this.progression.nightSurvivedSeconds * 2) % 3 === 0) {
-      this.fightHostile();
-      secondaryActions.push({
-        action: 'fightHostile',
-        event: 'night guard',
-      });
+      const combatResult = this.fightHostile();
+
+      if (combatResult.entityDamageApplied) {
+        secondaryActions.push({
+          action: 'fightHostile',
+          event: 'night guard',
+        });
+      }
     }
 
     return {
@@ -439,6 +455,12 @@ export class HeadlessPlaytestAdapter {
     return {
       ok: true,
       event: 'Furnace',
+      craftedItem: {
+        itemType: 'block',
+        itemId: 'furnace',
+        name: 'Furnace',
+        count: 1,
+      },
     };
   }
 
@@ -488,6 +510,12 @@ export class HeadlessPlaytestAdapter {
     return {
       ok: true,
       event: 'Iron Ingot',
+      craftedItem: {
+        itemType: 'resource',
+        itemId: 'ironIngot',
+        name: 'Iron Ingot',
+        count: 1,
+      },
     };
   }
 
@@ -501,12 +529,18 @@ export class HeadlessPlaytestAdapter {
 
     this.inventory.ironIngot -= 3;
     this.inventory.sticks -= 2;
-    this.progression.ironTools += 1;
+    this.inventory.ironTools += 1;
     this.progression.equipmentTier = 'iron';
 
     return {
       ok: true,
       event: 'Iron Pickaxe',
+      craftedItem: {
+        itemType: 'tool',
+        itemId: 'ironPickaxe',
+        name: 'Iron Pickaxe',
+        count: 1,
+      },
     };
   }
 
@@ -600,6 +634,7 @@ export class HeadlessPlaytestAdapter {
         lastSavedStateSize: this.stats.lastSavedStateSize,
         equipmentTier: this.progression.equipmentTier,
         completedFurnaceJobs: this.progression.completedFurnaceJobs,
+        hostileDamageDone: this.stats.hostileDamageDone,
       },
     };
   }
