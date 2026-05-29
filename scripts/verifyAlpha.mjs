@@ -5,6 +5,7 @@ const checks = [
   ['production build smoke', ['run', 'smoke:production-build']],
   ['runtime config smoke', ['run', 'smoke:runtime-config']],
   ['WebGL fallback smoke', ['run', 'smoke:webgl']],
+  ['AI director smoke', ['run', 'smoke:ai-director']],
   ['settings smoke', ['run', 'smoke:settings']],
   ['camera/collision smoke', ['run', 'smoke:camera']],
   ['visual/game-feel smoke', ['run', 'smoke:visual']],

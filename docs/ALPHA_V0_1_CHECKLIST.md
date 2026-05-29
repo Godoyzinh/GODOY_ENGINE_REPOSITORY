@@ -9,6 +9,7 @@ Use this checklist before tagging or sharing an Alpha build.
 - `npm run smoke:production-build` passes after `npm run build`.
 - `npm run smoke:runtime-config` passes.
 - `npm run smoke:webgl` passes.
+- `npm run smoke:ai-director` passes.
 - `npm run dev` starts the client.
 - `npm run dedicated:server` starts the server.
 - `http://127.0.0.1:8787/health` returns `ok: true`.
@@ -19,6 +20,7 @@ Use this checklist before tagging or sharing an Alpha build.
 - Two multiplayer tabs can connect after the dedicated server starts.
 - Settings persist after reload.
 - Technical debug overlay is hidden by default and toggles with `F3`.
+- Feedback panel generates a local AI Session Report and can copy or download JSON.
 - Third-person mouse orbit moves freely and WASD follows camera direction.
 - Tree canopies do not launch the player upward.
 - Sky, weather ambience, water/grass animation, character motion, and feedback particles render cleanly.
@@ -44,7 +46,9 @@ Use this checklist before tagging or sharing an Alpha build.
 - Deployment guide is accurate for Vercel, Netlify, Render, and Railway.
 - `.env.example` contains placeholders only.
 - Known limitations are documented.
+- AI Director workflow and issue templates are present.
 - Alpha release notes are current.
 - No generated runtime data is staged.
+- No generated AI Session Report JSON is staged.
 - `docs/FULL_CODE_SNAPSHOT.md` is excluded unless intentionally requested.
 - No secrets, tokens, or machine-local absolute paths are staged.

@@ -11,6 +11,7 @@ Current phase: Public Alpha v0.1.0-alpha prep.
 - Multiplayer foundation with a server-authoritative dedicated server
 - In-game Studio tools with selection, transform helpers, prefabs, permissions, and publishing metadata
 - Alpha shell with main menu, onboarding, settings, controls help, and debug toggle
+- AI Director foundation with local telemetry, QA reports, feedback export, and task proposal generation
 
 ## Requirements
 
@@ -75,6 +76,7 @@ http://127.0.0.1:8787/admin/status
 - `R`: craft first available recipe
 - `Q`: melee attack
 - `T`: sleep / day skip
+- Feedback button: generate, copy, or download a local AI Session Report
 - `` ` ``: Studio mode
 - `F`: select block in Studio
 - `G`: cycle Studio tool
@@ -98,7 +100,13 @@ The build separates Three.js into its own output chunk for cleaner Alpha packagi
 npm run verify:alpha
 ```
 
-This runs the production build plus release config, WebGL fallback, settings, camera/collision, visual/game-feel, inventory/crafting, save migration, and dedicated server smoke checks.
+This runs the production build plus release config, WebGL fallback, AI Director, settings, camera/collision, visual/game-feel, inventory/crafting, save migration, and dedicated server smoke checks.
+
+## AI Director Feedback Loop
+
+The in-game `Feedback` button generates a local AI Session Report. Reports include sanitized telemetry, runtime stats, browser capabilities, summarized issues, and proposed tasks classified as bug, UX, performance, gameplay, or polish.
+
+Reports are never uploaded automatically. Review the JSON before copying it into a GitHub issue or AI task proposal.
 
 ## Public Alpha Deploy
 
@@ -142,5 +150,6 @@ Public test flow:
 - [Smoke Tests](docs/QA_SMOKE_TESTS.md)
 - [Known Issues](docs/KNOWN_ISSUES.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
+- [AI Director Workflow](docs/AI_DIRECTOR_WORKFLOW.md)
 - [AI Agent Workflow](docs/AI_AGENT_WORKFLOW.md)
 - [Technical Standards](docs/TECHNICAL_STANDARDS.md)

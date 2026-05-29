@@ -39,6 +39,8 @@ export class DebugOverlay {
     worldSimulationSnapshot,
     audioSnapshot,
     networkSnapshot,
+    telemetrySnapshot,
+    qaSnapshot,
   }) {
     const instantFramesPerSecond = 1 / Math.max(deltaTime, 0.001);
     this.framesPerSecond = Math.round(this.framesPerSecond * 0.9 + instantFramesPerSecond * 0.1);
@@ -51,6 +53,10 @@ export class DebugOverlay {
       <div class="debug-overlay__title">GODOY ENGINE DEBUG</div>
       ${this.createRow('FPS', this.framesPerSecond)}
       ${this.createRow('Delta', `${(deltaTime * 1000).toFixed(1)}ms`)}
+      ${this.createRow('Session', `${telemetrySnapshot.sessionDurationSeconds.toFixed(1)}s`)}
+      ${this.createRow('Console Err', telemetrySnapshot.consoleErrors)}
+      ${this.createRow('AI Report', qaSnapshot.reportId)}
+      ${this.createRow('AI Tasks', qaSnapshot.taskCount)}
       ${this.createRow('Mode', playerState.mode)}
       ${this.createRow('HP', `${Math.round(survivalSnapshot.health)}/${survivalSnapshot.maxHealth}`)}
       ${this.createRow('Food', Math.round(survivalSnapshot.hunger))}

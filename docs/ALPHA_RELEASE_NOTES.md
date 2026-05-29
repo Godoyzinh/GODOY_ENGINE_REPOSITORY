@@ -18,6 +18,8 @@ This Alpha packages the project as a playable sandbox survival creation prototyp
 - Public Alpha banner, version display, feedback placeholder, and improved loading/WebGL fallback messaging.
 - Deployment configs for Vercel, Netlify, Render, and Railway.
 - Runtime config for public WebSocket server URLs and feedback links.
+- Local AI Director foundation with telemetry, QA reports, issue summaries, and AI task proposals.
+- In-game Feedback panel for copying or downloading local session reports.
 - Alpha verification script covering build, release config, WebGL fallback, settings, inventory/crafting, save migration, and server smoke checks.
 - Release build output split into app and Three.js chunks.
 
@@ -55,6 +57,10 @@ npm run verify:alpha
 Both commands currently start the same dedicated server entry point.
 
 `npm run verify:alpha` runs the Alpha release smoke suite.
+
+## AI Session Reports
+
+Use the in-game `Feedback` button to generate a local JSON report. Reports stay on the player's machine until copied or downloaded and are intended for bug reports, AI task proposals, and QA triage.
 
 ## WebGL Fallback
 

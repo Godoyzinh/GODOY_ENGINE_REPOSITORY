@@ -295,6 +295,120 @@ canvas {
   backdrop-filter: blur(8px);
 }
 
+.feedback-ui {
+  position: fixed;
+  top: 52px;
+  right: 12px;
+  z-index: 11;
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  max-width: min(320px, calc(100vw - 24px));
+  color: var(--godoy-text);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  pointer-events: none;
+}
+
+.feedback-ui__toggle,
+.feedback-ui button,
+.feedback-ui__link {
+  min-height: 32px;
+  border: 1px solid rgba(142, 230, 181, 0.42);
+  background: rgba(7, 10, 15, 0.72);
+  color: #d9fff0;
+  font: 700 11px/1 "Cascadia Mono", Consolas, monospace;
+  text-decoration: none;
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
+}
+
+.feedback-ui__toggle {
+  padding: 0 10px;
+  text-transform: uppercase;
+}
+
+.feedback-ui button:hover,
+.feedback-ui button:focus-visible,
+.feedback-ui__link:hover,
+.feedback-ui__link:focus-visible {
+  border-color: rgba(142, 230, 181, 0.8);
+  background: rgba(142, 230, 181, 0.14);
+  outline: none;
+}
+
+.feedback-ui button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.feedback-ui__panel {
+  display: grid;
+  width: 320px;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--godoy-border);
+  background: rgba(7, 10, 15, 0.84);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.36);
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+}
+
+.feedback-ui__panel--hidden {
+  display: none;
+}
+
+.feedback-ui__header,
+.feedback-ui__stats,
+.feedback-ui__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.feedback-ui__header span {
+  color: var(--godoy-accent);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.feedback-ui__header button {
+  min-height: 26px;
+  padding: 0 8px;
+}
+
+.feedback-ui p,
+.feedback-ui__note {
+  margin: 0;
+  color: var(--godoy-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.feedback-ui__stats {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  color: #ffffff;
+  font-size: 11px;
+}
+
+.feedback-ui__actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.feedback-ui__actions button {
+  padding: 0 8px;
+}
+
+.feedback-ui__link {
+  display: inline-grid;
+  width: max-content;
+  place-items: center;
+  padding: 0 10px;
+}
+
 .debug-overlay {
   position: fixed;
   top: 52px;
@@ -581,6 +695,20 @@ canvas {
     max-width: none;
     justify-content: space-between;
     font-size: 10px;
+  }
+
+  .feedback-ui {
+    top: 50px;
+    right: 8px;
+    max-width: calc(100vw - 16px);
+  }
+
+  .feedback-ui__panel {
+    width: min(320px, calc(100vw - 16px));
+  }
+
+  .feedback-ui__actions {
+    grid-template-columns: 1fr;
   }
 
   .hotbar-ui {

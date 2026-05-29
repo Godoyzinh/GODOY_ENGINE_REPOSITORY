@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest a scoped gameplay, Studio, multiplayer, or creator-platform improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Player or creator problem
+      description: What should become easier, clearer, faster, or more fun?
+      placeholder: Building larger structures is slow because...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest useful version first.
+      placeholder: Add a blueprint preview that...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Gameplay
+        - UX
+        - Performance
+        - Multiplayer
+        - Studio
+        - Procedural world
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: Note any compatibility, performance, or architecture boundaries.
+      placeholder: Must preserve chunk streaming and verify:alpha.
+    validations:
+      required: false
