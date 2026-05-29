@@ -78,6 +78,14 @@ function proposeChange(issue) {
     return 'Review hostile pressure, survival drain, spawn safety, and onboarding hints for early player sessions.';
   }
 
+  if (issue.code.includes('stuck') || issue.code.includes('collision')) {
+    return 'Replay the autonomous path, inspect movement/collision boundaries, and add a camera/collision smoke assertion if reproduced.';
+  }
+
+  if (issue.code.includes('save')) {
+    return 'Inspect save serialization and migration paths, then add or extend save migration smoke coverage.';
+  }
+
   return 'Review the report evidence, identify the owning module, and propose a scoped patch with Alpha verification.';
 }
 

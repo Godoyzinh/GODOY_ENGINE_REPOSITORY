@@ -99,6 +99,8 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
   const averageFps = telemetrySnapshot.fps?.average ?? 0;
   const minFps = telemetrySnapshot.fps?.min ?? null;
   const deaths = telemetrySnapshot.counts?.deaths ?? 0;
+  const simulationFailures = runtimeSnapshot.simulation?.failures ?? [];
+  const simulationFailureCounts = runtimeSnapshot.simulation?.failureCounts ?? {};
 
   if (consoleErrorCount > 0) {
     issues.push({
@@ -145,6 +147,28 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
       title: 'Review early survival pressure',
       summary: `${deaths} player death event(s) occurred during the session.`,
       evidence: `Last survival event: ${runtimeSnapshot.survival?.lastEvent ?? 'unknown'}.`,
+    });
+  }
+
+  for (const failure of simulationFailures) {
+    issues.push({
+      code: failure.code,
+      category: classifySimulationFailure(failure.code),
+      severity: failure.severity ?? 'low',
+      title: formatFailureTitle(failure.code),
+      summary: failure.summary,
+      evidence: `Count: ${failure.count}; first seen at ${failure.firstAtSeconds}s; last seen at ${failure.lastAtSeconds}s.`,
+    });
+  }
+
+  if ((simulationFailureCounts.consoleErrors ?? 0) > 0 && consoleErrorCount === 0) {
+    issues.push({
+      code: 'simulation-console-errors',
+      category: AI_TASK_CATEGORIES.bug,
+      severity: 'high',
+      title: 'Investigate simulation console errors',
+      summary: `${simulationFailureCounts.consoleErrors} console error event(s) were observed by the autonomous playtest.`,
+      evidence: 'Autonomous playtest failure detector reported console errors.',
     });
   }
 
@@ -217,7 +241,63 @@ function sanitizeRuntimeSnapshot(runtimeSnapshot) {
       'persistedChests',
       'compressedChunkCandidates',
     ]),
+    simulation: sanitizeSimulationSnapshot(runtimeSnapshot.simulation),
+    simulationAdapter: pick(runtimeSnapshot.simulationAdapter, [
+      'type',
+      'seed',
+      'lastSavedStateSize',
+    ]),
   };
+}
+
+function sanitizeSimulationSnapshot(simulationSnapshot = null) {
+  if (!simulationSnapshot) {
+    return null;
+  }
+
+  return {
+    status: simulationSnapshot.status,
+    mode: pick(simulationSnapshot.mode, ['id', 'label', 'durationSeconds']),
+    elapsedSeconds: simulationSnapshot.elapsedSeconds,
+    progress: simulationSnapshot.progress,
+    actionCounts: { ...(simulationSnapshot.actionCounts ?? {}) },
+    failureCounts: { ...(simulationSnapshot.failureCounts ?? {}) },
+    failures: (simulationSnapshot.failures ?? []).slice(0, 24).map((failure) => pick(failure, [
+      'code',
+      'summary',
+      'severity',
+      'firstAtSeconds',
+      'lastAtSeconds',
+      'count',
+    ])),
+  };
+}
+
+function classifySimulationFailure(code) {
+  if (code.includes('fps')) {
+    return AI_TASK_CATEGORIES.performance;
+  }
+
+  if (code.includes('stuck') || code.includes('collision')) {
+    return AI_TASK_CATEGORIES.ux;
+  }
+
+  if (code.includes('death') || code.includes('combat')) {
+    return AI_TASK_CATEGORIES.gameplay;
+  }
+
+  if (code.includes('save') || code.includes('console')) {
+    return AI_TASK_CATEGORIES.bug;
+  }
+
+  return AI_TASK_CATEGORIES.polish;
+}
+
+function formatFailureTitle(code) {
+  return code
+    .split('-')
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(' ');
 }
 
 function pick(source, keys) {

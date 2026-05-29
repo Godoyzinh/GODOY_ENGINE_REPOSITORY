@@ -1,5 +1,16 @@
 # Changelog
 
+## Autonomous Playtest Simulation
+
+### Added
+
+- Autonomous bot playtest foundation with exploration, mining, placement, collection, crafting, combat, survival, and save/load checks.
+- Quick, Standard, and Stress simulation modes.
+- In-game `Run Auto Test` control inside the Feedback panel.
+- `npm run simulate:ai` headless-friendly report generation into `reports/`.
+- Failure detection for stuck states, vertical collision snaps, death loops, console errors, FPS drops, and save/load issues.
+- Autonomous playtest smoke coverage in `npm run verify:alpha`.
+
 ## AI Director Evolution Foundation
 
 ### Added
