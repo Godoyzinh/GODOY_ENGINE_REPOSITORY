@@ -1,0 +1,33 @@
+{
+  "name": "godoy-engine",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "start": "node server/multiplayerServer.js",
+    "build": "vite build",
+    "build:client": "vite build",
+    "preview": "vite preview",
+    "smoke:production-build": "node scripts/smokeProductionBuild.mjs",
+    "smoke:runtime-config": "node scripts/smokeRuntimeConfig.mjs",
+    "smoke:webgl": "node scripts/smokeWebglFallback.mjs",
+    "smoke:settings": "node scripts/smokeSettings.mjs",
+    "smoke:camera": "node scripts/smokeCameraCollision.mjs",
+    "smoke:visual": "node scripts/smokeVisualFeel.mjs",
+    "smoke:inventory": "node scripts/smokeInventoryCrafting.mjs",
+    "smoke:save": "node scripts/smokeSaveMigration.mjs",
+    "smoke:multiplayer": "node scripts/smokeMultiplayerServer.mjs",
+    "verify:alpha": "node scripts/verifyAlpha.mjs",
+    "multiplayer:server": "node server/multiplayerServer.js",
+    "dedicated:server": "node server/multiplayerServer.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "three": "^0.184.0",
+    "vite": "^8.0.14"
+  },
+  "devDependencies": {}
+}

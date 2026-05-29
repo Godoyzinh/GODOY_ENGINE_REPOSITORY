@@ -1,0 +1,70 @@
+# QA Smoke Tests
+
+Run these before tagging an Alpha build.
+
+## Client
+
+- `npm run build` completes successfully.
+- `npm run verify:alpha` completes successfully.
+- `npm run smoke:production-build` validates generated Alpha client artifacts.
+- `npm run smoke:runtime-config` validates dev/prod WebSocket URL behavior.
+- `npm run smoke:webgl` validates the WebGL fallback copy and escaping.
+- `npm run smoke:settings` validates settings normalization and persistence.
+- `npm run smoke:camera` validates camera-relative movement, paused input, and vertical snap protection.
+- `npm run smoke:visual` validates sky, ambient particles, feedback particles, and procedural audio hooks.
+- `npm run smoke:inventory` validates hotbar/backpack stacking, crafting output, and selected consumable use.
+- `npm run smoke:save` validates save migration and persisted simulation state.
+- Open `http://127.0.0.1:5173/`.
+- Main menu appears on first launch.
+- Public Alpha banner and version display are visible.
+- Loading screen is replaced after runtime boot.
+- Play Solo hides the menu and the world renders.
+- Settings change graphics quality, render distance, audio volume, controls help, and debug visibility.
+- First-launch onboarding can be dismissed and stays dismissed after reload.
+- `Esc` opens the menu after play starts.
+- `F1` opens controls help.
+- `F3` toggles the technical debug overlay.
+- Join Multiplayer reports that the dedicated server is offline when `npm run dedicated:server` is not running.
+- Join Multiplayer reports a clear configuration message when a public client lacks `VITE_GODOY_WS_URL`.
+
+## Gameplay
+
+- Player can move, jump, sprint, crouch, and fly in creative mode.
+- Mouse orbit rotates the third-person camera, and movement follows camera direction.
+- Passing near tree canopies/trunks does not snap the player upward.
+- Blocks can be mined and placed.
+- Hotbar selection works with number keys and scroll wheel.
+- Crafting and consumable use still work.
+- Combat hit/cooldown UI still updates.
+- Sky gradient, sun/moon visuals, fog, ambient particles, and light water/grass motion render without console errors.
+- Footsteps, mining, hit, landing, ambient, and UI audio cues trigger after browser audio is unlocked by player input.
+
+## Studio
+
+- Backquote toggles Studio mode.
+- `F` selects a block.
+- Arrow keys and Page Up/Page Down move selected Studio block.
+- `Ctrl+Z` and `Ctrl+Y` undo/redo Studio edits.
+- `B` cycles prefab selection.
+- `V` places the selected prefab when space is clear.
+- `O` records publish metadata.
+
+## Multiplayer
+
+- `npm run smoke:multiplayer` validates server health, admin status, and reconnect registry behavior.
+- Start server with `npm run dedicated:server`.
+- Health endpoint returns `ok: true`.
+- Two browser tabs can join `?multiplayer=1`.
+- Player snapshots replicate.
+- Block edits replicate.
+- Studio edit permissions reject viewer edits.
+- Admin status includes hosted worlds, active editors, published worlds, and network metrics.
+
+## Packaging
+
+- `npm run build` outputs app and Three.js chunks.
+- `npm run verify:alpha` runs clean before release.
+- README command flow is accurate.
+- `docs/DEPLOYMENT.md` matches deployment config files.
+- Alpha release notes and known issues are present.
+- No staged docs include machine-local absolute paths or secret-like tokens.
