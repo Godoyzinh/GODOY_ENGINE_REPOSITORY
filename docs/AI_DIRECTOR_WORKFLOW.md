@@ -58,8 +58,8 @@ The CLI writes JSON reports into `reports/`. Generated report files are ignored 
 - Counts for deaths, mining, building, combat, and report exports.
 - Autonomous playtest actions, failures, and completion state when a bot run generated the report.
 - Goal planner state: current goal, current subgoal, reason, progress, target, completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
-- Inventory initial/current/delta snapshots for autonomous playtests.
-- Crafted item and failed craft attempt lists, including no-delta craft failures.
+- Inventory initial/current/delta snapshots for autonomous playtests, also exported as `inventorySnapshot` and `resourceDeltas`.
+- Goal transition history, failed action evidence, and crafted item/failed craft attempt lists, including no-delta craft failures.
 - Recent sanitized gameplay events.
 - Runtime stats for renderer, settings, terrain, entities, survival, networking, and persistence.
 - Browser/system capabilities needed for QA.
@@ -83,6 +83,7 @@ AI-generated tasks are suggestions, not commands.
 - Preserve multiplayer authority, chunk streaming, save compatibility, and UI stability.
 - Add or update smoke tests for regressions.
 - Treat repeated same-action loops and 30 second no-progress goal states as actionable gameplay tasks.
+- Treat mining spam above the QA threshold as an actionable gameplay task, especially when resource deltas do not justify the action count.
 
 ## Branch And PR Rules
 

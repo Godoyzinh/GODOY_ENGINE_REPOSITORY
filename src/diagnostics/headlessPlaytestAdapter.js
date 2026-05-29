@@ -152,6 +152,7 @@ export class HeadlessPlaytestAdapter {
       return {
         ok: true,
         event: 'respawn',
+        entityDamageApplied: true,
         failures: [{
           code: 'bot-death',
           summary: 'Headless bot died during combat and respawned.',
@@ -430,6 +431,7 @@ export class HeadlessPlaytestAdapter {
         secondaryActions.push({
           action: 'fightHostile',
           event: 'night guard',
+          entityDamageApplied: true,
         });
       }
     }

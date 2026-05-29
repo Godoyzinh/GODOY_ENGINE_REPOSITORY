@@ -228,6 +228,7 @@ export class SurvivalGoalPlanner {
     this.noProgressSecondsByGoal = new Map();
     this.repeatedSkipsByGoal = new Map();
     this.bottlenecks = [];
+    this.goalTransitions = [];
     this.activeGoalId = null;
     this.currentPlan = null;
     this.initialInventory = null;
@@ -253,6 +254,14 @@ export class SurvivalGoalPlanner {
     }
 
     if (this.activeGoalId !== goal.id) {
+      this.recordGoalTransition({
+        type: 'selected',
+        fromGoalId: this.activeGoalId,
+        toGoalId: goal.id,
+        toGoalName: goal.label,
+        reason: 'Highest-priority available survival goal selected.',
+        atSeconds: elapsedSeconds,
+      });
       this.activeGoalId = goal.id;
       this.repeatedSkipsByGoal.set(goal.id, 0);
     }
@@ -359,6 +368,7 @@ export class SurvivalGoalPlanner {
       timeSpentByGoal: roundRecord(this.timeSpentByGoal),
       noProgressSecondsByGoal: roundRecord(Object.fromEntries(this.noProgressSecondsByGoal.entries())),
       bottlenecks: this.bottlenecks.map((bottleneck) => ({ ...bottleneck })),
+      goalTransitions: this.goalTransitions.map((transition) => ({ ...transition })),
       allGoals: this.goals.map((goal) => ({
         id: goal.id,
         label: goal.label,
@@ -391,6 +401,13 @@ export class SurvivalGoalPlanner {
         priority: goal.priority,
         completedAtSeconds: round(elapsedSeconds, 2),
         timeSpentSeconds: round(this.timeSpentByGoal[goal.id] ?? 0, 2),
+      });
+      this.recordGoalTransition({
+        type: 'completed',
+        goalId: goal.id,
+        goalName: goal.label,
+        reason: `${goal.label} met its success criteria.`,
+        atSeconds: elapsedSeconds,
       });
     }
   }
@@ -519,6 +536,13 @@ export class SurvivalGoalPlanner {
       summary,
       atSeconds: elapsedSeconds,
     });
+    this.recordGoalTransition({
+      type: 'failed',
+      goalId: goal.id,
+      goalName: goal.label,
+      reason: summary,
+      atSeconds: elapsedSeconds,
+    });
   }
 
   addBottleneck({ code, goalId, goalName, summary, atSeconds }) {
@@ -540,6 +564,29 @@ export class SurvivalGoalPlanner {
       count: 1,
     });
     this.bottlenecks = this.bottlenecks.slice(-16);
+  }
+
+  recordGoalTransition({
+    type,
+    fromGoalId = null,
+    toGoalId = null,
+    toGoalName = null,
+    goalId = null,
+    goalName = null,
+    reason,
+    atSeconds,
+  }) {
+    this.goalTransitions.push({
+      type,
+      fromGoalId,
+      toGoalId,
+      toGoalName,
+      goalId,
+      goalName,
+      reason,
+      atSeconds: round(atSeconds, 2),
+    });
+    this.goalTransitions = this.goalTransitions.slice(-64);
   }
 
   resolveGoalStatus(goalId) {

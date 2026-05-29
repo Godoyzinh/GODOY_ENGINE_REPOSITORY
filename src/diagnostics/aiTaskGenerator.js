@@ -58,7 +58,14 @@ function classifyIssue(issue) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
-  if (issue.code.includes('goal-') || issue.code.includes('action-loop') || issue.code.includes('failed-ai-crafts') || issue.code.includes('missing-sticks')) {
+  if (
+    issue.code.includes('goal-') ||
+    issue.code.includes('action-loop') ||
+    issue.code.includes('failed-ai-crafts') ||
+    issue.code.includes('failed-ai-actions') ||
+    issue.code.includes('missing-sticks') ||
+    issue.code.includes('mining-spam')
+  ) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
@@ -89,7 +96,9 @@ function proposeChange(issue) {
     issue.code.includes('goal-no-progress') ||
     issue.code.includes('action-loop') ||
     issue.code.includes('missing-sticks') ||
-    issue.code.includes('failed-ai-crafts')
+    issue.code.includes('failed-ai-crafts') ||
+    issue.code.includes('failed-ai-actions') ||
+    issue.code.includes('mining-spam')
   ) {
     return 'Inspect the AI planner requirement chain, adapter execution result, and inventory/world state for this progression goal.';
   }

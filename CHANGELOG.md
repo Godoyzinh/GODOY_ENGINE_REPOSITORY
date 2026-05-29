@@ -1,5 +1,19 @@
 # Changelog
 
+## AI Report Export And Gather Wood Loop
+
+### Fixed
+
+- Exported autonomous QA JSON now preserves generated `issues` and `aiTasks`.
+- Gather Wood now advances only from real wood inventory delta, not leaf mining.
+- Autonomous mining and goal execution now use cooldowns to prevent unrealistic action spam.
+- Mining spam above the QA threshold now produces an exported issue and AI task.
+
+### Added
+
+- AI reports now expose `inventorySnapshot`, `resourceDeltas`, `goalTransitions`, and `failedActions`.
+- Autonomous playtest smoke coverage now verifies report aliases, mining throttling, and mining-spam task generation.
+
 ## AI Planner Execution Validation
 
 ### Fixed

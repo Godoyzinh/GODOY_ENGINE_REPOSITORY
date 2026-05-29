@@ -2,6 +2,7 @@ import { AI_TASK_CATEGORIES, AiTaskGenerator } from './aiTaskGenerator.js';
 
 const STORAGE_KEY = 'godoy:auto-qa:last-report';
 const SCHEMA_VERSION = 1;
+const MINING_SPAM_PER_MINUTE_THRESHOLD = 120;
 
 export class AutoQaReportSystem {
   constructor({
@@ -99,10 +100,16 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
   const averageFps = telemetrySnapshot.fps?.average ?? 0;
   const minFps = telemetrySnapshot.fps?.min ?? null;
   const deaths = telemetrySnapshot.counts?.deaths ?? 0;
-  const simulationFailures = runtimeSnapshot.simulation?.failures ?? [];
-  const simulationFailureCounts = runtimeSnapshot.simulation?.failureCounts ?? {};
-  const plannerSnapshot = runtimeSnapshot.simulation?.planner ?? null;
-  const failedCrafts = runtimeSnapshot.simulation?.crafting?.failedCrafts ?? [];
+  const simulationSnapshot = runtimeSnapshot.simulation ?? {};
+  const simulationFailures = simulationSnapshot.failures ?? [];
+  const simulationFailureCounts = simulationSnapshot.failureCounts ?? {};
+  const plannerSnapshot = simulationSnapshot.planner ?? null;
+  const failedCrafts = simulationSnapshot.crafting?.failedCrafts ?? simulationSnapshot.failedCrafts ?? [];
+  const failedActions = simulationSnapshot.failedActions ?? [];
+  const miningRatePerMinute = calculateActionRatePerMinute({
+    count: simulationSnapshot.actionCounts?.mine,
+    elapsedSeconds: simulationSnapshot.elapsedSeconds,
+  });
 
   if (consoleErrorCount > 0) {
     issues.push({
@@ -163,6 +170,20 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
     });
   }
 
+  if (
+    !issues.some((issue) => issue.code === 'mining-spam-threshold') &&
+    ((simulationFailureCounts.miningSpam ?? 0) > 0 || miningRatePerMinute > MINING_SPAM_PER_MINUTE_THRESHOLD)
+  ) {
+    issues.push({
+      code: 'mining-spam-threshold',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Throttle autonomous mining spam',
+      summary: `AI mining rate reached ${Math.round(miningRatePerMinute)} actions/min, above the ${MINING_SPAM_PER_MINUTE_THRESHOLD}/min threshold.`,
+      evidence: `Mining actions: ${simulationSnapshot.actionCounts?.mine ?? 0}; elapsed: ${simulationSnapshot.elapsedSeconds ?? 'unknown'}s.`,
+    });
+  }
+
   if ((simulationFailureCounts.consoleErrors ?? 0) > 0 && consoleErrorCount === 0) {
     issues.push({
       code: 'simulation-console-errors',
@@ -184,6 +205,19 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
       title: 'Review failed AI crafting actions',
       summary: `${failedCrafts.length} AI craft action(s) failed or produced no inventory delta.`,
       evidence: `${recentFailedCraft.goalName}: ${recentFailedCraft.reason}`,
+    });
+  }
+
+  if (failedActions.length > 0) {
+    const recentFailedAction = failedActions.at(-1);
+
+    issues.push({
+      code: 'failed-ai-actions',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'low',
+      title: 'Review blocked AI action execution',
+      summary: `${failedActions.length} AI action(s) failed during autonomous progression.`,
+      evidence: `${recentFailedAction.goalName}: ${recentFailedAction.reason}`,
     });
   }
 
@@ -292,6 +326,30 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     return null;
   }
 
+  const inventorySnapshot = sanitizeInventorySnapshot(simulationSnapshot.inventorySnapshot ?? simulationSnapshot.inventory);
+  const craftingSnapshot = sanitizeCraftingSnapshot(simulationSnapshot.crafting ?? {
+    craftedItems: simulationSnapshot.craftedItems,
+    failedCrafts: simulationSnapshot.failedCrafts,
+  });
+  const failedActions = (simulationSnapshot.failedActions ?? []).slice(0, 48).map((failedAction) => pick(failedAction, [
+    'goalId',
+    'goalName',
+    'action',
+    'actionName',
+    'reason',
+    'atSeconds',
+  ]));
+  const goalTransitions = (simulationSnapshot.goalTransitions ?? []).slice(0, 64).map((transition) => pick(transition, [
+    'type',
+    'fromGoalId',
+    'toGoalId',
+    'toGoalName',
+    'goalId',
+    'goalName',
+    'reason',
+    'atSeconds',
+  ]));
+
   return {
     status: simulationSnapshot.status,
     mode: pick(simulationSnapshot.mode, ['id', 'label', 'durationSeconds']),
@@ -299,8 +357,14 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     progress: simulationSnapshot.progress,
     actionCounts: { ...(simulationSnapshot.actionCounts ?? {}) },
     failureCounts: { ...(simulationSnapshot.failureCounts ?? {}) },
-    inventory: sanitizeInventorySnapshot(simulationSnapshot.inventory),
-    crafting: sanitizeCraftingSnapshot(simulationSnapshot.crafting),
+    inventory: inventorySnapshot,
+    inventorySnapshot,
+    resourceDeltas: sanitizeNumberRecord(simulationSnapshot.resourceDeltas ?? inventorySnapshot?.delta),
+    crafting: craftingSnapshot,
+    craftedItems: craftingSnapshot.craftedItems,
+    failedCrafts: craftingSnapshot.failedCrafts,
+    failedActions,
+    goalTransitions,
     failures: (simulationSnapshot.failures ?? []).slice(0, 24).map((failure) => pick(failure, [
       'code',
       'summary',
@@ -393,6 +457,16 @@ function sanitizeGoalPlannerSnapshot(plannerSnapshot = null) {
       'lastAtSeconds',
       'count',
     ])),
+    goalTransitions: (plannerSnapshot.goalTransitions ?? []).slice(0, 64).map((transition) => pick(transition, [
+      'type',
+      'fromGoalId',
+      'toGoalId',
+      'toGoalName',
+      'goalId',
+      'goalName',
+      'reason',
+      'atSeconds',
+    ])),
     allGoals: (plannerSnapshot.allGoals ?? []).map((goal) => pick(goal, [
       'id',
       'label',
@@ -411,7 +485,7 @@ function classifySimulationFailure(code) {
     return AI_TASK_CATEGORIES.performance;
   }
 
-  if (code.includes('action-loop') || code.includes('craft-no-inventory-change')) {
+  if (code.includes('action-loop') || code.includes('craft-no-inventory-change') || code.includes('mining-spam')) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
@@ -431,7 +505,7 @@ function classifySimulationFailure(code) {
 }
 
 function getBottleneckSeverity(code) {
-  if (code.includes('missing-sticks') || code.includes('goal-no-progress') || code.includes('action-loop')) {
+  if (code.includes('missing-sticks') || code.includes('goal-no-progress') || code.includes('action-loop') || code.includes('mining-spam')) {
     return 'medium';
   }
 
@@ -461,6 +535,12 @@ function sanitizeNumberRecord(record = {}) {
   return Object.fromEntries(
     Object.entries(record ?? {}).map(([key, value]) => [key, Number(value) || 0]),
   );
+}
+
+function calculateActionRatePerMinute({ count = 0, elapsedSeconds = 0 } = {}) {
+  const safeElapsedSeconds = Math.max(1, Number(elapsedSeconds) || 0);
+
+  return (Number(count) || 0) / safeElapsedSeconds * 60;
 }
 
 function sanitizeRendererSnapshot(renderer) {
