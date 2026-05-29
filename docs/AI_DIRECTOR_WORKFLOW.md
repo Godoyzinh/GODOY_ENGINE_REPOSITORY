@@ -13,7 +13,7 @@ The AI Director foundation turns local play sessions into reviewable development
 
 ## Autonomous Playtest Loop
 
-The autonomous playtest simulation lets the game exercise itself and generate an AI Session Report.
+The autonomous playtest simulation lets the game exercise itself and generate an AI Session Report. The bot now follows a goal-oriented survival plan instead of a random timed action loop.
 
 Run from the game:
 
@@ -37,6 +37,18 @@ Simulation modes:
 - Standard Test: 5 minutes.
 - Stress Test: 15 minutes.
 
+Goal route:
+
+- Gather wood.
+- Craft planks.
+- Craft basic tools.
+- Gather stone.
+- Build shelter.
+- Survive night pressure.
+- Obtain a furnace.
+- Smelt ore.
+- Upgrade equipment.
+
 The CLI writes JSON reports into `reports/`. Generated report files are ignored by Git.
 
 ## What The Report Contains
@@ -45,6 +57,7 @@ The CLI writes JSON reports into `reports/`. Generated report files are ignored 
 - Console error and warning summaries.
 - Counts for deaths, mining, building, combat, and report exports.
 - Autonomous playtest actions, failures, and completion state when a bot run generated the report.
+- Goal planner state: current goal, current subgoal, reason, progress, target, completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
 - Recent sanitized gameplay events.
 - Runtime stats for renderer, settings, terrain, entities, survival, networking, and persistence.
 - Browser/system capabilities needed for QA.

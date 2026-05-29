@@ -1,5 +1,20 @@
 # Changelog
 
+## Goal Oriented Survival AI
+
+### Added
+
+- Survival goal planner for autonomous playtests with prioritized goals, requirements, success criteria, and failure criteria.
+- Goal route covering wood gathering, plank/tool crafting, stone gathering, shelter building, night survival, furnace access, ore smelting, and equipment upgrades.
+- AI plan overlay in the Feedback panel with current goal, subgoal, reason, progress, and target.
+- AI Director report fields for completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
+
+### Changed
+
+- Autonomous playtests now execute progression plans instead of random timed action loops.
+- Headless and in-engine playtest adapters expose planner state and goal-specific execution hooks.
+- Autonomous playtest smoke coverage now validates planner/report shape.
+
 ## Autonomous Playtest Simulation
 
 ### Added

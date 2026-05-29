@@ -442,6 +442,40 @@ canvas {
   transition: width 160ms ease;
 }
 
+.feedback-ui__ai-plan {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid rgba(142, 230, 181, 0.24);
+  background: rgba(7, 10, 15, 0.48);
+}
+
+.feedback-ui__ai-plan-title {
+  color: var(--godoy-accent);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.feedback-ui__ai-plan-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  color: #aeb8c7;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.feedback-ui__ai-plan-row strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #ffffff;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .feedback-ui__link {
   display: inline-grid;
   width: max-content;

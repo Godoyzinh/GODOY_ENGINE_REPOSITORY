@@ -21,6 +21,8 @@ This Alpha packages the project as a playable sandbox survival creation prototyp
 - Local AI Director foundation with telemetry, QA reports, issue summaries, and AI task proposals.
 - In-game Feedback panel for copying or downloading local session reports.
 - Autonomous playtest simulation with Quick, Standard, and Stress modes.
+- Goal-oriented survival AI planner for autonomous playtests, including wood, tools, stone, shelter, night survival, furnace, smelting, and equipment progression.
+- AI plan overlay in the Feedback panel with current goal, subgoal, reason, progress, and target.
 - `npm run simulate:ai` for headless-friendly report generation into `reports/`.
 - Alpha verification script covering build, release config, WebGL fallback, settings, inventory/crafting, save migration, and server smoke checks.
 - Release build output split into app and Three.js chunks.
@@ -64,7 +66,7 @@ Both commands currently start the same dedicated server entry point.
 
 Use the in-game `Feedback` button to generate a local JSON report. Reports stay on the player's machine until copied or downloaded and are intended for bug reports, AI task proposals, and QA triage.
 
-The Feedback panel can also start a local autonomous playtest. The bot explores, mines, places blocks, collects drops, crafts basic items, fights hostiles, performs survival checks, and writes the result into the AI Director report.
+The Feedback panel can also start a local autonomous playtest. The bot follows a survival progression plan, collects supporting drops, crafts, builds shelter, handles night pressure, and writes goal progress into the AI Director report.
 
 CLI bot run:
 

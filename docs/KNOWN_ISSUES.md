@@ -10,7 +10,7 @@
 - Publish flow stores metadata locally/server-side but does not upload to a remote marketplace.
 - Audio currently uses lightweight procedural cues plus hooks; authored sound assets and mixing are future work.
 - AI Session Reports are local QA artifacts and do not create GitHub issues or code changes automatically.
-- Autonomous playtests are deterministic QA probes, not full human playtesting replacements.
+- Autonomous playtests are deterministic goal-oriented QA probes, not full human playtesting replacements.
 
 ## Performance
 
@@ -22,6 +22,7 @@
 
 - Tree canopy columns no longer count as high walkable ground for player vertical snapping.
 - Technical debug data is hidden by default and kept behind menu settings or `F3`.
+- Autonomous playtest behavior now follows survival progression goals instead of random timed action loops.
 
 ## WebGL Fallback
 

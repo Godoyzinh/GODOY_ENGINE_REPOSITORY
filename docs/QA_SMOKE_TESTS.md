@@ -10,7 +10,7 @@ Run these before tagging an Alpha build.
 - `npm run smoke:runtime-config` validates dev/prod WebSocket URL behavior.
 - `npm run smoke:webgl` validates the WebGL fallback copy and escaping.
 - `npm run smoke:ai-director` validates telemetry, local QA reports, and AI task generation.
-- `npm run smoke:autoplaytest` validates autonomous bot simulation and report export shape.
+- `npm run smoke:autoplaytest` validates autonomous bot simulation, goal planning, and report export shape.
 - `npm run smoke:settings` validates settings normalization and persistence.
 - `npm run smoke:camera` validates camera-relative movement, paused input, and vertical snap protection.
 - `npm run smoke:visual` validates sky, ambient particles, feedback particles, and procedural audio hooks.
@@ -28,7 +28,7 @@ Run these before tagging an Alpha build.
 - `F3` toggles the technical debug overlay.
 - Feedback opens a compact AI Session Report panel.
 - Feedback report generation shows issue/task counts and keeps reports local until copied or downloaded.
-- Run Auto Test starts an autonomous playtest and produces an AI Director report when complete.
+- Run Auto Test starts an autonomous playtest, shows the current AI goal/subgoal/reason/progress/target, and produces an AI Director report when complete.
 - Join Multiplayer reports that the dedicated server is offline when `npm run dedicated:server` is not running.
 - Join Multiplayer reports a clear configuration message when a public client lacks `VITE_GODOY_WS_URL`.
 
@@ -50,6 +50,8 @@ Run these before tagging an Alpha build.
 - `npm run simulate:ai -- --mode=standard` supports a 5 minute simulated session.
 - `npm run simulate:ai -- --mode=stress` supports a 15 minute simulated session.
 - Reports include bot actions for exploration, mining, placement, collection, crafting, combat, survival, and save/load checks.
+- Reports include goal planner details: completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
+- Quick smoke should complete early survival goals and continue pursuing the next progression goal.
 - Failure detection reports stuck states, vertical collision snaps, FPS drops, death loops, console errors, and save/load errors.
 - Generated files in `reports/` remain untracked unless intentionally promoted to a fixture.
 
