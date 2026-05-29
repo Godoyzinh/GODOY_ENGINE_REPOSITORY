@@ -12,6 +12,7 @@
     "smoke:production-build": "node scripts/smokeProductionBuild.mjs",
     "smoke:runtime-config": "node scripts/smokeRuntimeConfig.mjs",
     "smoke:webgl": "node scripts/smokeWebglFallback.mjs",
+    "smoke:ai-director": "node scripts/smokeAiDirector.mjs",
     "smoke:settings": "node scripts/smokeSettings.mjs",
     "smoke:camera": "node scripts/smokeCameraCollision.mjs",
     "smoke:visual": "node scripts/smokeVisualFeel.mjs",

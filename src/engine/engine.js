@@ -5,6 +5,8 @@ import { VoxelInteractionSystem } from '../building/voxelInteractionSystem.js';
 import { CombatSystem } from '../combat/combatSystem.js';
 import { DamageSystem } from '../combat/damageSystem.js';
 import { CraftingSystem } from '../crafting/craftingSystem.js';
+import { AutoQaReportSystem } from '../diagnostics/autoQaReportSystem.js';
+import { TelemetrySystem } from '../diagnostics/telemetrySystem.js';
 import { FurnaceSystem } from '../crafting/furnaceSystem.js';
 import { AmbientParticleSystem } from './ambientParticleSystem.js';
 import { CameraSystem } from './cameraSystem.js';
@@ -32,6 +34,7 @@ import { WorldPublishingSystem } from '../studio/worldPublishingSystem.js';
 import { getRuntimeConfig } from '../config/runtimeConfig.js';
 import { DebugOverlay } from '../ui/debugOverlay.js';
 import { CombatHud } from '../ui/combatHud.js';
+import { FeedbackUI } from '../ui/feedbackUI.js';
 import { HotbarUI } from '../ui/hotbarUI.js';
 import { MainMenuUI } from '../ui/mainMenuUI.js';
 import { ReleaseBannerUI } from '../ui/releaseBannerUI.js';
@@ -54,6 +57,14 @@ export class Engine {
     this.isRunning = false;
     this.animationFrameId = null;
     this.runtimeConfig = getRuntimeConfig();
+    this.telemetrySystem = new TelemetrySystem({
+      runtimeConfig: this.runtimeConfig,
+    });
+    this.telemetrySystem.installGlobalCapture();
+    this.autoQaReportSystem = new AutoQaReportSystem({
+      telemetrySystem: this.telemetrySystem,
+      runtimeConfig: this.runtimeConfig,
+    });
 
     this.settingsSystem = new SettingsSystem();
     const settingsSnapshot = this.settingsSystem.getSnapshot();
@@ -193,6 +204,16 @@ export class Engine {
       combatSystem: this.combatSystem,
       entitySystem: this.entitySystem,
     });
+    this.feedbackUI = new FeedbackUI({
+      rootElement,
+      reportSystem: this.autoQaReportSystem,
+      getRuntimeSnapshot: () => this.createAutoQaRuntimeSnapshot(),
+      runtimeConfig: this.runtimeConfig,
+      onUiAction: (action) => {
+        this.telemetrySystem.recordGameplayEvent('feedback', { action });
+        this.audioFeedbackSystem.playCue('ui');
+      },
+    });
 
     this.sceneSystem.add(this.skySystem.group);
     this.sceneSystem.add(this.lightingSystem.group);
@@ -210,6 +231,7 @@ export class Engine {
     this.update = this.update.bind(this);
     this.persistenceSaveTimer = 0;
     this.persistenceSnapshot = this.saveSystem.getPersistenceStats();
+    this.wasPlayerDeadLastFrame = this.playerState.isDead;
     this.applySettings(settingsSnapshot);
   }
 
@@ -244,11 +266,13 @@ export class Engine {
     this.hotbarUI.dispose();
     this.survivalHud.dispose();
     this.combatHud.dispose();
+    this.feedbackUI.dispose();
     this.releaseBannerUI.dispose();
     this.skySystem.dispose();
     this.ambientParticleSystem.dispose();
     this.feedbackParticleSystem.dispose();
     this.audioFeedbackSystem.dispose();
+    this.telemetrySystem.dispose();
   }
 
   handleKeyDown(event) {
@@ -268,6 +292,9 @@ export class Engine {
         playerPosition: this.playerController.position,
         selectedStack: this.inventorySystem.getSelectedStack(),
         entitySystem: this.entitySystem,
+      });
+      this.telemetrySystem.recordGameplayEvent('combat', {
+        result: wasAttackStarted ? 'hit' : this.combatSystem.getSnapshot().lastAttack?.state ?? 'attempt',
       });
       if (!wasAttackStarted) {
         this.audioFeedbackSystem.playCue('ui');
@@ -382,6 +409,7 @@ export class Engine {
     const deltaTime = Math.min(this.timer.getDelta(), MAX_DELTA_TIME);
     const elapsedTime = this.timer.getElapsed();
 
+    this.telemetrySystem.updateFrame(deltaTime);
     this.dayNightSystem.update(deltaTime);
     this.worldSimulationSystem.update({
       deltaTime,
@@ -458,6 +486,12 @@ export class Engine {
     this.progressionSystem.update();
     this.craftingSystem.update();
     const survivalSnapshot = this.survivalSystem.getSnapshot();
+    if (survivalSnapshot.isDead && !this.wasPlayerDeadLastFrame) {
+      this.telemetrySystem.recordGameplayEvent('death', {
+        source: survivalSnapshot.lastEvent,
+      });
+    }
+    this.wasPlayerDeadLastFrame = survivalSnapshot.isDead;
     const combatSnapshot = this.combatSystem.getSnapshot();
     const worldSimulationSnapshot = this.worldSimulationSystem.getSnapshot();
     const inventorySnapshot = this.inventorySystem.getSnapshot();
@@ -525,12 +559,17 @@ export class Engine {
       worldSimulationSnapshot,
       audioSnapshot: this.createAudioDebugSnapshot(),
       networkSnapshot: this.networkSession.getSnapshot(),
+      telemetrySnapshot: this.telemetrySystem.getSnapshot(),
+      qaSnapshot: this.autoQaReportSystem.getSnapshot(),
     });
 
     this.animationFrameId = requestAnimationFrame(this.update);
   }
 
   handleBlockMined({ targetBlock, dropStack, blockDefinition }) {
+    this.telemetrySystem.recordGameplayEvent('mining', {
+      block: blockDefinition.name,
+    });
     const dropPosition = {
       x: targetBlock.worldX + 0.5,
       y: targetBlock.y + 0.8,
@@ -560,6 +599,10 @@ export class Engine {
   }
 
   handleBlocksPlaced(blockEdits) {
+    this.telemetrySystem.recordGameplayEvent('building', {
+      count: blockEdits.length,
+      blockId: blockEdits[0]?.blockId,
+    });
     this.networkSession.queueBlockEdits(blockEdits);
 
     const firstPlacement = blockEdits[0];
@@ -582,6 +625,7 @@ export class Engine {
   }
 
   handleCombatHit({ position }) {
+    this.telemetrySystem.recordGameplayEvent('combat-hit');
     this.feedbackParticleSystem.emitHit({
       position: {
         x: position.x,
@@ -679,6 +723,35 @@ export class Engine {
         ]),
       ],
       hookCount: (ambientAudioSnapshot.hookCount ?? 0) + 1,
+    };
+  }
+
+  createAutoQaRuntimeSnapshot() {
+    const settingsSnapshot = this.settingsSystem.getSnapshot();
+    const rendererCapabilities = this.rendererSystem.renderer.capabilities;
+
+    return {
+      renderer: {
+        width: this.rendererSystem.width,
+        height: this.rendererSystem.height,
+        pixelRatio: Number(this.rendererSystem.renderer.getPixelRatio().toFixed(2)),
+        isWebGL2: rendererCapabilities.isWebGL2,
+        maxTextureSize: rendererCapabilities.maxTextureSize,
+        precision: rendererCapabilities.precision,
+        shadowsEnabled: this.rendererSystem.shadowsEnabled,
+      },
+      settings: {
+        graphicsQuality: settingsSnapshot.graphicsQuality,
+        renderDistancePreset: settingsSnapshot.renderDistancePreset,
+        debugOverlay: settingsSnapshot.debugOverlay,
+        controlsHelp: settingsSnapshot.controlsHelp,
+      },
+      player: this.playerState.getSnapshot(),
+      survival: this.survivalSystem.getSnapshot(),
+      terrain: this.terrainGenerator.stats,
+      entities: this.entitySystem.stats,
+      network: this.networkSession.getSnapshot(),
+      persistence: this.persistenceSnapshot,
     };
   }
 }

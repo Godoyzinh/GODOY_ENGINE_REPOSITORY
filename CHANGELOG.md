@@ -1,5 +1,16 @@
 # Changelog
 
+## AI Director Evolution Foundation
+
+### Added
+
+- Local telemetry for FPS, session duration, console events, gameplay events, deaths, mining, building, and combat counts.
+- In-game Feedback panel for generating, copying, and downloading local AI Session Report JSON.
+- Auto QA report generation with runtime stats, browser/system capabilities, issue summaries, and AI task proposals.
+- AI task generator foundation with bug, UX, performance, gameplay, and polish classifications.
+- GitHub issue templates for bug reports, feature requests, and AI task proposals.
+- AI Director workflow documentation and Alpha smoke coverage.
+
 ## Public Alpha Prep And Deploy Readiness
 
 ### Added

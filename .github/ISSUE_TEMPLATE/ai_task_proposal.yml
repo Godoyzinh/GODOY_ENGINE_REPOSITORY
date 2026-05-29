@@ -1,0 +1,48 @@
+name: AI task proposal
+description: Convert a local AI Session Report task into a reviewed development item.
+title: "[AI Task]: "
+labels:
+  - ai-task
+body:
+  - type: markdown
+    attributes:
+      value: |
+        AI tasks are proposals. They require human review and a branch or PR before code changes land.
+  - type: input
+    id: category
+    attributes:
+      label: Category
+      placeholder: bug, UX, performance, gameplay, or polish
+    validations:
+      required: true
+  - type: input
+    id: priority
+    attributes:
+      label: Priority
+      placeholder: high, medium, or low
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Paste the generated task evidence or a short summary from the report.
+      placeholder: Console error count was...
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_change
+    attributes:
+      label: Proposed change
+      description: Keep this scoped and name the likely owning system.
+      placeholder: Update src/diagnostics/... and add a smoke test.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety and verification plan
+      description: Include tests, docs, and any systems that must not be rewritten.
+      placeholder: Run npm run verify:alpha. Do not modify multiplayer authority.
+    validations:
+      required: true

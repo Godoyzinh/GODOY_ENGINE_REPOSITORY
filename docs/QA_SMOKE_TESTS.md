@@ -9,6 +9,7 @@ Run these before tagging an Alpha build.
 - `npm run smoke:production-build` validates generated Alpha client artifacts.
 - `npm run smoke:runtime-config` validates dev/prod WebSocket URL behavior.
 - `npm run smoke:webgl` validates the WebGL fallback copy and escaping.
+- `npm run smoke:ai-director` validates telemetry, local QA reports, and AI task generation.
 - `npm run smoke:settings` validates settings normalization and persistence.
 - `npm run smoke:camera` validates camera-relative movement, paused input, and vertical snap protection.
 - `npm run smoke:visual` validates sky, ambient particles, feedback particles, and procedural audio hooks.
@@ -24,6 +25,8 @@ Run these before tagging an Alpha build.
 - `Esc` opens the menu after play starts.
 - `F1` opens controls help.
 - `F3` toggles the technical debug overlay.
+- Feedback opens a compact AI Session Report panel.
+- Feedback report generation shows issue/task counts and keeps reports local until copied or downloaded.
 - Join Multiplayer reports that the dedicated server is offline when `npm run dedicated:server` is not running.
 - Join Multiplayer reports a clear configuration message when a public client lacks `VITE_GODOY_WS_URL`.
 
@@ -67,4 +70,5 @@ Run these before tagging an Alpha build.
 - README command flow is accurate.
 - `docs/DEPLOYMENT.md` matches deployment config files.
 - Alpha release notes and known issues are present.
+- AI Director workflow and GitHub issue templates are present.
 - No staged docs include machine-local absolute paths or secret-like tokens.

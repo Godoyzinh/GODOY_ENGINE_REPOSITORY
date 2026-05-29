@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible Godoy Engine Alpha issue.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing the Alpha. Do not include secrets, tokens, private URLs, or personal data.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the visible player-facing issue.
+      placeholder: The player gets stuck when...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Keep this concrete enough for an AI agent or maintainer to replay.
+      placeholder: |
+        1. Open...
+        2. Click...
+        3. Observe...
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build/version
+      placeholder: v0.1.0-alpha
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Optional session report
+      description: Paste the local AI Session Report JSON only after reviewing it.
+      render: json
+    validations:
+      required: false
