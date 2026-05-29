@@ -6,7 +6,18 @@ const POSITION_SAMPLE_SECONDS = 5;
 const STUCK_WINDOW_SECONDS = 15;
 const STUCK_DISTANCE_THRESHOLD = 0.8;
 const VERTICAL_SNAP_THRESHOLD = 4.75;
+const MINING_SPAM_PER_MINUTE_THRESHOLD = 120;
 const REPORT_TRIGGER = 'autonomous-playtest';
+const ACTION_COOLDOWN_SECONDS = {
+  explore: 0.2,
+  mine: 1,
+  place: 0.65,
+  collect: 0.35,
+  craft: 0.8,
+  combat: 1.1,
+  survive: 0.5,
+  saveLoad: 20,
+};
 
 export class AutonomousPlaytestSimulation {
   constructor({
@@ -35,9 +46,12 @@ export class AutonomousPlaytestSimulation {
     this.nextPositionSampleAt = 0;
     this.goalPlanner = new SurvivalGoalPlanner();
     this.actionLoop = createActionLoopState();
+    this.actionCooldowns = createActionCooldowns();
     this.craftedItems = [];
     this.failedCrafts = [];
+    this.failedActions = [];
     this.inventorySnapshot = null;
+    this.miningSpamReported = false;
   }
 
   start({ modeId = 'quick', durationSeconds = null } = {}) {
@@ -62,9 +76,12 @@ export class AutonomousPlaytestSimulation {
     this.nextPositionSampleAt = 0;
     this.goalPlanner.reset();
     this.actionLoop = createActionLoopState();
+    this.actionCooldowns = createActionCooldowns();
     this.craftedItems = [];
     this.failedCrafts = [];
+    this.failedActions = [];
     this.inventorySnapshot = null;
+    this.miningSpamReported = false;
     this.status = 'running';
     this.telemetrySystem.recordGameplayEvent('auto-test-start', {
       mode: this.mode.id,
@@ -155,6 +172,8 @@ export class AutonomousPlaytestSimulation {
   }
 
   updateActions(deltaTime) {
+    this.tickActionCooldowns(deltaTime);
+
     const context = this.adapter.getPlanningState?.({
       elapsedSeconds: this.elapsedSeconds,
       mode: this.mode,
@@ -174,6 +193,11 @@ export class AutonomousPlaytestSimulation {
 
   performPlannedAction(plan, context, deltaTime) {
     const actionName = mapPlanActionToAction(plan.action);
+
+    if (!this.canPerformAction(actionName)) {
+      return;
+    }
+
     const rawResult = this.adapter.executeGoalStep?.({
       plan,
       context,
@@ -195,7 +219,17 @@ export class AutonomousPlaytestSimulation {
 
     this.detectActionLoop(plan);
     this.updateInventorySnapshot(nextContext);
+
+    if (!result.ok) {
+      this.recordFailedAction({
+        plan,
+        actionName,
+        result,
+      });
+    }
+
     this.performAction(actionName, () => result);
+    this.setActionCooldown(actionName);
 
     this.goalPlanner.recordStepResult({
       plan,
@@ -207,6 +241,20 @@ export class AutonomousPlaytestSimulation {
       action: plan.action,
       result: result.ok ? 'ok' : 'blocked',
     });
+  }
+
+  tickActionCooldowns(deltaTime) {
+    for (const actionName of Object.keys(this.actionCooldowns)) {
+      this.actionCooldowns[actionName] = Math.max(0, this.actionCooldowns[actionName] - deltaTime);
+    }
+  }
+
+  canPerformAction(actionName) {
+    return (this.actionCooldowns[actionName] ?? 0) <= 0;
+  }
+
+  setActionCooldown(actionName) {
+    this.actionCooldowns[actionName] = ACTION_COOLDOWN_SECONDS[actionName] ?? 0.5;
   }
 
   validatePlannedResult({ plan, actionName, result, beforeContext, afterContext }) {
@@ -333,6 +381,18 @@ export class AutonomousPlaytestSimulation {
     this.failedCrafts = this.failedCrafts.slice(-32);
   }
 
+  recordFailedAction({ plan, actionName, result }) {
+    this.failedActions.push({
+      goalId: plan.goalId,
+      goalName: plan.goalName,
+      action: plan.action,
+      actionName,
+      reason: result.event ?? result.reason ?? result.failures?.[0]?.summary ?? 'Action was blocked.',
+      atSeconds: round(this.elapsedSeconds, 2),
+    });
+    this.failedActions = this.failedActions.slice(-48);
+  }
+
   updateInventorySnapshot(context) {
     const progressContext = this.goalPlanner.createProgressContext(context);
 
@@ -363,6 +423,10 @@ export class AutonomousPlaytestSimulation {
 
       for (const secondaryAction of result.secondaryActions ?? []) {
         const secondaryActionName = mapPlanActionToAction(secondaryAction.action ?? secondaryAction.name);
+
+        if (secondaryActionName === 'combat' && secondaryAction.entityDamageApplied !== true) {
+          continue;
+        }
 
         this.incrementActionCount(secondaryActionName, secondaryAction.count ?? 1);
         this.telemetrySystem.recordGameplayEvent(`auto-${secondaryActionName}`, {
@@ -402,7 +466,7 @@ export class AutonomousPlaytestSimulation {
         count: result.count ?? 1,
         block: result.event ?? 'planned block',
       });
-    } else if (actionName === 'combat' && (result.entityDamageApplied === true || result.event)) {
+    } else if (actionName === 'combat' && result.entityDamageApplied === true) {
       this.telemetrySystem.recordGameplayEvent('combat', {
         result: result.event ?? 'hit',
       });
@@ -428,6 +492,28 @@ export class AutonomousPlaytestSimulation {
       this.recordFailure('death-loop', 'Multiple deaths occurred during one autonomous playtest.', 'medium');
       this.failureCounts.deathLoops = Math.max(this.failureCounts.deathLoops, 1);
     }
+
+    this.detectMiningSpam();
+  }
+
+  detectMiningSpam() {
+    if (this.miningSpamReported || this.elapsedSeconds < 10) {
+      return;
+    }
+
+    const mineRatePerMinute = (this.actionCounts.mine / Math.max(this.elapsedSeconds, 1)) * 60;
+
+    if (mineRatePerMinute <= MINING_SPAM_PER_MINUTE_THRESHOLD) {
+      return;
+    }
+
+    this.miningSpamReported = true;
+    this.failureCounts.miningSpam += 1;
+    this.recordFailure(
+      'mining-spam-threshold',
+      `AI mining rate reached ${Math.round(mineRatePerMinute)} actions/min, above the ${MINING_SPAM_PER_MINUTE_THRESHOLD}/min threshold.`,
+      'medium',
+    );
   }
 
   detectVerticalSnap(currentPosition) {
@@ -519,10 +605,15 @@ export class AutonomousPlaytestSimulation {
       trigger: REPORT_TRIGGER,
     });
 
+    const simulationResult = this.getSnapshot();
     this.lastReport = {
       ...report,
-      simulationResult: this.getSnapshot(),
+      issues: report.issues.map((issue) => ({ ...issue })),
+      aiTasks: report.aiTasks.map((task) => ({ ...task })),
+      simulationResult,
     };
+    this.reportSystem.lastReport = this.lastReport;
+    this.reportSystem.persistReport?.(this.lastReport);
     this.lastResult = {
       reason,
       reportId: report.id,
@@ -537,6 +628,9 @@ export class AutonomousPlaytestSimulation {
       ? Math.min(1, this.elapsedSeconds / this.mode.durationSeconds)
       : 0;
 
+    const plannerSnapshot = this.goalPlanner.getSnapshot();
+    const inventorySnapshot = this.inventorySnapshot ?? this.goalPlanner.getInventorySnapshot();
+
     return {
       status: this.status,
       mode: {
@@ -550,12 +644,18 @@ export class AutonomousPlaytestSimulation {
       actionCounts: { ...this.actionCounts },
       failureCounts: { ...this.failureCounts },
       failures: this.failures.map((failure) => ({ ...failure })),
-      inventory: this.inventorySnapshot ?? this.goalPlanner.getInventorySnapshot(),
+      inventory: inventorySnapshot,
+      inventorySnapshot,
+      resourceDeltas: { ...(inventorySnapshot.delta ?? {}) },
       crafting: {
         craftedItems: this.craftedItems.map((craftedItem) => ({ ...craftedItem })),
         failedCrafts: this.failedCrafts.map((failedCraft) => ({ ...failedCraft })),
       },
-      planner: this.goalPlanner.getSnapshot(),
+      craftedItems: this.craftedItems.map((craftedItem) => ({ ...craftedItem })),
+      failedCrafts: this.failedCrafts.map((failedCraft) => ({ ...failedCraft })),
+      failedActions: this.failedActions.map((failedAction) => ({ ...failedAction })),
+      goalTransitions: (plannerSnapshot.goalTransitions ?? []).map((transition) => ({ ...transition })),
+      planner: plannerSnapshot,
       lastResult: this.lastResult ? { ...this.lastResult } : null,
     };
   }
@@ -574,6 +674,10 @@ function createActionLoopState(key = null, progress = 0) {
     progress,
     reported: false,
   };
+}
+
+function createActionCooldowns() {
+  return Object.fromEntries(Object.keys(ACTION_COOLDOWN_SECONDS).map((actionName) => [actionName, 0]));
 }
 
 function createActionCounts() {
@@ -624,6 +728,7 @@ function createFailureCounts() {
     deathLoops: 0,
     consoleErrors: 0,
     saveLoadErrors: 0,
+    miningSpam: 0,
   };
 }
 

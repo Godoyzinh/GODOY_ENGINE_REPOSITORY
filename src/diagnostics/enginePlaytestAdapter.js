@@ -346,7 +346,7 @@ export class EnginePlaytestAdapter {
       case 'gatherWood':
         return this.withSecondaryActions(this.minePreferredBlock({
           elapsedSeconds,
-          blockIds: [BLOCK_IDS.wood, BLOCK_IDS.leaves],
+          blockIds: [BLOCK_IDS.wood],
         }), secondaryActions);
       case 'craftPlanks':
         return this.craftRecipe(RECIPE_IDS.woodPlanks);
@@ -536,10 +536,14 @@ export class EnginePlaytestAdapter {
       blockId: BLOCK_IDS.air,
       action: 'destroy',
     }]);
+    const collectResult = this.collectDrops();
 
     return {
       ok: true,
       event: getBlockDefinition(target.blockId).name,
+      secondaryActions: collectResult.ok
+        ? [{ action: 'collect', event: collectResult.event }]
+        : [],
     };
   }
 
@@ -583,6 +587,7 @@ export class EnginePlaytestAdapter {
         secondaryActions.push({
           action: 'fightHostile',
           event: 'night guard',
+          entityDamageApplied: true,
         });
       }
     }

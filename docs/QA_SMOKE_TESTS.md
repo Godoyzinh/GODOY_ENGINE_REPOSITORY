@@ -51,9 +51,10 @@ Run these before tagging an Alpha build.
 - `npm run simulate:ai -- --mode=stress` supports a 15 minute simulated session.
 - Reports include bot actions for exploration, mining, placement, collection, crafting, combat, survival, and save/load checks.
 - Reports include goal planner details: completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
-- Reports include inventory initial/current/delta snapshots plus crafted item and failed craft lists.
+- Reports include inventory initial/current/delta snapshots, resource deltas, goal transitions, failed actions, crafted item lists, and failed craft lists.
 - Quick smoke should complete early survival goals and continue pursuing the next progression goal.
 - Fake craft loops must not count as craft success and must produce failed-craft, action-loop, and missing-sticks evidence.
+- Gather Wood must advance from real wood deltas, avoid leaf-only progress, and stay below the mining spam threshold.
 - Failure detection reports stuck states, vertical collision snaps, FPS drops, death loops, console errors, and save/load errors.
 - Generated files in `reports/` remain untracked unless intentionally promoted to a fixture.
 
