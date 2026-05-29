@@ -127,7 +127,7 @@ npm run simulate:ai -- --mode=stress
 
 Reports are written to `reports/` and ignored by Git by default. The simulation only generates telemetry, QA reports, and suggested tasks; it never commits, pushes, or edits source code at runtime.
 
-The autonomous bot follows a survival progression plan instead of random action timers: gather wood, craft planks/tools, gather stone, build shelter, survive night pressure, obtain a furnace, smelt ore, and upgrade equipment. Reports include completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
+The autonomous bot follows a survival progression plan instead of random action timers: gather wood, craft planks/tools, gather stone, build shelter, survive night pressure, obtain a furnace, smelt ore, and upgrade equipment. Reports include completed goals, failed goals, progression tier reached, time spent per goal, bottlenecks, inventory deltas, crafted items, and failed crafts.
 
 ## Public Alpha Deploy
 

@@ -102,6 +102,7 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
   const simulationFailures = runtimeSnapshot.simulation?.failures ?? [];
   const simulationFailureCounts = runtimeSnapshot.simulation?.failureCounts ?? {};
   const plannerSnapshot = runtimeSnapshot.simulation?.planner ?? null;
+  const failedCrafts = runtimeSnapshot.simulation?.crafting?.failedCrafts ?? [];
 
   if (consoleErrorCount > 0) {
     issues.push({
@@ -173,6 +174,19 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
     });
   }
 
+  if (failedCrafts.length > 0) {
+    const recentFailedCraft = failedCrafts.at(-1);
+
+    issues.push({
+      code: 'failed-ai-crafts',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Review failed AI crafting actions',
+      summary: `${failedCrafts.length} AI craft action(s) failed or produced no inventory delta.`,
+      evidence: `${recentFailedCraft.goalName}: ${recentFailedCraft.reason}`,
+    });
+  }
+
   for (const failedGoal of plannerSnapshot?.goalsFailed ?? []) {
     issues.push({
       code: `goal-failed-${failedGoal.id}`,
@@ -188,7 +202,7 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
     issues.push({
       code: bottleneck.code,
       category: AI_TASK_CATEGORIES.gameplay,
-      severity: 'low',
+      severity: getBottleneckSeverity(bottleneck.code),
       title: `Review AI progression bottleneck: ${bottleneck.goalName}`,
       summary: bottleneck.summary,
       evidence: `Count: ${bottleneck.count}; first seen at ${bottleneck.firstAtSeconds}s; last seen at ${bottleneck.lastAtSeconds}s.`,
@@ -285,6 +299,8 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     progress: simulationSnapshot.progress,
     actionCounts: { ...(simulationSnapshot.actionCounts ?? {}) },
     failureCounts: { ...(simulationSnapshot.failureCounts ?? {}) },
+    inventory: sanitizeInventorySnapshot(simulationSnapshot.inventory),
+    crafting: sanitizeCraftingSnapshot(simulationSnapshot.crafting),
     failures: (simulationSnapshot.failures ?? []).slice(0, 24).map((failure) => pick(failure, [
       'code',
       'summary',
@@ -294,6 +310,47 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
       'count',
     ])),
     planner: sanitizeGoalPlannerSnapshot(simulationSnapshot.planner),
+  };
+}
+
+function sanitizeInventorySnapshot(inventorySnapshot = null) {
+  if (!inventorySnapshot) {
+    return null;
+  }
+
+  return {
+    initial: sanitizeNumberRecord(inventorySnapshot.initial),
+    current: sanitizeNumberRecord(inventorySnapshot.current),
+    delta: sanitizeNumberRecord(inventorySnapshot.delta),
+  };
+}
+
+function sanitizeCraftingSnapshot(craftingSnapshot = null) {
+  if (!craftingSnapshot) {
+    return {
+      craftedItems: [],
+      failedCrafts: [],
+    };
+  }
+
+  return {
+    craftedItems: (craftingSnapshot.craftedItems ?? []).slice(0, 32).map((craftedItem) => pick(craftedItem, [
+      'goalId',
+      'goalName',
+      'action',
+      'item',
+      'itemType',
+      'itemId',
+      'count',
+      'atSeconds',
+    ])),
+    failedCrafts: (craftingSnapshot.failedCrafts ?? []).slice(0, 32).map((failedCraft) => pick(failedCraft, [
+      'goalId',
+      'goalName',
+      'action',
+      'reason',
+      'atSeconds',
+    ])),
   };
 }
 
@@ -326,6 +383,7 @@ function sanitizeGoalPlannerSnapshot(plannerSnapshot = null) {
       'reason',
     ])),
     timeSpentByGoal: { ...(plannerSnapshot.timeSpentByGoal ?? {}) },
+    noProgressSecondsByGoal: { ...(plannerSnapshot.noProgressSecondsByGoal ?? {}) },
     bottlenecks: (plannerSnapshot.bottlenecks ?? []).slice(0, 16).map((bottleneck) => pick(bottleneck, [
       'code',
       'goalId',
@@ -353,6 +411,10 @@ function classifySimulationFailure(code) {
     return AI_TASK_CATEGORIES.performance;
   }
 
+  if (code.includes('action-loop') || code.includes('craft-no-inventory-change')) {
+    return AI_TASK_CATEGORIES.gameplay;
+  }
+
   if (code.includes('stuck') || code.includes('collision')) {
     return AI_TASK_CATEGORIES.ux;
   }
@@ -366,6 +428,14 @@ function classifySimulationFailure(code) {
   }
 
   return AI_TASK_CATEGORIES.polish;
+}
+
+function getBottleneckSeverity(code) {
+  if (code.includes('missing-sticks') || code.includes('goal-no-progress') || code.includes('action-loop')) {
+    return 'medium';
+  }
+
+  return 'low';
 }
 
 function formatFailureTitle(code) {
@@ -385,6 +455,12 @@ function pick(source, keys) {
   }
 
   return picked;
+}
+
+function sanitizeNumberRecord(record = {}) {
+  return Object.fromEntries(
+    Object.entries(record ?? {}).map(([key, value]) => [key, Number(value) || 0]),
+  );
 }
 
 function sanitizeRendererSnapshot(renderer) {

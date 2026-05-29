@@ -23,6 +23,7 @@ This Alpha packages the project as a playable sandbox survival creation prototyp
 - Autonomous playtest simulation with Quick, Standard, and Stress modes.
 - Goal-oriented survival AI planner for autonomous playtests, including wood, tools, stone, shelter, night survival, furnace, smelting, and equipment progression.
 - AI plan overlay in the Feedback panel with current goal, subgoal, reason, progress, and target.
+- AI reports now validate planner execution with inventory deltas, crafted item history, failed craft history, action-loop detection, and no-progress bottlenecks.
 - `npm run simulate:ai` for headless-friendly report generation into `reports/`.
 - Alpha verification script covering build, release config, WebGL fallback, settings, inventory/crafting, save migration, and server smoke checks.
 - Release build output split into app and Three.js chunks.

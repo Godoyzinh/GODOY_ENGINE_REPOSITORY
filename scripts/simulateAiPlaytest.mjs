@@ -30,6 +30,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       goalsCompleted: result.snapshot.planner?.goalsCompleted?.map((goal) => goal.id) ?? [],
       goalsFailed: result.snapshot.planner?.goalsFailed?.map((goal) => goal.id) ?? [],
       bottlenecks: result.snapshot.planner?.bottlenecks?.length ?? 0,
+      craftedItems: result.snapshot.crafting?.craftedItems?.length ?? 0,
+      failedCrafts: result.snapshot.crafting?.failedCrafts?.length ?? 0,
     },
     failures: result.snapshot.failureCounts,
     issues: result.report.issues.length,
@@ -42,6 +44,7 @@ export function runHeadlessAiSimulation({
   durationSeconds = null,
   deltaTime = 0.25,
   seed = 1337,
+  adapter = null,
 } = {}) {
   let simulatedNow = 0;
   const telemetrySystem = new TelemetrySystem({
@@ -58,7 +61,7 @@ export function runHeadlessAiSimulation({
     storage: createMemoryStorage(),
   });
   const simulation = new AutonomousPlaytestSimulation({
-    adapter: new HeadlessPlaytestAdapter({ seed }),
+    adapter: adapter ?? new HeadlessPlaytestAdapter({ seed }),
     telemetrySystem,
     reportSystem,
     recordFrames: true,

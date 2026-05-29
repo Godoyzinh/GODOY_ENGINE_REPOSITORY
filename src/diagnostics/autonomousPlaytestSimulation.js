@@ -34,6 +34,10 @@ export class AutonomousPlaytestSimulation {
     this.lastPosition = null;
     this.nextPositionSampleAt = 0;
     this.goalPlanner = new SurvivalGoalPlanner();
+    this.actionLoop = createActionLoopState();
+    this.craftedItems = [];
+    this.failedCrafts = [];
+    this.inventorySnapshot = null;
   }
 
   start({ modeId = 'quick', durationSeconds = null } = {}) {
@@ -57,6 +61,10 @@ export class AutonomousPlaytestSimulation {
     this.lastPosition = null;
     this.nextPositionSampleAt = 0;
     this.goalPlanner.reset();
+    this.actionLoop = createActionLoopState();
+    this.craftedItems = [];
+    this.failedCrafts = [];
+    this.inventorySnapshot = null;
     this.status = 'running';
     this.telemetrySystem.recordGameplayEvent('auto-test-start', {
       mode: this.mode.id,
@@ -166,13 +174,28 @@ export class AutonomousPlaytestSimulation {
 
   performPlannedAction(plan, context, deltaTime) {
     const actionName = mapPlanActionToAction(plan.action);
-    const result = this.performAction(actionName, () => this.adapter.executeGoalStep?.({
+    const rawResult = this.adapter.executeGoalStep?.({
       plan,
       context,
       deltaTime,
       elapsedSeconds: this.elapsedSeconds,
       mode: this.mode,
-    }));
+    }) ?? { ok: false, skipped: true };
+    const nextContext = this.adapter.getPlanningState?.({
+      elapsedSeconds: this.elapsedSeconds,
+      mode: this.mode,
+    }) ?? context;
+    const result = this.validatePlannedResult({
+      plan,
+      actionName,
+      result: rawResult,
+      beforeContext: context,
+      afterContext: nextContext,
+    });
+
+    this.detectActionLoop(plan);
+    this.updateInventorySnapshot(nextContext);
+    this.performAction(actionName, () => result);
 
     this.goalPlanner.recordStepResult({
       plan,
@@ -184,6 +207,136 @@ export class AutonomousPlaytestSimulation {
       action: plan.action,
       result: result.ok ? 'ok' : 'blocked',
     });
+  }
+
+  validatePlannedResult({ plan, actionName, result, beforeContext, afterContext }) {
+    const inventoryDelta = diffInventory(beforeContext.inventory, afterContext.inventory);
+
+    if (actionName === 'craft') {
+      if (result.ok && !hasInventoryChange(inventoryDelta)) {
+        const reason = `Craft action "${plan.action}" returned success without changing inventory.`;
+
+        this.recordFailedCraft({
+          plan,
+          reason,
+        });
+
+        return {
+          ...result,
+          ok: false,
+          skipped: true,
+          failures: [
+            ...(result.failures ?? []),
+            {
+              code: 'craft-no-inventory-change',
+              summary: reason,
+              severity: 'medium',
+            },
+          ],
+        };
+      }
+
+      if (result.ok) {
+        this.recordCraftedItem({
+          plan,
+          result,
+          inventoryDelta,
+        });
+      } else {
+        this.recordFailedCraft({
+          plan,
+          reason: result.event ?? result.reason ?? 'Craft action was blocked.',
+        });
+      }
+    }
+
+    if (actionName === 'combat' && result.ok && result.entityDamageApplied !== true) {
+      return {
+        ...result,
+        ok: false,
+        skipped: true,
+        failures: [
+          ...(result.failures ?? []),
+          {
+            code: 'combat-no-entity-damage',
+            summary: 'Combat action returned success without confirmed entity damage.',
+            severity: 'medium',
+          },
+        ],
+      };
+    }
+
+    return result;
+  }
+
+  detectActionLoop(plan) {
+    const actionKey = `${plan.goalId}:${plan.action}`;
+
+    if (plan.goalId === 'maintainSurvival') {
+      this.actionLoop = createActionLoopState(actionKey, plan.progress);
+      return;
+    }
+
+    if (
+      this.actionLoop.key === actionKey &&
+      plan.progress <= this.actionLoop.progress + 0.001
+    ) {
+      this.actionLoop.count += 1;
+    } else {
+      this.actionLoop = createActionLoopState(actionKey, plan.progress);
+    }
+
+    this.actionLoop.progress = Math.max(this.actionLoop.progress, plan.progress);
+
+    if (this.actionLoop.count <= 10 || this.actionLoop.reported) {
+      return;
+    }
+
+    this.actionLoop.reported = true;
+    this.failureCounts.stuckEvents += 1;
+    this.recordFailure(
+      `action-loop:${plan.goalId}:${plan.action}`,
+      `AI repeated "${plan.action}" for ${plan.goalName} more than 10 times without progress.`,
+      'medium',
+    );
+    this.goalPlanner.recordBottleneck({
+      code: `action-loop:${plan.goalId}:${plan.action}`,
+      goalId: plan.goalId,
+      goalName: plan.goalName,
+      summary: `AI repeated "${plan.action}" more than 10 times without measurable progress.`,
+      atSeconds: this.elapsedSeconds,
+    });
+  }
+
+  recordCraftedItem({ plan, result, inventoryDelta }) {
+    this.craftedItems.push({
+      goalId: plan.goalId,
+      goalName: plan.goalName,
+      action: plan.action,
+      item: result.craftedItem?.name ?? result.event ?? plan.action,
+      itemType: result.craftedItem?.itemType ?? null,
+      itemId: result.craftedItem?.itemId ?? null,
+      count: result.craftedItem?.count ?? getPositiveDeltaTotal(inventoryDelta),
+      atSeconds: round(this.elapsedSeconds, 2),
+    });
+    this.craftedItems = this.craftedItems.slice(-32);
+  }
+
+  recordFailedCraft({ plan, reason }) {
+    this.failedCrafts.push({
+      goalId: plan.goalId,
+      goalName: plan.goalName,
+      action: plan.action,
+      reason,
+      atSeconds: round(this.elapsedSeconds, 2),
+    });
+    this.failedCrafts = this.failedCrafts.slice(-32);
+  }
+
+  updateInventorySnapshot(context) {
+    const progressContext = this.goalPlanner.createProgressContext(context);
+
+    this.inventorySnapshot = this.goalPlanner.getInventorySnapshot(progressContext);
   }
 
   updateTimedAction(actionName, deltaTime, intervalSeconds, callback) {
@@ -206,6 +359,7 @@ export class AutonomousPlaytestSimulation {
         result: result.event ?? 'ok',
         count: result.count ?? 1,
       });
+      this.recordGameplayVerb(actionName, result);
 
       for (const secondaryAction of result.secondaryActions ?? []) {
         const secondaryActionName = mapPlanActionToAction(secondaryAction.action ?? secondaryAction.name);
@@ -215,6 +369,7 @@ export class AutonomousPlaytestSimulation {
           result: secondaryAction.event ?? 'planned-support',
           count: secondaryAction.count ?? 1,
         });
+        this.recordGameplayVerb(secondaryActionName, secondaryAction);
       }
     }
 
@@ -231,6 +386,27 @@ export class AutonomousPlaytestSimulation {
     }
 
     this.actionCounts[actionName] += Number(count ?? 1);
+  }
+
+  recordGameplayVerb(actionName, result) {
+    if (result.telemetryRecorded) {
+      return;
+    }
+
+    if (actionName === 'mine') {
+      this.telemetrySystem.recordGameplayEvent('mining', {
+        block: result.event ?? 'planned resource',
+      });
+    } else if (actionName === 'place') {
+      this.telemetrySystem.recordGameplayEvent('building', {
+        count: result.count ?? 1,
+        block: result.event ?? 'planned block',
+      });
+    } else if (actionName === 'combat' && (result.entityDamageApplied === true || result.event)) {
+      this.telemetrySystem.recordGameplayEvent('combat', {
+        result: result.event ?? 'hit',
+      });
+    }
   }
 
   detectFailures() {
@@ -374,6 +550,11 @@ export class AutonomousPlaytestSimulation {
       actionCounts: { ...this.actionCounts },
       failureCounts: { ...this.failureCounts },
       failures: this.failures.map((failure) => ({ ...failure })),
+      inventory: this.inventorySnapshot ?? this.goalPlanner.getInventorySnapshot(),
+      crafting: {
+        craftedItems: this.craftedItems.map((craftedItem) => ({ ...craftedItem })),
+        failedCrafts: this.failedCrafts.map((failedCraft) => ({ ...failedCraft })),
+      },
       planner: this.goalPlanner.getSnapshot(),
       lastResult: this.lastResult ? { ...this.lastResult } : null,
     };
@@ -383,6 +564,15 @@ export class AutonomousPlaytestSimulation {
 function createActionTimers() {
   return {
     saveLoad: 12,
+  };
+}
+
+function createActionLoopState(key = null, progress = 0) {
+  return {
+    key,
+    count: 1,
+    progress,
+    reported: false,
   };
 }
 
@@ -435,6 +625,26 @@ function createFailureCounts() {
     consoleErrors: 0,
     saveLoadErrors: 0,
   };
+}
+
+function diffInventory(beforeInventory = {}, afterInventory = {}) {
+  return Object.fromEntries(
+    Object.keys({
+      ...beforeInventory,
+      ...afterInventory,
+    }).map((key) => [
+      key,
+      Number(afterInventory?.[key] ?? 0) - Number(beforeInventory?.[key] ?? 0),
+    ]),
+  );
+}
+
+function hasInventoryChange(inventoryDelta) {
+  return Object.values(inventoryDelta).some((value) => Number(value) !== 0);
+}
+
+function getPositiveDeltaTotal(inventoryDelta) {
+  return Object.values(inventoryDelta).reduce((total, value) => total + Math.max(0, Number(value) || 0), 0);
 }
 
 function getHorizontalDistance(leftPosition, rightPosition) {

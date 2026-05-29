@@ -26,6 +26,8 @@ Use this checklist before tagging or sharing an Alpha build.
 - Feedback panel can start a Quick autonomous playtest without blocking the main UI.
 - Feedback panel shows autonomous AI goal, subgoal, reason, progress, and target while a run is active.
 - Autonomous playtest reports include completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
+- Autonomous playtest reports include inventory deltas, crafted items, and failed crafts.
+- Fake crafting/no-progress loops produce AI Director gameplay tasks.
 - Third-person mouse orbit moves freely and WASD follows camera direction.
 - Tree canopies do not launch the player upward.
 - Sky, weather ambience, water/grass animation, character motion, and feedback particles render cleanly.
