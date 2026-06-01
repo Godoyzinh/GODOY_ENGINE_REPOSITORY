@@ -287,18 +287,25 @@ export class AutonomousPlaytestSimulation {
     const worldDelta = diffInventory(beforeContext.world, afterContext.world);
 
     if (plan.action === 'gatherStone' && !hasValidMiningTool(beforeContext)) {
+      const existingFailures = result.failures ?? [];
+      const hasMissingPickaxeFailure = existingFailures.some(
+        (f) => f.code === 'gather-stone-missing-pickaxe'
+      );
+
       return {
         ...result,
         ok: false,
         skipped: true,
-        failures: [
-          ...(result.failures ?? []),
-          {
-            code: 'gather-stone-missing-pickaxe',
-            summary: 'Gather Stone started without a valid pickaxe.',
-            severity: 'medium',
-          },
-        ],
+        failures: hasMissingPickaxeFailure
+          ? existingFailures
+          : [
+              ...existingFailures,
+              {
+                code: 'gather-stone-missing-pickaxe',
+                summary: 'Gather Stone started without a valid pickaxe.',
+                severity: 'medium',
+              },
+            ],
         reason: 'Gather Stone requires a real pickaxe before mining.',
       };
     }
