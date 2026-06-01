@@ -179,7 +179,7 @@ assert.ok(Object.keys(snapshot.planner.timeSpentByGoal).length >= 10, 'bot shoul
 const completedGoalIds = snapshot.planner.goalsCompleted.map((goal) => goal.id);
 assert.ok(completedGoalIds.includes('craftWoodenPickaxe'), 'bot should craft a real wooden pickaxe before mining stone');
 assert.ok(
-  completedGoalIds.indexOf('craftWoodenPickaxe') > completedGoalIds.indexOf('craftTools'),
+  completedGoalIds.includes('craftTools') && completedGoalIds.indexOf('craftWoodenPickaxe') > completedGoalIds.indexOf('craftTools'),
   'Craft Wooden Pickaxe should happen after Craft Tools prepares sticks',
 );
 assert.ok(
@@ -207,7 +207,7 @@ assert.ok(
 assert.equal(report.runtimeStats.simulation.furnaceCraftBlockReason, null, 'successful furnace craft should not report a block reason');
 assert.ok(report.runtimeStats.simulation.inventoryDelta.wood >= 0, 'report should include inventoryDelta');
 assert.ok(report.runtimeStats.simulation.inventoryDelta.pickaxes >= 1, 'pickaxe progress should be based on real inventory deltas');
-assert.notEqual(report.runtimeStats.simulation.actualEquippedTool, 'hand', 'report should include the actual equipped mining tool');
+assert.ok(report.runtimeStats.simulation.actualEquippedTool && report.runtimeStats.simulation.actualEquippedTool !== 'hand', 'report should include the actual equipped mining tool');
 assert.ok(report.runtimeStats.simulation.inventory.delta.wood >= 0, 'inventory snapshot should include resource deltas');
 assert.ok(report.runtimeStats.simulation.resourceDeltas.wood >= 0, 'report should include explicit resourceDeltas field');
 assert.ok(report.runtimeStats.simulation.crafting.craftedItems.length > 0, 'report should include crafted items');
