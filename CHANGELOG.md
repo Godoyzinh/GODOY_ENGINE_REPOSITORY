@@ -1,5 +1,19 @@
 # Changelog
 
+## AI Tree Detection And Wood Targeting
+
+### Fixed
+
+- Gather Wood now scans loaded chunks for real tree trunk blocks instead of sampling the top block of a tree column.
+- AI wood targeting now uses `BLOCK_IDS.wood` as the trunk block and rejects `BLOCK_IDS.leaves` unless leaves actually drop wood.
+- The bot now moves toward, faces, mines, and validates trunk targets through real wood inventory delta.
+- Wood search recovers by expanding scan radius and moving toward dense vegetation when a tree-capable biome has no visible trunk target.
+
+### Added
+
+- Resource scanner diagnostics for nearest wood target, target distance, scanned wood blocks, rejected leaves, and blocked reasons.
+- AI reports now include resource scan results, wood target counts, and wood target rejection counts.
+
 ## AI Report Export And Gather Wood Loop
 
 ### Fixed

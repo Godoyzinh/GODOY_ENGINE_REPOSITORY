@@ -106,6 +106,7 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
   const plannerSnapshot = simulationSnapshot.planner ?? null;
   const failedCrafts = simulationSnapshot.crafting?.failedCrafts ?? simulationSnapshot.failedCrafts ?? [];
   const failedActions = simulationSnapshot.failedActions ?? [];
+  const resourceScanResults = simulationSnapshot.resourceScanResults ?? {};
   const miningRatePerMinute = calculateActionRatePerMinute({
     count: simulationSnapshot.actionCounts?.mine,
     elapsedSeconds: simulationSnapshot.elapsedSeconds,
@@ -218,6 +219,20 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
       title: 'Review blocked AI action execution',
       summary: `${failedActions.length} AI action(s) failed during autonomous progression.`,
       evidence: `${recentFailedAction.goalName}: ${recentFailedAction.reason}`,
+    });
+  }
+
+  if (
+    resourceScanResults.lastBlockedReason &&
+    plannerSnapshot?.currentGoalId === 'gatherWood'
+  ) {
+    issues.push({
+      code: 'wood-target-scan-blocked',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Review AI wood target scanning',
+      summary: resourceScanResults.lastBlockedReason,
+      evidence: `Wood targets found: ${resourceScanResults.woodTargetsFound ?? 0}; rejected: ${resourceScanResults.woodTargetsRejected ?? 0}; biome: ${resourceScanResults.biome ?? 'unknown'}.`,
     });
   }
 
@@ -349,6 +364,7 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     'reason',
     'atSeconds',
   ]));
+  const resourceScanResults = sanitizeResourceScanSnapshot(simulationSnapshot.resourceScanResults);
 
   return {
     status: simulationSnapshot.status,
@@ -364,6 +380,9 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     craftedItems: craftingSnapshot.craftedItems,
     failedCrafts: craftingSnapshot.failedCrafts,
     failedActions,
+    resourceScanResults,
+    woodTargetsFound: Number(simulationSnapshot.woodTargetsFound ?? resourceScanResults?.woodTargetsFound ?? 0),
+    woodTargetsRejected: Number(simulationSnapshot.woodTargetsRejected ?? resourceScanResults?.woodTargetsRejected ?? 0),
     goalTransitions,
     failures: (simulationSnapshot.failures ?? []).slice(0, 24).map((failure) => pick(failure, [
       'code',
@@ -375,6 +394,49 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     ])),
     planner: sanitizeGoalPlannerSnapshot(simulationSnapshot.planner),
   };
+}
+
+function sanitizeResourceScanSnapshot(resourceScanSnapshot = null) {
+  if (!resourceScanSnapshot) {
+    return null;
+  }
+
+  return {
+    radius: Number(resourceScanSnapshot.radius ?? 0),
+    scannedChunks: Number(resourceScanSnapshot.scannedChunks ?? 0),
+    scannedWoodBlocks: Number(resourceScanSnapshot.scannedWoodBlocks ?? 0),
+    rejectedLeafTargets: Number(resourceScanSnapshot.rejectedLeafTargets ?? 0),
+    rejectedUnreachableTargets: Number(resourceScanSnapshot.rejectedUnreachableTargets ?? 0),
+    woodTargetsFound: Number(resourceScanSnapshot.woodTargetsFound ?? 0),
+    woodTargetsRejected: Number(resourceScanSnapshot.woodTargetsRejected ?? 0),
+    nearestWoodTarget: sanitizeResourceTarget(resourceScanSnapshot.nearestWoodTarget),
+    woodTargetDistance: resourceScanSnapshot.woodTargetDistance === null || resourceScanSnapshot.woodTargetDistance === undefined
+      ? null
+      : Number(resourceScanSnapshot.woodTargetDistance),
+    targets: (resourceScanSnapshot.targets ?? []).slice(0, 16).map(sanitizeResourceTarget).filter(Boolean),
+    vegetationTarget: sanitizeResourceTarget(resourceScanSnapshot.vegetationTarget),
+    biome: resourceScanSnapshot.biome ?? 'Unknown',
+    biomeHasTrees: Boolean(resourceScanSnapshot.biomeHasTrees),
+    lastBlockedReason: resourceScanSnapshot.lastBlockedReason ?? null,
+    recovery: resourceScanSnapshot.recovery ?? null,
+  };
+}
+
+function sanitizeResourceTarget(target = null) {
+  if (!target) {
+    return null;
+  }
+
+  return pick(target, [
+    'blockId',
+    'worldX',
+    'y',
+    'worldZ',
+    'distance',
+    'verticalDelta',
+    'nearGround',
+    'isLeafDropTarget',
+  ]);
 }
 
 function sanitizeInventorySnapshot(inventorySnapshot = null) {
@@ -485,7 +547,7 @@ function classifySimulationFailure(code) {
     return AI_TASK_CATEGORIES.performance;
   }
 
-  if (code.includes('action-loop') || code.includes('craft-no-inventory-change') || code.includes('mining-spam')) {
+  if (code.includes('action-loop') || code.includes('craft-no-inventory-change') || code.includes('mining-spam') || code.includes('wood-target')) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 

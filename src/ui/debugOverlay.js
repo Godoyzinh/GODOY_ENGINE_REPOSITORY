@@ -41,6 +41,7 @@ export class DebugOverlay {
     networkSnapshot,
     telemetrySnapshot,
     qaSnapshot,
+    autoTestSnapshot,
   }) {
     const instantFramesPerSecond = 1 / Math.max(deltaTime, 0.001);
     this.framesPerSecond = Math.round(this.framesPerSecond * 0.9 + instantFramesPerSecond * 0.1);
@@ -104,6 +105,10 @@ export class DebugOverlay {
       ${this.createRow('Visible', terrainStats.chunksVisible)}
       ${this.createRow('Queue', terrainStats.chunksQueued)}
       ${this.createRow('Biome', terrainStats.activeBiome)}
+      ${this.createRow('nearestWoodTarget', formatWoodTarget(autoTestSnapshot?.resourceScanResults))}
+      ${this.createRow('woodTargetDistance', formatWoodDistance(autoTestSnapshot?.resourceScanResults))}
+      ${this.createRow('scannedWoodBlocks', autoTestSnapshot?.resourceScanResults?.scannedWoodBlocks ?? 0)}
+      ${this.createRow('rejectedLeafTargets', autoTestSnapshot?.resourceScanResults?.rejectedLeafTargets ?? 0)}
       ${this.createRow('Blocks', terrainStats.blocksVisible)}
       ${this.createRow('Animated', terrainStats.animatedBlocks ?? 0)}
       ${this.createRow('Structures', terrainStats.structuresGenerated)}
@@ -168,6 +173,26 @@ function formatMiningProgress(miningSnapshot) {
   }
 
   return `${miningSnapshot.targetName} ${Math.round(miningSnapshot.progress * 100)}%`;
+}
+
+function formatWoodTarget(resourceScanResults) {
+  const target = resourceScanResults?.nearestWoodTarget;
+
+  if (!target) {
+    return resourceScanResults?.lastBlockedReason ? 'Blocked' : 'None';
+  }
+
+  return `${target.worldX},${target.y},${target.worldZ}`;
+}
+
+function formatWoodDistance(resourceScanResults) {
+  const distance = resourceScanResults?.woodTargetDistance;
+
+  if (distance === null || distance === undefined) {
+    return 'None';
+  }
+
+  return Number(distance).toFixed(1);
 }
 
 function formatDamageEvent(damageSnapshot) {

@@ -51,6 +51,7 @@ export class AutonomousPlaytestSimulation {
     this.failedCrafts = [];
     this.failedActions = [];
     this.inventorySnapshot = null;
+    this.resourceScanResults = null;
     this.miningSpamReported = false;
   }
 
@@ -81,6 +82,7 @@ export class AutonomousPlaytestSimulation {
     this.failedCrafts = [];
     this.failedActions = [];
     this.inventorySnapshot = null;
+    this.resourceScanResults = null;
     this.miningSpamReported = false;
     this.status = 'running';
     this.telemetrySystem.recordGameplayEvent('auto-test-start', {
@@ -219,8 +221,9 @@ export class AutonomousPlaytestSimulation {
 
     this.detectActionLoop(plan);
     this.updateInventorySnapshot(nextContext);
+    this.updateResourceScanSnapshot(result);
 
-    if (!result.ok) {
+    if (!result.ok && !result.moving) {
       this.recordFailedAction({
         plan,
         actionName,
@@ -231,11 +234,13 @@ export class AutonomousPlaytestSimulation {
     this.performAction(actionName, () => result);
     this.setActionCooldown(actionName);
 
-    this.goalPlanner.recordStepResult({
-      plan,
-      result,
-      elapsedSeconds: this.elapsedSeconds,
-    });
+    if (!result.moving) {
+      this.goalPlanner.recordStepResult({
+        plan,
+        result,
+        elapsedSeconds: this.elapsedSeconds,
+      });
+    }
     this.telemetrySystem.recordGameplayEvent('auto-goal-step', {
       goal: plan.goalId,
       action: plan.action,
@@ -311,6 +316,25 @@ export class AutonomousPlaytestSimulation {
             severity: 'medium',
           },
         ],
+      };
+    }
+
+    if (plan.action === 'gatherWood' && result.ok && Number(inventoryDelta.wood ?? 0) <= 0) {
+      const reason = 'Gather Wood returned success without increasing wood inventory.';
+
+      return {
+        ...result,
+        ok: false,
+        skipped: true,
+        failures: [
+          ...(result.failures ?? []),
+          {
+            code: 'gather-wood-no-inventory-delta',
+            summary: reason,
+            severity: 'medium',
+          },
+        ],
+        reason,
       };
     }
 
@@ -397,6 +421,25 @@ export class AutonomousPlaytestSimulation {
     const progressContext = this.goalPlanner.createProgressContext(context);
 
     this.inventorySnapshot = this.goalPlanner.getInventorySnapshot(progressContext);
+  }
+
+  updateResourceScanSnapshot(result = {}) {
+    const resourceScanResults = result.resourceScanResults ?? this.adapter.getResourceScanSnapshot?.();
+
+    if (!resourceScanResults) {
+      return;
+    }
+
+    this.resourceScanResults = {
+      ...resourceScanResults,
+      nearestWoodTarget: resourceScanResults.nearestWoodTarget
+        ? { ...resourceScanResults.nearestWoodTarget }
+        : null,
+      vegetationTarget: resourceScanResults.vegetationTarget
+        ? { ...resourceScanResults.vegetationTarget }
+        : null,
+      targets: (resourceScanResults.targets ?? []).map((target) => ({ ...target })),
+    };
   }
 
   updateTimedAction(actionName, deltaTime, intervalSeconds, callback) {
@@ -630,6 +673,7 @@ export class AutonomousPlaytestSimulation {
 
     const plannerSnapshot = this.goalPlanner.getSnapshot();
     const inventorySnapshot = this.inventorySnapshot ?? this.goalPlanner.getInventorySnapshot();
+    const resourceScanResults = this.resourceScanResults ?? this.adapter.getResourceScanSnapshot?.() ?? null;
 
     return {
       status: this.status,
@@ -654,6 +698,9 @@ export class AutonomousPlaytestSimulation {
       craftedItems: this.craftedItems.map((craftedItem) => ({ ...craftedItem })),
       failedCrafts: this.failedCrafts.map((failedCraft) => ({ ...failedCraft })),
       failedActions: this.failedActions.map((failedAction) => ({ ...failedAction })),
+      resourceScanResults,
+      woodTargetsFound: resourceScanResults?.woodTargetsFound ?? 0,
+      woodTargetsRejected: resourceScanResults?.woodTargetsRejected ?? 0,
       goalTransitions: (plannerSnapshot.goalTransitions ?? []).map((transition) => ({ ...transition })),
       planner: plannerSnapshot,
       lastResult: this.lastResult ? { ...this.lastResult } : null,

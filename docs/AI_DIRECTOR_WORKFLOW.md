@@ -60,6 +60,7 @@ The CLI writes JSON reports into `reports/`. Generated report files are ignored 
 - Goal planner state: current goal, current subgoal, reason, progress, target, completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
 - Inventory initial/current/delta snapshots for autonomous playtests, also exported as `inventorySnapshot` and `resourceDeltas`.
 - Goal transition history, failed action evidence, and crafted item/failed craft attempt lists, including no-delta craft failures.
+- Resource scan results for wood progression, including nearest trunk target, scan radius, scanned wood blocks, rejected leaves, target counts, and blocked reasons.
 - Recent sanitized gameplay events.
 - Runtime stats for renderer, settings, terrain, entities, survival, networking, and persistence.
 - Browser/system capabilities needed for QA.
@@ -84,6 +85,7 @@ AI-generated tasks are suggestions, not commands.
 - Add or update smoke tests for regressions.
 - Treat repeated same-action loops and 30 second no-progress goal states as actionable gameplay tasks.
 - Treat mining spam above the QA threshold as an actionable gameplay task, especially when resource deltas do not justify the action count.
+- Treat wood target scan blocks as gameplay tasks when the bot is in Gather Wood and a tree-capable biome has no reachable trunk target.
 
 ## Branch And PR Rules
 

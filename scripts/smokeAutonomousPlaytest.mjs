@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { runHeadlessAiSimulation } from './simulateAiPlaytest.mjs';
 import { AutoQaReportSystem } from '../src/diagnostics/autoQaReportSystem.js';
 import { HeadlessPlaytestAdapter } from '../src/diagnostics/headlessPlaytestAdapter.js';
+import { ResourceScanner } from '../src/diagnostics/resourceScanner.js';
 import { TelemetrySystem } from '../src/diagnostics/telemetrySystem.js';
+import { BLOCK_IDS } from '../src/world/blockTypes.js';
+import { getBlockKey } from '../src/world/chunkMath.js';
 
 class StuckCraftAdapter extends HeadlessPlaytestAdapter {
   constructor(options) {
@@ -58,6 +61,9 @@ assert.equal(report.runtimeStats.simulation.crafting.failedCrafts.length, 0, 'he
 assert.equal(report.runtimeStats.simulation.failedCrafts.length, 0, 'report should include explicit failedCrafts field');
 assert.ok(Array.isArray(report.runtimeStats.simulation.failedActions), 'report should include failedActions list');
 assert.ok(Array.isArray(report.runtimeStats.simulation.goalTransitions), 'report should include goalTransitions list');
+assert.ok(report.runtimeStats.simulation.resourceScanResults, 'report should include resource scan results');
+assert.ok(report.runtimeStats.simulation.resourceScanResults.scannedWoodBlocks > 0, 'report should include scanned wood count');
+assert.ok(report.runtimeStats.simulation.woodTargetsFound > 0, 'report should include wood target count');
 assert.ok(report.runtimeStats.simulation.planner, 'report should include sanitized planner stats');
 assert.deepEqual(
   report.runtimeStats.simulation.planner.goalsCompleted.map((goal) => goal.id),
@@ -145,4 +151,56 @@ assert.ok(
   'mining spam should generate an AI task',
 );
 
+const scannerResult = createScannerSmokeResult();
+
+assert.equal(scannerResult.scannedWoodBlocks, 2, 'resource scanner should count trunk blocks separately from leaves');
+assert.equal(scannerResult.rejectedLeafTargets, 2, 'resource scanner should reject leaves that do not drop wood');
+assert.equal(scannerResult.woodTargetsFound, 2, 'resource scanner should find valid trunk targets');
+assert.equal(scannerResult.nearestWoodTarget.blockId, BLOCK_IDS.wood, 'nearest wood target should be the real trunk block id');
+assert.equal(scannerResult.nearestWoodTarget.nearGround, true, 'scanner should prefer near-ground trunk targets');
+
 console.log('smoke:autonomous-playtest ok');
+
+function createScannerSmokeResult() {
+  const fakeChunk = {
+    chunkX: 0,
+    chunkZ: 0,
+    blocks: new Map([
+      [getBlockKey(4, 6, 4), BLOCK_IDS.wood],
+      [getBlockKey(4, 7, 4), BLOCK_IDS.wood],
+      [getBlockKey(3, 9, 4), BLOCK_IDS.leaves],
+      [getBlockKey(4, 9, 4), BLOCK_IDS.leaves],
+      [getBlockKey(4, 5, 4), BLOCK_IDS.grass],
+    ]),
+  };
+  const terrainGenerator = {
+    chunkManager: {
+      chunks: new Map([['0,0', fakeChunk]]),
+    },
+    getBiomeAt: () => ({
+      name: 'Plains',
+      treeChance: 0.045,
+    }),
+    getBlockAtWorldPosition: (worldX, y, worldZ) => {
+      if (worldX === 4 && worldZ === 4 && y === 5) {
+        return BLOCK_IDS.grass;
+      }
+
+      if (worldX === 4 && worldZ === 4 && y === 6) {
+        return BLOCK_IDS.wood;
+      }
+
+      return BLOCK_IDS.air;
+    },
+  };
+  const scanner = new ResourceScanner({ terrainGenerator });
+
+  return scanner.scanWoodTargets({
+    origin: {
+      x: 4.5,
+      y: 6.1,
+      z: 2.5,
+    },
+    radius: 16,
+  });
+}

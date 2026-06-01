@@ -54,7 +54,7 @@ function classifyIssue(issue) {
     return AI_TASK_CATEGORIES.performance;
   }
 
-  if (issue.code.includes('death') || issue.code.includes('combat')) {
+  if (issue.code.includes('death') || issue.code.includes('combat') || issue.code.includes('wood-target')) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
@@ -98,7 +98,8 @@ function proposeChange(issue) {
     issue.code.includes('missing-sticks') ||
     issue.code.includes('failed-ai-crafts') ||
     issue.code.includes('failed-ai-actions') ||
-    issue.code.includes('mining-spam')
+    issue.code.includes('mining-spam') ||
+    issue.code.includes('wood-target')
   ) {
     return 'Inspect the AI planner requirement chain, adapter execution result, and inventory/world state for this progression goal.';
   }
