@@ -25,6 +25,7 @@ Use this checklist before tagging or sharing an Alpha build.
 - Feedback panel generates a local AI Session Report and can copy or download JSON.
 - Feedback panel can start a Quick autonomous playtest without blocking the main UI.
 - Feedback panel shows autonomous AI goal, subgoal, reason, progress, and target while a run is active.
+- Fresh solo and multiplayer sessions use the `survival-start` inventory profile; the debug-rich profile is explicit test-only setup.
 - Autonomous playtest reports include completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
 - Autonomous playtest reports include inventory deltas, crafted items, and failed crafts.
 - Fake crafting/no-progress loops produce AI Director gameplay tasks.
@@ -33,6 +34,7 @@ Use this checklist before tagging or sharing an Alpha build.
 - Sky, weather ambience, water/grass animation, character motion, and feedback particles render cleanly.
 - Procedural audio cues fire after interacting with the page.
 - Save migration smoke test passes.
+- Inventory initialization smoke test passes.
 - Inventory/crafting smoke test passes.
 
 ## Manual Play Pass

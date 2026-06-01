@@ -392,6 +392,7 @@ function sanitizeRuntimeSnapshot(runtimeSnapshot) {
       'isSprinting',
       'selectedSlot',
     ]),
+    inventory: sanitizeRuntimeInventorySnapshot(runtimeSnapshot.inventory),
     survival: pick(runtimeSnapshot.survival, [
       'health',
       'hunger',
@@ -432,9 +433,24 @@ function sanitizeRuntimeSnapshot(runtimeSnapshot) {
     simulationAdapter: pick(runtimeSnapshot.simulationAdapter, [
       'type',
       'seed',
+      'startingInventoryProfile',
       'lastSavedStateSize',
     ]),
   };
+}
+
+function sanitizeRuntimeInventorySnapshot(inventorySnapshot = null) {
+  if (!inventorySnapshot) {
+    return null;
+  }
+
+  return pick(inventorySnapshot, [
+    'selectedSlot',
+    'selectedItemLabel',
+    'selectedBlockId',
+    'startingInventoryProfile',
+    'inventoryInitializationSource',
+  ]);
 }
 
 function sanitizeSimulationSnapshot(simulationSnapshot = null) {

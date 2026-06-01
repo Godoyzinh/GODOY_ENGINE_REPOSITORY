@@ -1,12 +1,15 @@
-import { TOOL_IDS } from '../tools/toolSystem.js';
-import { BLOCK_IDS } from '../world/blockTypes.js';
 import { getBlockDefinition, isPlaceableBlock } from '../world/blockRegistry.js';
 import {
   createItemStack,
   getItemDefinition,
-  ITEM_IDS,
   ITEM_TYPES,
 } from '../items/itemRegistry.js';
+import {
+  DEFAULT_INVENTORY_PROFILE_ID,
+  INVENTORY_INITIALIZATION_SOURCES,
+  createInventoryStacksForProfile,
+  resolveInventoryProfileId,
+} from './inventoryProfiles.js';
 
 const HOTBAR_SIZE = 9;
 const BACKPACK_SIZE = 18;
@@ -16,23 +19,47 @@ export class InventorySystem {
     playerState,
     hotbarSize = HOTBAR_SIZE,
     backpackSize = BACKPACK_SIZE,
-    initialStacks = createDefaultHotbar(),
+    initialStacks = null,
+    initialBackpack = [],
+    inventoryProfileId = DEFAULT_INVENTORY_PROFILE_ID,
+    initializationSource = null,
+    debugInventoryEnabled = false,
   }) {
     this.playerState = playerState;
     this.hotbarSize = hotbarSize;
     this.backpackSize = backpackSize;
-    this.hotbar = normalizeHotbar(initialStacks, hotbarSize);
-    this.backpack = [];
+    const hasCustomStacks = initialStacks !== null;
+    const resolvedProfileId = resolveInventoryProfileId(inventoryProfileId, {
+      allowDebugProfile: debugInventoryEnabled,
+    });
+    const startingStacks = hasCustomStacks
+      ? initialStacks
+      : createInventoryStacksForProfile(resolvedProfileId);
+
+    this.startingInventoryProfile = hasCustomStacks ? 'custom' : resolvedProfileId;
+    this.inventoryInitializationSource = hasCustomStacks
+      ? initializationSource ?? INVENTORY_INITIALIZATION_SOURCES.customStacks
+      : initializationSource ?? INVENTORY_INITIALIZATION_SOURCES.newSurvivalWorld;
+    this.hotbar = normalizeHotbar(startingStacks, hotbarSize);
+    this.backpack = normalizeBackpack(initialBackpack, backpackSize);
     this.listeners = new Set();
 
     this.handleWheel = this.handleWheel.bind(this);
     this.handleKeyDown = this.handleKeyDown.bind(this);
 
-    window.addEventListener('wheel', this.handleWheel, { passive: false });
-    window.addEventListener('keydown', this.handleKeyDown);
+    logStartingInventoryProfile(this.getInitializationSnapshot());
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('wheel', this.handleWheel, { passive: false });
+      window.addEventListener('keydown', this.handleKeyDown);
+    }
   }
 
   dispose() {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     window.removeEventListener('wheel', this.handleWheel);
     window.removeEventListener('keydown', this.handleKeyDown);
   }
@@ -247,17 +274,32 @@ export class InventorySystem {
       selectedSlot: this.playerState.selectedSlot,
       selectedItemLabel: this.getSelectedItemLabel(),
       selectedBlockId: this.getSelectedBlockId(),
+      startingInventoryProfile: this.startingInventoryProfile,
+      inventoryInitializationSource: this.inventoryInitializationSource,
       hotbar: this.hotbar.map((stack) => (stack ? { ...stack } : null)),
       backpack: this.backpack.map((stack) => ({ ...stack })),
     };
   }
 
-  replaceContents({ hotbar = [], backpack = [] } = {}) {
+  getInitializationSnapshot() {
+    return {
+      startingInventoryProfile: this.startingInventoryProfile,
+      inventoryInitializationSource: this.inventoryInitializationSource,
+    };
+  }
+
+  replaceContents({
+    hotbar = [],
+    backpack = [],
+    startingInventoryProfile = this.startingInventoryProfile,
+    inventoryProfileId = startingInventoryProfile,
+    inventoryInitializationSource = this.inventoryInitializationSource,
+    initializationSource = inventoryInitializationSource,
+  } = {}) {
     this.hotbar = normalizeHotbar(hotbar.map(normalizeStorageStack), this.hotbarSize);
-    this.backpack = backpack
-      .map(normalizeStorageStack)
-      .filter(Boolean)
-      .slice(0, this.backpackSize);
+    this.backpack = normalizeBackpack(backpack, this.backpackSize);
+    this.startingInventoryProfile = inventoryProfileId;
+    this.inventoryInitializationSource = initializationSource;
     this.notifyChanged();
   }
 
@@ -305,50 +347,15 @@ export class InventorySystem {
   }
 }
 
-function createDefaultHotbar() {
-  return [
-    createBlockStack(BLOCK_IDS.grass),
-    createBlockStack(BLOCK_IDS.dirt),
-    createBlockStack(BLOCK_IDS.stone),
-    createBlockStack(BLOCK_IDS.sand),
-    createBlockStack(BLOCK_IDS.wood),
-    createConsumableStack(ITEM_IDS.berries, 6),
-    createToolStack(TOOL_IDS.pickaxe, 'Pickaxe'),
-    createToolStack(TOOL_IDS.axe, 'Axe'),
-    createToolStack(TOOL_IDS.hand, 'Hand'),
-  ];
-}
-
-function createBlockStack(blockId) {
-  const blockDefinition = getBlockDefinition(blockId);
-
-  return createItemStack({
-    itemType: ITEM_TYPES.block,
-    itemId: blockId,
-    name: blockDefinition.name,
-    count: 32,
-  });
-}
-
-function createToolStack(toolId, name) {
-  return createItemStack({
-    itemType: ITEM_TYPES.tool,
-    itemId: toolId,
-    name,
-    count: 1,
-  });
-}
-
-function createConsumableStack(itemId, count) {
-  return createItemStack({
-    itemType: ITEM_TYPES.consumable,
-    itemId,
-    count,
-  });
-}
-
 function normalizeHotbar(stacks, hotbarSize) {
   return Array.from({ length: hotbarSize }, (_, index) => stacks[index] ?? null);
+}
+
+function normalizeBackpack(stacks, backpackSize) {
+  return stacks
+    .map(normalizeStorageStack)
+    .filter(Boolean)
+    .slice(0, backpackSize);
 }
 
 function normalizeStorageStack(stack) {
@@ -396,4 +403,15 @@ function getInventoryItemName({ itemType, itemId }) {
   }
 
   return getItemDefinition({ itemType, itemId }).name;
+}
+
+function logStartingInventoryProfile({ startingInventoryProfile, inventoryInitializationSource }) {
+  if (typeof console === 'undefined' || typeof console.info !== 'function') {
+    return;
+  }
+
+  console.info('[Godoy Engine] starting inventory profile', {
+    profile: startingInventoryProfile,
+    source: inventoryInitializationSource,
+  });
 }

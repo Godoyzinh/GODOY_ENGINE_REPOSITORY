@@ -23,6 +23,7 @@ import { NetworkSession } from '../network/networkSession.js';
 import { checkServerHealth } from '../network/serverHealth.js';
 import { PlayerController } from '../player/playerController.js';
 import { InventorySystem } from '../player/inventorySystem.js';
+import { INVENTORY_INITIALIZATION_SOURCES } from '../player/inventoryProfiles.js';
 import { PlayerState } from '../player/playerState.js';
 import { SurvivalSystem } from '../player/survivalSystem.js';
 import { PhysicsWorld } from '../physics/physicsWorld.js';
@@ -102,7 +103,11 @@ export class Engine {
     this.playerState = new PlayerState();
     this.toolSystem = new ToolSystem();
     this.lootSystem = new LootSystem();
-    this.inventorySystem = new InventorySystem({ playerState: this.playerState });
+    this.inventorySystem = new InventorySystem({
+      playerState: this.playerState,
+      initializationSource: resolveInventoryInitializationSource(),
+    });
+    this.telemetrySystem.recordGameplayEvent('inventory-initialization', this.inventorySystem.getInitializationSnapshot());
     this.survivalSystem = new SurvivalSystem({
       playerState: this.playerState,
       inventorySystem: this.inventorySystem,
@@ -793,6 +798,7 @@ export class Engine {
         controlsHelp: settingsSnapshot.controlsHelp,
       },
       player: this.playerState.getSnapshot(),
+      inventory: this.inventorySystem.getSnapshot(),
       survival: this.survivalSystem.getSnapshot(),
       terrain: this.terrainGenerator.stats,
       entities: this.entitySystem.stats,
@@ -800,4 +806,18 @@ export class Engine {
       persistence: this.persistenceSnapshot,
     };
   }
+}
+
+function resolveInventoryInitializationSource() {
+  if (typeof window === 'undefined') {
+    return INVENTORY_INITIALIZATION_SOURCES.newSurvivalWorld;
+  }
+
+  const url = new URL(window.location.href);
+
+  if (url.searchParams.has('multiplayer') || url.searchParams.has('network')) {
+    return INVENTORY_INITIALIZATION_SOURCES.multiplayerJoin;
+  }
+
+  return INVENTORY_INITIALIZATION_SOURCES.newSurvivalWorld;
 }

@@ -1,5 +1,18 @@
 # Changelog
 
+## Player Inventory Initialization Consistency
+
+### Fixed
+
+- Fresh player sessions now use the shared `survival-start` inventory profile instead of the old rich debug hotbar.
+- Save restoration can replace inventory contents without re-injecting starter resources.
+- Debug-rich inventory is only available through explicit debug/test setup.
+
+### Added
+
+- Runtime inventory snapshots now expose `inventoryInitializationSource`.
+- Added `npm run smoke:inventory-init` to verify fresh, multiplayer, save-restore, and debug inventory initialization paths.
+
 ## Autonomous Playtest Inventory Profiles
 
 ### Added
