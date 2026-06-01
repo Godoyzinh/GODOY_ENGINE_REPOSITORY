@@ -59,6 +59,8 @@ export class AutonomousPlaytestSimulation {
     this.inventorySnapshot = null;
     this.resourceScanResults = null;
     this.shelterValidation = null;
+    this.furnaceCraftDiagnostics = createEmptyFurnaceCraftDiagnostics();
+    this.obtainFurnaceBlockedAttempts = 0;
     this.miningSpamReported = false;
   }
 
@@ -93,6 +95,8 @@ export class AutonomousPlaytestSimulation {
     this.inventorySnapshot = null;
     this.resourceScanResults = null;
     this.shelterValidation = null;
+    this.furnaceCraftDiagnostics = createEmptyFurnaceCraftDiagnostics();
+    this.obtainFurnaceBlockedAttempts = 0;
     this.miningSpamReported = false;
     this.status = 'running';
     this.telemetrySystem.recordGameplayEvent('auto-test-start', {
@@ -240,6 +244,8 @@ export class AutonomousPlaytestSimulation {
     this.updateInventorySnapshot(nextContext);
     this.updateResourceScanSnapshot(result);
     this.updateShelterValidationSnapshot(result);
+    this.updateFurnaceCraftDiagnostics(plan, result);
+    this.updateObtainFurnaceBlockedAttempts(plan, result);
     this.recordResultFailedActions(plan, actionName, result);
     this.recordRecoveryAction(plan, result);
 
@@ -583,6 +589,51 @@ export class AutonomousPlaytestSimulation {
     this.shelterValidation = { ...shelterValidation };
   }
 
+  updateFurnaceCraftDiagnostics(plan, result = {}) {
+    const furnaceCraftDiagnostics = result.furnaceCraftDiagnostics ?? (
+      plan.action === 'obtainFurnace'
+        ? this.adapter.getFurnaceCraftDiagnostics?.()
+        : null
+    );
+
+    if (!furnaceCraftDiagnostics) {
+      return;
+    }
+
+    this.furnaceCraftDiagnostics = { ...furnaceCraftDiagnostics };
+  }
+
+  updateObtainFurnaceBlockedAttempts(plan, result) {
+    if (plan.goalId !== 'obtainFurnace') {
+      this.obtainFurnaceBlockedAttempts = 0;
+      return;
+    }
+
+    if (result.ok) {
+      this.obtainFurnaceBlockedAttempts = 0;
+      return;
+    }
+
+    this.obtainFurnaceBlockedAttempts += 1;
+
+    if (this.obtainFurnaceBlockedAttempts <= 10) {
+      return;
+    }
+
+    this.recordFailure(
+      'obtain-furnace-blocked-loop',
+      `Obtain Furnace stayed blocked for ${this.obtainFurnaceBlockedAttempts} consecutive attempts: ${this.furnaceCraftDiagnostics.furnaceCraftBlockReason ?? 'unknown reason'}.`,
+      'medium',
+    );
+    this.goalPlanner.recordBottleneck({
+      code: 'obtain-furnace-blocked-loop',
+      goalId: plan.goalId,
+      goalName: plan.goalName,
+      summary: this.furnaceCraftDiagnostics.furnaceCraftBlockReason ?? 'Obtain Furnace could not craft after repeated attempts.',
+      atSeconds: this.elapsedSeconds,
+    });
+  }
+
   updateTimedAction(actionName, deltaTime, intervalSeconds, callback) {
     this.actionTimers[actionName] += deltaTime;
 
@@ -830,6 +881,10 @@ export class AutonomousPlaytestSimulation {
       progress,
       startingInventoryProfile: this.startingInventoryProfileId,
       actualEquippedTool: this.goalPlanner.lastContext?.world?.equippedTool ?? 'hand',
+      furnaceRecipeFound: Boolean(this.furnaceCraftDiagnostics.furnaceRecipeFound),
+      furnaceRecipeRequirements: this.furnaceCraftDiagnostics.furnaceRecipeRequirements ?? [],
+      furnaceCraftAttemptRequirements: this.furnaceCraftDiagnostics.furnaceCraftAttemptRequirements ?? [],
+      furnaceCraftBlockReason: this.furnaceCraftDiagnostics.furnaceCraftBlockReason ?? null,
       actionCounts: { ...this.actionCounts },
       failureCounts: { ...this.failureCounts },
       failures: this.failures.map((failure) => ({ ...failure })),
@@ -879,6 +934,15 @@ function createActionLoopState(key = null, progress = 0) {
 
 function createActionCooldowns() {
   return Object.fromEntries(Object.keys(ACTION_COOLDOWN_SECONDS).map((actionName) => [actionName, 0]));
+}
+
+function createEmptyFurnaceCraftDiagnostics() {
+  return {
+    furnaceRecipeFound: false,
+    furnaceRecipeRequirements: [],
+    furnaceCraftAttemptRequirements: [],
+    furnaceCraftBlockReason: null,
+  };
 }
 
 function createActionCounts() {

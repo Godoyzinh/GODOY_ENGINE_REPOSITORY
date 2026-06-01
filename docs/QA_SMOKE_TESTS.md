@@ -66,6 +66,9 @@ Run these before tagging an Alpha build.
 - Empty-inventory runs must select Gather Wood first and avoid simulated craft completions.
 - Gather Stone must not start until Craft Wooden Pickaxe has produced a real pickaxe item.
 - Reports must include `actualEquippedTool` and create an issue/task if Gather Stone starts without a valid mining tool.
+- Obtain Furnace must accept Stone, Rock, or Sandstone as furnace-compatible stone material.
+- Reports must include `furnaceRecipeFound`, `furnaceRecipeRequirements`, `furnaceCraftAttemptRequirements`, and `furnaceCraftBlockReason`.
+- Obtain Furnace must report a blocked loop if furnace crafting fails for more than 10 consecutive attempts.
 - Build Shelter must reject Grass, Leaves, Water, Campfire, and decorative blocks before placement.
 - Survive Night must require a valid shelter or safe-distance/no-aggro validation before progress can count.
 - Exported autonomous report JSON must preserve non-empty `issues` and `aiTasks` when the report generator produced them.

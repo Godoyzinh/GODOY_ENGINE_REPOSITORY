@@ -237,6 +237,10 @@ export class HeadlessPlaytestAdapter {
       inventory: {
         dirt: this.inventory.dirt,
         stone: this.inventory.stone,
+        stoneBlocks: this.inventory.stone,
+        rockBlocks: this.inventory.rock ?? 0,
+        sandstoneBlocks: this.inventory.sandstone ?? 0,
+        furnaceMaterials: this.getFurnaceMaterialCount(),
         wood: this.inventory.wood,
         planks: this.inventory.planks,
         sticks: this.inventory.sticks,
@@ -572,19 +576,28 @@ export class HeadlessPlaytestAdapter {
   }
 
   obtainFurnace() {
-    if (this.inventory.stone < 8) {
+    const diagnostics = this.getFurnaceCraftDiagnostics();
+
+    if (this.getFurnaceMaterialCount() < 8) {
       return {
         ok: false,
         skipped: true,
+        event: 'missing furnace material',
+        reason: diagnostics.furnaceCraftBlockReason,
+        furnaceCraftDiagnostics: diagnostics,
       };
     }
 
-    this.inventory.stone -= 8;
+    consumeFurnaceMaterials(this.inventory, 8);
     this.inventory.furnace += 1;
 
     return {
       ok: true,
       event: 'Furnace',
+      furnaceCraftDiagnostics: {
+        ...diagnostics,
+        furnaceCraftBlockReason: null,
+      },
       craftedItem: {
         itemType: 'block',
         itemId: 'furnace',
@@ -676,6 +689,51 @@ export class HeadlessPlaytestAdapter {
 
   getPickaxeCount() {
     return this.inventory.woodenPickaxe + this.inventory.ironTools;
+  }
+
+  getFurnaceMaterialCount() {
+    return this.inventory.stone + (this.inventory.rock ?? 0) + (this.inventory.sandstone ?? 0);
+  }
+
+  getFurnaceCraftDiagnostics() {
+    const materialOptions = [
+      {
+        itemType: 'block',
+        itemId: 'stone',
+        name: 'Stone',
+        available: this.inventory.stone,
+      },
+      {
+        itemType: 'block',
+        itemId: 'rock',
+        name: 'Rock',
+        available: this.inventory.rock ?? 0,
+      },
+      {
+        itemType: 'block',
+        itemId: 'sandstone',
+        name: 'Sandstone',
+        available: this.inventory.sandstone ?? 0,
+      },
+    ];
+    const available = this.getFurnaceMaterialCount();
+
+    return {
+      furnaceRecipeFound: true,
+      furnaceRecipeRequirements: [{
+        label: 'Stone material',
+        required: 8,
+        options: materialOptions.map(({ available: _available, ...option }) => option),
+      }],
+      furnaceCraftAttemptRequirements: [{
+        label: 'Stone material',
+        required: 8,
+        available,
+        satisfied: available >= 8,
+        options: materialOptions,
+      }],
+      furnaceCraftBlockReason: available >= 8 ? null : 'Missing required ingredients for Furnace.',
+    };
   }
 
   hasValidMiningTool() {
@@ -879,6 +937,27 @@ function consumeFromInventory(inventory, key, count = 1) {
 
   inventory[key] -= count;
   return true;
+}
+
+function consumeFurnaceMaterials(inventory, count) {
+  let remainingCount = count;
+
+  for (const key of ['stone', 'rock', 'sandstone']) {
+    const consumedCount = Math.min(remainingCount, inventory[key] ?? 0);
+
+    if (consumedCount <= 0) {
+      continue;
+    }
+
+    inventory[key] -= consumedCount;
+    remainingCount -= consumedCount;
+
+    if (remainingCount <= 0) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function createHeadlessShelterPattern(index) {

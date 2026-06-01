@@ -57,7 +57,17 @@ export const RECIPE_REGISTRY = {
     name: 'Furnace',
     category: 'station',
     inputs: [
-      { itemType: ITEM_TYPES.block, itemId: BLOCK_IDS.stone, count: 8 },
+      {
+        itemType: ITEM_TYPES.block,
+        itemId: BLOCK_IDS.stone,
+        count: 8,
+        label: 'Stone material',
+        alternatives: [
+          { itemType: ITEM_TYPES.block, itemId: BLOCK_IDS.stone },
+          { itemType: ITEM_TYPES.block, itemId: BLOCK_IDS.rock },
+          { itemType: ITEM_TYPES.block, itemId: BLOCK_IDS.sandstone },
+        ],
+      },
     ],
     output: { itemType: ITEM_TYPES.block, itemId: BLOCK_IDS.furnace, count: 1 },
   },

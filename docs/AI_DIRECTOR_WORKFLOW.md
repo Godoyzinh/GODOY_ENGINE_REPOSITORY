@@ -71,6 +71,7 @@ The CLI writes JSON reports into `reports/`. Generated report files are ignored 
 - Goal planner state: current goal, current subgoal, reason, progress, target, completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
 - Inventory initial/current/delta snapshots for autonomous playtests, also exported as `inventorySnapshot` and `resourceDeltas`.
 - Actual equipped tool, including missing-pickaxe evidence if Gather Stone starts without a valid mining tool.
+- Furnace crafting diagnostics: recipe presence, valid stone-material options, attempted counts, and block reason.
 - Starting inventory profile plus explicit `initialInventory`, `currentInventory`, and `inventoryDelta` aliases.
 - Goal transition history, failed action evidence, and crafted item/failed craft attempt lists, including no-delta craft failures.
 - Resource scan results for wood progression, including nearest trunk target, scan radius, scanned wood blocks, rejected leaves, target counts, and blocked reasons.

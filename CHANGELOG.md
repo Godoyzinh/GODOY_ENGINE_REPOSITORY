@@ -1,5 +1,18 @@
 # Changelog
 
+## AI Furnace Progression Diagnostics
+
+### Fixed
+
+- Furnace crafting now accepts Stone, Rock, or Sandstone as valid stone material, preventing stone-count/resource-type mismatches from blocking `Obtain Furnace`.
+- `Obtain Furnace` now uses furnace-compatible material counts for planner requirements.
+- Autonomous playtests report a blocked furnace loop if furnace crafting fails for more than 10 consecutive attempts.
+
+### Added
+
+- Furnace report fields for recipe registration, recipe requirements, attempted material counts, and craft block reason.
+- Smoke coverage for rock-only furnace crafting and repeated blocked furnace attempts.
+
 ## Goal-Oriented AI Stone Progression
 
 ### Fixed
