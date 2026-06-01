@@ -1,3 +1,5 @@
+import { SHELTER_BLOCK_TARGET } from './shelterValidator.js';
+
 export const SURVIVAL_GOAL_IDS = {
   gatherWood: 'gatherWood',
   craftPlanks: 'craftPlanks',
@@ -10,7 +12,6 @@ export const SURVIVAL_GOAL_IDS = {
   upgradeEquipment: 'upgradeEquipment',
 };
 
-const SHELTER_BLOCK_TARGET = 12;
 const NIGHT_SURVIVAL_TARGET_SECONDS = 6;
 const NO_PROGRESS_BOTTLENECK_SECONDS = 30;
 
@@ -96,36 +97,41 @@ export const SURVIVAL_GOALS = [
     label: 'Build Shelter',
     priority: 60,
     requirements: ['At least one placeable building block.'],
-    successCriteria: [`Shelter footprint has at least ${SHELTER_BLOCK_TARGET} placed blocks.`],
+    successCriteria: [`Shelter footprint has at least ${SHELTER_BLOCK_TARGET} valid blocks and passes safety validation.`],
     failureCriteria: ['No shelter placement progress for 120 seconds.'],
     target: `${SHELTER_BLOCK_TARGET} shelter blocks`,
     maxSeconds: 120,
-    requirementsMet: (context) => getCount(context, 'buildBlocks') > 0 || getCount(context, 'shelterBlocks') >= SHELTER_BLOCK_TARGET,
-    isSuccessful: (context) => getCount(context, 'shelterBlocks') >= SHELTER_BLOCK_TARGET,
-    getProgress: (context) => getCount(context, 'shelterBlocks') / SHELTER_BLOCK_TARGET,
+    requirementsMet: (context) => getCount(context, 'validBuildBlocks') > 0 || getCount(context, 'validShelterBlocksPlaced') >= SHELTER_BLOCK_TARGET,
+    isSuccessful: (context) => getCount(context, 'validShelterBlocksPlaced') >= SHELTER_BLOCK_TARGET && Boolean(context.world?.shelterIsValid),
+    getProgress: (context) => getCount(context, 'validShelterBlocksPlaced') / SHELTER_BLOCK_TARGET,
     createPlan: (context) => ({
       action: 'buildShelter',
       subgoal: 'Place a compact shelter shell around the player.',
       reason: 'A shelter gives the bot a concrete survival objective before night pressure.',
-      target: `${Math.min(getCount(context, 'shelterBlocks'), SHELTER_BLOCK_TARGET)}/${SHELTER_BLOCK_TARGET} shelter blocks`,
+      target: `${Math.min(getCount(context, 'validShelterBlocksPlaced'), SHELTER_BLOCK_TARGET)}/${SHELTER_BLOCK_TARGET} valid shelter blocks`,
     }),
   },
   {
     id: SURVIVAL_GOAL_IDS.surviveNight,
     label: 'Survive Night',
     priority: 55,
-    requirements: ['A partial shelter exists and survival stats are stable enough to wait.'],
-    successCriteria: ['Night survival drill completes without a death loop.'],
+    requirements: ['A valid shelter exists, or no hostile has aggro and safe-distance validation passes.'],
+    successCriteria: ['Night survival drill completes while shelter or no-aggro safety is valid.'],
     failureCriteria: ['Death loop, hunger collapse, or no night safety progress for 180 seconds.'],
     target: `${NIGHT_SURVIVAL_TARGET_SECONDS}s protected survival`,
     maxSeconds: 180,
     requirementsMet: (context) => (
-      getCount(context, 'shelterBlocks') >= 8 ||
-      getCount(context, 'nightSurvivedSeconds') >= NIGHT_SURVIVAL_TARGET_SECONDS
+      Boolean(context.world?.shelterIsSafeForNight) ||
+      Boolean(context.world?.safeDistanceNoAggro)
     ) && getStat(context, 'health', 100) > 30,
     isSuccessful: (context) => (
-      Boolean(context.world?.nightSurvived) ||
-      getCount(context, 'nightSurvivedSeconds') >= NIGHT_SURVIVAL_TARGET_SECONDS
+      (
+        Boolean(context.world?.nightSurvived) ||
+        getCount(context, 'nightSurvivedSeconds') >= NIGHT_SURVIVAL_TARGET_SECONDS
+      ) && (
+        Boolean(context.world?.shelterIsSafeForNight) ||
+        Boolean(context.world?.safeDistanceNoAggro)
+      )
     ),
     getProgress: (context) => getCount(context, 'nightSurvivedSeconds') / NIGHT_SURVIVAL_TARGET_SECONDS,
     createPlan: (context) => ({
