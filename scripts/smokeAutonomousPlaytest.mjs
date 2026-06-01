@@ -131,6 +131,21 @@ class MissingPickaxeStoneAdapter extends HeadlessPlaytestAdapter {
   }
 }
 
+class BlockedFurnaceAdapter extends HeadlessPlaytestAdapter {
+  obtainFurnace() {
+    return {
+      ok: false,
+      skipped: true,
+      event: 'furnace craft blocked',
+      reason: 'Injected furnace craft blockage.',
+      furnaceCraftDiagnostics: {
+        ...this.getFurnaceCraftDiagnostics(),
+        furnaceCraftBlockReason: 'Injected furnace craft blockage.',
+      },
+    };
+  }
+}
+
 const { report, snapshot } = runHeadlessAiSimulation({
   mode: 'quick',
   durationSeconds: 60,
@@ -180,6 +195,16 @@ assert.equal(report.runtimeStats.simulation.initialInventory.basicTools, 0, 'sur
 assert.equal(report.runtimeStats.simulation.initialInventory.berries, 2, 'survival-start should include minimal food only');
 assert.ok(report.runtimeStats.simulation.currentInventory.wood >= 0, 'report should include currentInventory');
 assert.ok(report.runtimeStats.simulation.currentInventory.pickaxes >= 1, 'report should include a real pickaxe after progression');
+assert.equal(report.runtimeStats.simulation.furnaceRecipeFound, true, 'report should state whether furnace recipe is registered');
+assert.ok(
+  report.runtimeStats.simulation.furnaceRecipeRequirements[0].options.some((option) => option.itemId === 'rock'),
+  'furnace recipe diagnostics should include rock as a valid stone material',
+);
+assert.ok(
+  report.runtimeStats.simulation.furnaceCraftAttemptRequirements[0].satisfied,
+  'successful furnace craft should preserve the satisfied attempt diagnostics',
+);
+assert.equal(report.runtimeStats.simulation.furnaceCraftBlockReason, null, 'successful furnace craft should not report a block reason');
 assert.ok(report.runtimeStats.simulation.inventoryDelta.wood >= 0, 'report should include inventoryDelta');
 assert.ok(report.runtimeStats.simulation.inventoryDelta.pickaxes >= 1, 'pickaxe progress should be based on real inventory deltas');
 assert.ok(report.runtimeStats.simulation.actualEquippedTool && report.runtimeStats.simulation.actualEquippedTool !== 'hand', 'report should include the actual equipped mining tool');
@@ -317,6 +342,37 @@ assert.ok(
 assert.ok(
   missingPickaxeStoneResult.report.aiTasks.some((task) => task.category === 'gameplay'),
   'Gather Stone missing-pickaxe issue should create a gameplay AI task',
+);
+
+const rockOnlyFurnaceAdapter = new HeadlessPlaytestAdapter({ seed: 20260536 });
+rockOnlyFurnaceAdapter.begin({ inventoryProfileId: AUTONOMOUS_INVENTORY_PROFILE_IDS.empty });
+rockOnlyFurnaceAdapter.inventory.stone = 0;
+rockOnlyFurnaceAdapter.inventory.rock = 8;
+const rockOnlyFurnaceResult = rockOnlyFurnaceAdapter.obtainFurnace();
+
+assert.equal(rockOnlyFurnaceResult.ok, true, 'furnace crafting should accept rock as stone material');
+assert.equal(rockOnlyFurnaceAdapter.inventory.rock, 0, 'furnace crafting should consume rock material');
+assert.equal(rockOnlyFurnaceAdapter.inventory.furnace, 1, 'furnace crafting should produce one furnace');
+
+const blockedFurnaceResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 60,
+  deltaTime: 0.25,
+  seed: 20260537,
+  adapter: new BlockedFurnaceAdapter({ seed: 20260537 }),
+});
+
+assert.ok(
+  blockedFurnaceResult.snapshot.failures.some((failure) => failure.code === 'obtain-furnace-blocked-loop'),
+  'Obtain Furnace should report a blocked loop after more than 10 consecutive failed attempts',
+);
+assert.ok(
+  blockedFurnaceResult.report.issues.some((issue) => issue.code === 'obtain-furnace-craft-blocked' || issue.code === 'obtain-furnace-blocked-loop'),
+  'blocked furnace craft should become a report issue',
+);
+assert.ok(
+  blockedFurnaceResult.report.aiTasks.some((task) => task.category === 'gameplay'),
+  'blocked furnace craft should create a gameplay AI task',
 );
 
 const noDeltaWoodResult = runHeadlessAiSimulation({

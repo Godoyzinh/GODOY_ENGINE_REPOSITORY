@@ -60,6 +60,7 @@ function classifyIssue(issue) {
     issue.code.includes('wood-target') ||
     issue.code.includes('gather-stone') ||
     issue.code.includes('missing-pickaxe') ||
+    issue.code.includes('obtain-furnace') ||
     issue.code.includes('invalid-shelter') ||
     issue.code.includes('night-safety') ||
     issue.code.includes('goal-reality-validation')
@@ -115,6 +116,7 @@ function proposeChange(issue) {
     issue.code.includes('wood-target') ||
     issue.code.includes('gather-stone') ||
     issue.code.includes('missing-pickaxe') ||
+    issue.code.includes('obtain-furnace') ||
     issue.code.includes('invalid-shelter') ||
     issue.code.includes('night-safety') ||
     issue.code.includes('goal-reality-validation')

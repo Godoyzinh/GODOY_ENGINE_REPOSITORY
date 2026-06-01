@@ -358,7 +358,11 @@ export class EnginePlaytestAdapter {
     return {
       inventory: {
         dirt: this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.dirt),
-        stone: this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.stone) + this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.rock),
+        stone: this.getFurnaceMaterialCount(),
+        stoneBlocks: this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.stone),
+        rockBlocks: this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.rock),
+        sandstoneBlocks: this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.sandstone),
+        furnaceMaterials: this.getFurnaceMaterialCount(),
         wood: this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.wood),
         planks: this.getItemCount(ITEM_TYPES.resource, ITEM_IDS.woodPlank) + this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.planks),
         sticks: this.getItemCount(ITEM_TYPES.resource, ITEM_IDS.stick),
@@ -440,7 +444,7 @@ export class EnginePlaytestAdapter {
       case 'surviveNight':
         return this.surviveNightGoal(deltaTime, elapsedSeconds);
       case 'obtainFurnace':
-        return this.craftRecipe(RECIPE_IDS.furnace);
+        return this.craftFurnaceForGoal();
       case 'gatherOre':
         return this.withSecondaryActions(this.minePreferredBlock({
           elapsedSeconds,
@@ -636,6 +640,12 @@ export class EnginePlaytestAdapter {
     ].reduce((count, [itemType, itemId]) => count + this.getItemCount(itemType, itemId), 0);
   }
 
+  getFurnaceMaterialCount() {
+    return this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.stone) +
+      this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.rock) +
+      this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.sandstone);
+  }
+
   craftRecipe(recipeId) {
     const recipe = getRecipe(recipeId);
     const wasCrafted = this.engine.craftingSystem.craft(recipeId);
@@ -660,6 +670,29 @@ export class EnginePlaytestAdapter {
 
   craftWoodenPickaxeForGoal() {
     return this.craftRecipe(RECIPE_IDS.woodenPickaxe);
+  }
+
+  craftFurnaceForGoal() {
+    const diagnostics = this.getFurnaceCraftDiagnostics();
+    const result = this.craftRecipe(RECIPE_IDS.furnace);
+
+    return {
+      ...result,
+      furnaceCraftDiagnostics: result.ok
+        ? { ...diagnostics, blockReason: null }
+        : diagnostics,
+    };
+  }
+
+  getFurnaceCraftDiagnostics() {
+    const diagnostics = this.engine.craftingSystem.getRecipeDiagnostics(RECIPE_IDS.furnace);
+
+    return {
+      furnaceRecipeFound: diagnostics.recipeFound,
+      furnaceRecipeRequirements: diagnostics.requirements,
+      furnaceCraftAttemptRequirements: diagnostics.attemptRequirements,
+      furnaceCraftBlockReason: diagnostics.blockReason,
+    };
   }
 
   craftUpgradeEquipment() {

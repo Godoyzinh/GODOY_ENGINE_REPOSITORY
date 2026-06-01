@@ -269,6 +269,24 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
   }
 
   if (
+    simulationSnapshot.furnaceCraftBlockReason &&
+    (
+      plannerSnapshot?.currentGoalId === 'obtainFurnace' ||
+      blockedGoals.some((blockedGoal) => blockedGoal.goalId === 'obtainFurnace') ||
+      simulationFailures.some((failure) => String(failure.code ?? '').includes('obtain-furnace'))
+    )
+  ) {
+    issues.push({
+      code: 'obtain-furnace-craft-blocked',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Review blocked AI furnace crafting',
+      summary: simulationSnapshot.furnaceCraftBlockReason,
+      evidence: `Recipe found: ${Boolean(simulationSnapshot.furnaceRecipeFound)}; requirements: ${JSON.stringify(simulationSnapshot.furnaceCraftAttemptRequirements ?? []).slice(0, 180)}.`,
+    });
+  }
+
+  if (
     Number(shelterValidation.invalidShelterBlocksRejected ?? simulationSnapshot.invalidShelterBlocksRejected ?? 0) > 0 ||
     failedActions.some((failedAction) => String(failedAction.reason ?? '').toLowerCase().includes('not valid shelter material'))
   ) {
@@ -500,6 +518,10 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     progress: simulationSnapshot.progress,
     startingInventoryProfile: simulationSnapshot.startingInventoryProfile ?? 'unknown',
     actualEquippedTool: simulationSnapshot.actualEquippedTool ?? 'hand',
+    furnaceRecipeFound: Boolean(simulationSnapshot.furnaceRecipeFound),
+    furnaceRecipeRequirements: sanitizeRecipeRequirementList(simulationSnapshot.furnaceRecipeRequirements),
+    furnaceCraftAttemptRequirements: sanitizeRecipeAttemptRequirementList(simulationSnapshot.furnaceCraftAttemptRequirements),
+    furnaceCraftBlockReason: simulationSnapshot.furnaceCraftBlockReason ?? null,
     actionCounts: { ...(simulationSnapshot.actionCounts ?? {}) },
     failureCounts: { ...(simulationSnapshot.failureCounts ?? {}) },
     inventory: inventorySnapshot,
@@ -619,6 +641,35 @@ function sanitizeInventorySnapshot(inventorySnapshot = null) {
   };
 }
 
+function sanitizeRecipeRequirementList(requirements = []) {
+  return requirements.slice(0, 8).map((requirement) => ({
+    label: requirement.label ?? 'Requirement',
+    required: Number(requirement.required ?? 0),
+    options: (requirement.options ?? []).slice(0, 8).map((option) => pick(option, [
+      'itemType',
+      'itemId',
+      'name',
+    ])),
+  }));
+}
+
+function sanitizeRecipeAttemptRequirementList(requirements = []) {
+  return requirements.slice(0, 8).map((requirement) => ({
+    label: requirement.label ?? 'Requirement',
+    required: Number(requirement.required ?? 0),
+    available: Number(requirement.available ?? 0),
+    satisfied: Boolean(requirement.satisfied),
+    options: (requirement.options ?? []).slice(0, 8).map((option) => ({
+      ...pick(option, [
+        'itemType',
+        'itemId',
+        'name',
+      ]),
+      available: Number(option.available ?? 0),
+    })),
+  }));
+}
+
 function sanitizeCraftingSnapshot(craftingSnapshot = null) {
   if (!craftingSnapshot) {
     return {
@@ -722,6 +773,7 @@ function classifySimulationFailure(code) {
     code.includes('wood-target') ||
     code.includes('gather-stone') ||
     code.includes('missing-pickaxe') ||
+    code.includes('obtain-furnace') ||
     code.includes('invalid-shelter') ||
     code.includes('night-safety') ||
     code.includes('goal-reality-validation')
@@ -752,6 +804,7 @@ function getBottleneckSeverity(code) {
     code.includes('mining-spam') ||
     code.includes('gather-stone') ||
     code.includes('missing-pickaxe') ||
+    code.includes('obtain-furnace') ||
     code.includes('invalid-shelter') ||
     code.includes('night-safety') ||
     code.includes('goal-reality-validation')
