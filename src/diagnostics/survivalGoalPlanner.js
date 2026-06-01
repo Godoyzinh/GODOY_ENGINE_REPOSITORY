@@ -14,6 +14,7 @@ export const SURVIVAL_GOAL_IDS = {
 
 const NIGHT_SURVIVAL_TARGET_SECONDS = 6;
 const NO_PROGRESS_BOTTLENECK_SECONDS = 30;
+const STONE_TARGET_COUNT = 20;
 
 export const SURVIVAL_GOALS = [
   {
@@ -59,12 +60,15 @@ export const SURVIVAL_GOALS = [
     label: 'Craft Tools',
     priority: 80,
     requirements: ['At least 2 planks are available for the tool chain.'],
-    successCriteria: ['Inventory gains at least 2 sticks and actual basic tool items exist.'],
+    successCriteria: ['Inventory gains at least 2 sticks, then either an actual tool exists or hand-mining is explicitly allowed.'],
     failureCriteria: ['No stick output or real tool readiness progress for 60 seconds.'],
-    target: '2 sticks + actual basic tools',
+    target: '2 sticks + mining rule',
     maxSeconds: 60,
     requirementsMet: (context) => getCount(context, 'planks') >= 2 || getDelta(context, 'sticks') >= 2,
-    isSuccessful: (context) => getCount(context, 'basicTools') >= 2 && getDelta(context, 'sticks') >= 2,
+    isSuccessful: (context) => (
+      getDelta(context, 'sticks') >= 2 &&
+      (getCount(context, 'basicTools') >= 1 || Boolean(context.world?.canHandMineStone))
+    ),
     getProgress: (context) => getDelta(context, 'sticks') / 2,
     createPlan: (context) => ({
       action: 'craftTools',
@@ -77,19 +81,19 @@ export const SURVIVAL_GOALS = [
     id: SURVIVAL_GOAL_IDS.gatherStone,
     label: 'Gather Stone',
     priority: 70,
-    requirements: ['A basic mining tool is available.'],
-    successCriteria: ['Inventory gains at least 8 stone after the bot starts.'],
+    requirements: ['A basic mining tool is available, or hand-mining stone is explicitly allowed.'],
+    successCriteria: [`Inventory gains at least ${STONE_TARGET_COUNT} stone after the bot starts.`],
     failureCriteria: ['No stone progress for 120 seconds.'],
-    target: '8 stone',
+    target: `${STONE_TARGET_COUNT} stone`,
     maxSeconds: 120,
-    requirementsMet: (context) => getCount(context, 'basicTools') >= 1,
-    isSuccessful: (context) => getDelta(context, 'stone') >= 8,
-    getProgress: (context) => getDelta(context, 'stone') / 8,
+    requirementsMet: (context) => getCount(context, 'basicTools') >= 1 || Boolean(context.world?.canHandMineStone),
+    isSuccessful: (context) => getDelta(context, 'stone') >= STONE_TARGET_COUNT,
+    getProgress: (context) => getDelta(context, 'stone') / STONE_TARGET_COUNT,
     createPlan: (context) => ({
       action: 'gatherStone',
       subgoal: 'Mine surface stone or rocks.',
       reason: 'Stone is needed for furnace access and stronger progression loops.',
-      target: `${Math.min(getDelta(context, 'stone'), 8)}/8 stone`,
+      target: `${Math.min(getDelta(context, 'stone'), STONE_TARGET_COUNT)}/${STONE_TARGET_COUNT} stone`,
     }),
   },
   {
@@ -182,12 +186,16 @@ export const SURVIVAL_GOALS = [
     id: SURVIVAL_GOAL_IDS.upgradeEquipment,
     label: 'Upgrade Equipment',
     priority: 30,
-    requirements: ['Furnace access and basic tool chain are available.'],
+    requirements: ['Furnace access and the stick/tool chain are available.'],
     successCriteria: ['Inventory gains at least one iron tool after the bot starts.'],
     failureCriteria: ['No iron tool progress for 180 seconds.'],
     target: '1 iron tool',
     maxSeconds: 180,
-    requirementsMet: (context) => getCount(context, 'furnace') >= 1 && getCount(context, 'basicTools') >= 1,
+    requirementsMet: (context) => getCount(context, 'furnace') >= 1 && (
+      getCount(context, 'basicTools') >= 1 ||
+      getCount(context, 'sticks') >= 2 ||
+      Boolean(context.world?.canHandMineStone)
+    ),
     isSuccessful: (context) => getDelta(context, 'ironTools') >= 1,
     getProgress: (context) => getDelta(context, 'ironTools'),
     createPlan: (context) => {

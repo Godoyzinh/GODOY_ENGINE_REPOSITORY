@@ -5,6 +5,10 @@ import { AutoQaReportSystem } from '../src/diagnostics/autoQaReportSystem.js';
 import { AutonomousPlaytestSimulation } from '../src/diagnostics/autonomousPlaytestSimulation.js';
 import { HeadlessPlaytestAdapter } from '../src/diagnostics/headlessPlaytestAdapter.js';
 import { TelemetrySystem } from '../src/diagnostics/telemetrySystem.js';
+import {
+  DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
+  normalizeAutonomousInventoryProfileId,
+} from '../src/diagnostics/autonomousInventoryProfiles.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -22,6 +26,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     ok: true,
     reportId: result.report.id,
     mode: result.snapshot.mode.id,
+    startingInventoryProfile: result.snapshot.startingInventoryProfile,
     durationSeconds: result.snapshot.elapsedSeconds,
     actions: result.snapshot.actionCounts,
     planner: {
@@ -44,8 +49,10 @@ export function runHeadlessAiSimulation({
   durationSeconds = null,
   deltaTime = 0.25,
   seed = 1337,
+  inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
   adapter = null,
 } = {}) {
+  const normalizedInventoryProfileId = normalizeAutonomousInventoryProfileId(inventoryProfileId);
   let simulatedNow = 0;
   const telemetrySystem = new TelemetrySystem({
     now: () => simulatedNow,
@@ -61,7 +68,7 @@ export function runHeadlessAiSimulation({
     storage: createMemoryStorage(),
   });
   const simulation = new AutonomousPlaytestSimulation({
-    adapter: adapter ?? new HeadlessPlaytestAdapter({ seed }),
+    adapter: adapter ?? new HeadlessPlaytestAdapter({ seed, inventoryProfileId: normalizedInventoryProfileId }),
     telemetrySystem,
     reportSystem,
     recordFrames: true,
@@ -74,6 +81,7 @@ export function runHeadlessAiSimulation({
     modeId: mode,
     durationSeconds,
     deltaTime,
+    inventoryProfileId: normalizedInventoryProfileId,
   });
 }
 
@@ -100,6 +108,8 @@ function parseArgs(args) {
       options.deltaTime = Number(arg.slice('--delta='.length));
     } else if (arg.startsWith('--seed=')) {
       options.seed = Number(arg.slice('--seed='.length));
+    } else if (arg.startsWith('--inventory=')) {
+      options.inventoryProfileId = arg.slice('--inventory='.length);
     } else if (arg.startsWith('--output=')) {
       options.outputDir = arg.slice('--output='.length);
     } else if (arg === '--no-write') {

@@ -1,5 +1,20 @@
 # Changelog
 
+## Autonomous Playtest Inventory Profiles
+
+### Added
+
+- Autonomous playtests now support `empty`, `survival-start`, and `debug-rich` starting inventory profiles.
+- The Feedback panel exposes a Starting Inventory selector for local bot runs.
+- `npm run simulate:ai` now accepts `-- --inventory=empty`, `-- --inventory=survival-start`, and `-- --inventory=debug-rich`.
+- AI reports now include `startingInventoryProfile`, `initialInventory`, `currentInventory`, and `inventoryDelta`.
+
+### Changed
+
+- The default autonomous profile is now `survival-start`, with no tools or building resources.
+- The old rich hotbar is preserved behind the explicit `debug-rich` profile.
+- Stone progression now gathers enough material for both shelter construction and furnace access from low-resource starts.
+
 ## AI Survival Validation And Shelter Progression
 
 ### Fixed

@@ -7,10 +7,16 @@ import { TelemetrySystem } from '../src/diagnostics/telemetrySystem.js';
 import { BLOCK_IDS } from '../src/world/blockTypes.js';
 import { getBlockKey } from '../src/world/chunkMath.js';
 import { SHELTER_BLOCK_TARGET } from '../src/diagnostics/shelterValidator.js';
+import { AUTONOMOUS_INVENTORY_PROFILE_IDS } from '../src/diagnostics/autonomousInventoryProfiles.js';
 
 class StuckCraftAdapter extends HeadlessPlaytestAdapter {
   constructor(options) {
     super(options);
+    this.inventory.basicTools = 2;
+  }
+
+  begin(options) {
+    super.begin(options);
     this.inventory.basicTools = 2;
   }
 
@@ -85,6 +91,8 @@ const { report, snapshot } = runHeadlessAiSimulation({
 assert.equal(snapshot.status, 'completed');
 assert.equal(report.trigger, 'autonomous-playtest');
 assert.equal(report.privacy.automaticUpload, false);
+assert.equal(snapshot.startingInventoryProfile, AUTONOMOUS_INVENTORY_PROFILE_IDS.survivalStart);
+assert.equal(report.runtimeStats.simulation.startingInventoryProfile, AUTONOMOUS_INVENTORY_PROFILE_IDS.survivalStart);
 assert.ok(report.runtimeStats.simulation, 'report should include sanitized simulation stats');
 assert.ok(report.simulationResult, 'exported report should include full simulation result');
 assert.ok(snapshot.actionCounts.explore > 0, 'bot should explore');
@@ -106,6 +114,12 @@ assert.ok(Object.keys(snapshot.planner.timeSpentByGoal).length >= 9, 'bot should
 assert.ok(report.telemetry.counts.gameplayEvents > 0, 'telemetry should receive simulated events');
 assert.ok(report.runtimeStats.simulation.inventory, 'report should include inventory snapshot');
 assert.ok(report.runtimeStats.simulation.inventorySnapshot, 'report should include explicit inventorySnapshot field');
+assert.equal(report.runtimeStats.simulation.initialInventory.wood, 0, 'survival-start should begin with no wood');
+assert.equal(report.runtimeStats.simulation.initialInventory.stone, 0, 'survival-start should begin with no stone');
+assert.equal(report.runtimeStats.simulation.initialInventory.basicTools, 0, 'survival-start should begin with no tools');
+assert.equal(report.runtimeStats.simulation.initialInventory.berries, 2, 'survival-start should include minimal food only');
+assert.ok(report.runtimeStats.simulation.currentInventory.wood >= 0, 'report should include currentInventory');
+assert.ok(report.runtimeStats.simulation.inventoryDelta.wood >= 0, 'report should include inventoryDelta');
 assert.ok(report.runtimeStats.simulation.inventory.delta.wood >= 0, 'inventory snapshot should include resource deltas');
 assert.ok(report.runtimeStats.simulation.resourceDeltas.wood >= 0, 'report should include explicit resourceDeltas field');
 assert.ok(report.runtimeStats.simulation.crafting.craftedItems.length > 0, 'report should include crafted items');
@@ -123,14 +137,7 @@ assert.ok(
   report.runtimeStats.simulation.validShelterBlocksPlaced >= SHELTER_BLOCK_TARGET,
   'shelter should only complete after enough valid shelter blocks are placed',
 );
-assert.ok(
-  report.runtimeStats.simulation.invalidShelterBlocksRejected >= 1,
-  'shelter builder should reject invalid selected material before placement',
-);
-assert.ok(
-  report.runtimeStats.simulation.failedActions.some((failedAction) => failedAction.reason.includes('not valid shelter material')),
-  'invalid shelter material should be preserved as failedActions evidence',
-);
+assert.equal(report.runtimeStats.simulation.invalidShelterBlocksRejected, 0, 'survival-start should not include invalid shelter material');
 assert.ok(Array.isArray(report.runtimeStats.simulation.recoveryActions), 'report should include recoveryActions list');
 assert.ok(Array.isArray(report.runtimeStats.simulation.blockedGoals), 'report should include blockedGoals list');
 assert.ok(report.runtimeStats.simulation.planner, 'report should include sanitized planner stats');
@@ -147,12 +154,55 @@ assert.equal(
 assert.ok(Array.isArray(report.runtimeStats.simulation.planner.bottlenecks), 'report should include bottlenecks list');
 assert.ok(Array.isArray(report.runtimeStats.simulation.planner.goalTransitions), 'report should include planner goal transitions');
 assert.ok(Array.isArray(report.aiTasks), 'report should include AI task proposals');
-assert.ok(report.issues.length > 0, 'invalid shelter material should generate a report issue');
-assert.ok(report.aiTasks.length > 0, 'invalid shelter material should generate an AI task');
 const exportedReport = JSON.parse(JSON.stringify(report));
-assert.ok(exportedReport.issues.length > 0, 'exported JSON should preserve issues');
-assert.ok(exportedReport.aiTasks.length > 0, 'exported JSON should preserve aiTasks');
+assert.equal(exportedReport.issues.length, report.issues.length, 'exported JSON should preserve issues');
+assert.equal(exportedReport.aiTasks.length, report.aiTasks.length, 'exported JSON should preserve aiTasks');
 assert.equal(JSON.stringify(report).includes(['C:', 'Users'].join('\\\\')), false, 'report should avoid local machine paths');
+
+const emptyInventoryResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 18,
+  deltaTime: 0.25,
+  seed: 20260528,
+  inventoryProfileId: AUTONOMOUS_INVENTORY_PROFILE_IDS.empty,
+});
+const emptySimulation = emptyInventoryResult.report.runtimeStats.simulation;
+const firstSelectedGoal = emptySimulation.goalTransitions.find((transition) => transition.type === 'selected');
+
+assert.equal(emptySimulation.startingInventoryProfile, AUTONOMOUS_INVENTORY_PROFILE_IDS.empty);
+assert.equal(emptySimulation.initialInventory.wood, 0, 'empty profile should start with zero wood');
+assert.equal(emptySimulation.initialInventory.stone, 0, 'empty profile should start with zero stone');
+assert.equal(emptySimulation.initialInventory.planks, 0, 'empty profile should start with zero planks');
+assert.equal(emptySimulation.initialInventory.sticks, 0, 'empty profile should start with zero sticks');
+assert.equal(emptySimulation.initialInventory.basicTools, 0, 'empty profile should start with zero tools');
+assert.equal(emptySimulation.initialInventory.furnace, 0, 'empty profile should start with zero furnace');
+assert.equal(emptySimulation.initialInventory.food, 0, 'empty profile should start with no food');
+assert.equal(firstSelectedGoal.toGoalId, 'gatherWood', 'gatherWood should be the first real empty-inventory goal');
+assert.ok(
+  emptySimulation.planner.goalsCompleted.some((goal) => goal.id === 'gatherWood'),
+  'empty inventory should begin real progression by completing gatherWood from deltas',
+);
+assert.equal(
+  emptySimulation.failures.some((failure) => failure.code === 'craft-no-inventory-change'),
+  false,
+  'empty inventory progression should not rely on simulated craft completions',
+);
+
+const debugRichResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 2,
+  deltaTime: 0.25,
+  seed: 20260527,
+  inventoryProfileId: AUTONOMOUS_INVENTORY_PROFILE_IDS.debugRich,
+});
+const debugRichInitialInventory = debugRichResult.report.runtimeStats.simulation.initialInventory;
+
+assert.equal(debugRichResult.snapshot.startingInventoryProfile, AUTONOMOUS_INVENTORY_PROFILE_IDS.debugRich);
+assert.equal(debugRichInitialInventory.dirt, 32, 'debug-rich should preserve old dirt count');
+assert.equal(debugRichInitialInventory.stone, 32, 'debug-rich should preserve old stone count');
+assert.equal(debugRichInitialInventory.wood, 32, 'debug-rich should preserve old wood count');
+assert.equal(debugRichInitialInventory.berries, 6, 'debug-rich should preserve old berry count');
+assert.equal(debugRichInitialInventory.basicTools, 3, 'debug-rich should preserve old tool count');
 
 const stuckResult = runHeadlessAiSimulation({
   mode: 'quick',
@@ -195,11 +245,12 @@ assert.equal(
 );
 
 const invalidShelterAdapter = new HeadlessPlaytestAdapter({ seed: 20260532 });
+invalidShelterAdapter.begin({ inventoryProfileId: AUTONOMOUS_INVENTORY_PROFILE_IDS.empty });
 invalidShelterAdapter.inventory.dirt = 0;
 invalidShelterAdapter.inventory.stone = 0;
 invalidShelterAdapter.inventory.wood = 0;
 invalidShelterAdapter.inventory.planks = 0;
-invalidShelterAdapter.begin();
+invalidShelterAdapter.selectedShelterMaterial = 'grass';
 const invalidShelterResult = invalidShelterAdapter.buildShelter();
 
 assert.equal(invalidShelterResult.ok, false, 'shelter placement should fail without valid materials');

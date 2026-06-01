@@ -49,14 +49,19 @@ Run these before tagging an Alpha build.
 - `npm run simulate:ai` completes a Quick Smoke bot run and writes a JSON report into `reports/`.
 - `npm run simulate:ai -- --mode=standard` supports a 5 minute simulated session.
 - `npm run simulate:ai -- --mode=stress` supports a 15 minute simulated session.
+- `npm run simulate:ai -- --inventory=empty` starts without resources, tools, furnace, or food.
+- `npm run simulate:ai -- --inventory=survival-start` starts with minimal food only.
+- `npm run simulate:ai -- --inventory=debug-rich` preserves the old rich inventory for fast system checks.
 - Reports include bot actions for exploration, mining, placement, collection, crafting, combat, survival, and save/load checks.
 - Reports include goal planner details: completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
 - Reports include inventory initial/current/delta snapshots, resource deltas, goal transitions, failed actions, crafted item lists, and failed craft lists.
+- Reports include `startingInventoryProfile`, `initialInventory`, `currentInventory`, and `inventoryDelta`.
 - Reports include wood resource scan results: nearest trunk target, target distance, scanned wood block count, rejected leaves, and blocked reason.
 - Reports include shelter validation, valid shelter block counts, invalid shelter block rejection counts, blocked goals, and recovery actions.
 - Quick smoke should complete early survival goals and continue pursuing the next progression goal.
 - Fake craft loops must not count as craft success and must produce failed-craft, action-loop, and missing-sticks evidence.
 - Gather Wood must target real trunk blocks, advance from real wood deltas, avoid leaf-only progress, and stay below the mining spam threshold.
+- Empty-inventory runs must select Gather Wood first and avoid simulated craft completions.
 - Build Shelter must reject Grass, Leaves, Water, Campfire, and decorative blocks before placement.
 - Survive Night must require a valid shelter or safe-distance/no-aggro validation before progress can count.
 - Exported autonomous report JSON must preserve non-empty `issues` and `aiTasks` when the report generator produced them.

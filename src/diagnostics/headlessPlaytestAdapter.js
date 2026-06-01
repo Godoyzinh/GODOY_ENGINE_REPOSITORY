@@ -4,34 +4,22 @@ import {
   isValidShelterResourceKey,
   validateShelter,
 } from './shelterValidator.js';
+import {
+  DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
+  createHeadlessInventoryForProfile,
+  normalizeAutonomousInventoryProfileId,
+} from './autonomousInventoryProfiles.js';
 
 const VALID_HEADLESS_SHELTER_KEYS = new Set(['wood', 'planks', 'stone', 'dirt']);
 
 export class HeadlessPlaytestAdapter {
-  constructor({ seed = 1337 } = {}) {
+  constructor({ seed = 1337, inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID } = {}) {
     this.seed = seed;
     this.randomState = seed;
+    this.inventoryProfileId = normalizeAutonomousInventoryProfileId(inventoryProfileId);
     this.position = { x: 0, y: 8, z: 0 };
     this.velocity = { x: 0, y: 0, z: 0 };
-    this.inventory = {
-      dirt: 16,
-      stone: 0,
-      wood: 0,
-      planks: 0,
-      sticks: 0,
-      coal: 1,
-      ironOre: 0,
-      ironIngot: 0,
-      furnace: 0,
-      basicTools: 0,
-      ironTools: 0,
-      berries: 4,
-      drops: 0,
-      grass: 8,
-      leaves: 0,
-      water: 0,
-      campfire: 0,
-    };
+    this.inventory = createHeadlessInventoryForProfile(this.inventoryProfileId);
     this.progression = {
       shelterBlocks: 0,
       nightSurvivedSeconds: 0,
@@ -60,11 +48,13 @@ export class HeadlessPlaytestAdapter {
     };
     this.lastResourceScan = this.createResourceScanSnapshot();
     this.lastShelterValidation = createEmptyShelterValidation();
-    this.selectedShelterMaterial = 'grass';
+    this.selectedShelterMaterial = null;
     this.reportedInvalidShelterMaterials = new Set();
   }
 
-  begin() {
+  begin({ inventoryProfileId = this.inventoryProfileId } = {}) {
+    this.inventoryProfileId = normalizeAutonomousInventoryProfileId(inventoryProfileId);
+    this.inventory = createHeadlessInventoryForProfile(this.inventoryProfileId);
     this.stats.health = 100;
     this.stats.hunger = 100;
     this.stats.stamina = 100;
@@ -275,6 +265,7 @@ export class HeadlessPlaytestAdapter {
         shelterIsValid: this.lastShelterValidation.isValid,
         shelterIsSafeForNight: this.lastShelterValidation.isSafeForNight,
         safeDistanceNoAggro: this.lastShelterValidation.safeDistanceNoAggro,
+        canHandMineStone: true,
         nightSurvivedSeconds: this.progression.nightSurvivedSeconds,
         nightSurvived: this.progression.nightSurvived && this.lastShelterValidation.isSafeForNight,
       },
@@ -757,6 +748,7 @@ export class HeadlessPlaytestAdapter {
       simulationAdapter: {
         type: 'headless',
         seed: this.seed,
+        startingInventoryProfile: this.inventoryProfileId,
         lastSavedStateSize: this.stats.lastSavedStateSize,
         equipmentTier: this.progression.equipmentTier,
         completedFurnaceJobs: this.progression.completedFurnaceJobs,
