@@ -248,6 +248,8 @@ export class HeadlessPlaytestAdapter {
         berries: this.inventory.berries,
         food: this.inventory.berries,
         basicTools: this.inventory.basicTools,
+        woodenPickaxe: this.inventory.woodenPickaxe,
+        pickaxes: this.getPickaxeCount(),
         ironTools: this.inventory.ironTools,
         buildBlocks: this.inventory.dirt + this.inventory.stone + this.inventory.wood + this.inventory.planks,
         validBuildBlocks: this.getValidBuildBlockCount(),
@@ -265,7 +267,9 @@ export class HeadlessPlaytestAdapter {
         shelterIsValid: this.lastShelterValidation.isValid,
         shelterIsSafeForNight: this.lastShelterValidation.isSafeForNight,
         safeDistanceNoAggro: this.lastShelterValidation.safeDistanceNoAggro,
-        canHandMineStone: true,
+        canHandMineStone: false,
+        equippedTool: this.getEquippedTool(),
+        hasValidMiningTool: this.hasValidMiningTool(),
         nightSurvivedSeconds: this.progression.nightSurvivedSeconds,
         nightSurvived: this.progression.nightSurvived && this.lastShelterValidation.isSafeForNight,
       },
@@ -294,6 +298,8 @@ export class HeadlessPlaytestAdapter {
         return this.craftPlanks();
       case 'craftTools':
         return this.craftTools();
+      case 'craftWoodenPickaxe':
+        return this.craftWoodenPickaxe();
       case 'gatherStone':
         return this.gatherStone(secondaryActions);
       case 'buildShelter':
@@ -394,8 +400,6 @@ export class HeadlessPlaytestAdapter {
 
     this.inventory.planks -= 2;
     this.inventory.sticks += 4;
-    this.inventory.basicTools = Math.max(this.inventory.basicTools, 2);
-    this.progression.equipmentTier = 'wood';
 
     return {
       ok: true,
@@ -409,7 +413,50 @@ export class HeadlessPlaytestAdapter {
     };
   }
 
+  craftWoodenPickaxe() {
+    if (this.inventory.planks < 2 || this.inventory.sticks < 2) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'missing pickaxe materials',
+      };
+    }
+
+    this.inventory.planks -= 2;
+    this.inventory.sticks -= 2;
+    this.inventory.woodenPickaxe += 1;
+    this.inventory.basicTools = Math.max(this.inventory.basicTools, 1);
+    this.progression.equipmentTier = 'wood';
+
+    return {
+      ok: true,
+      event: 'Wooden Pickaxe',
+      equippedTool: this.getEquippedTool(),
+      craftedItem: {
+        itemType: 'tool',
+        itemId: 'pickaxe',
+        name: 'Wooden Pickaxe',
+        count: 1,
+      },
+    };
+  }
+
   gatherStone(secondaryActions) {
+    if (!this.hasValidMiningTool()) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'missing pickaxe',
+        reason: 'Gather Stone requires a real pickaxe before mining.',
+        equippedTool: this.getEquippedTool(),
+        failures: [{
+          code: 'gather-stone-missing-pickaxe',
+          summary: 'Gather Stone started without a valid pickaxe.',
+          severity: 'medium',
+        }],
+      };
+    }
+
     this.inventory.stone += 2;
     this.inventory.drops += 1;
     this.stats.droppedItems += 1;
@@ -419,6 +466,7 @@ export class HeadlessPlaytestAdapter {
       ok: true,
       event: 'stone',
       count: 2,
+      equippedTool: this.getEquippedTool(),
       secondaryActions: [
         ...secondaryActions,
         { action: 'collect', event: 'stone drop' },
@@ -624,6 +672,26 @@ export class HeadlessPlaytestAdapter {
         count: 1,
       },
     };
+  }
+
+  getPickaxeCount() {
+    return this.inventory.woodenPickaxe + this.inventory.ironTools;
+  }
+
+  hasValidMiningTool() {
+    return this.getPickaxeCount() > 0;
+  }
+
+  getEquippedTool() {
+    if (this.inventory.ironTools > 0) {
+      return 'ironPickaxe';
+    }
+
+    if (this.inventory.woodenPickaxe > 0) {
+      return 'woodenPickaxe';
+    }
+
+    return 'hand';
   }
 
   consumeShelterBlock() {

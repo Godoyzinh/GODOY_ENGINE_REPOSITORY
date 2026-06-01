@@ -370,6 +370,8 @@ export class EnginePlaytestAdapter {
         berries: this.getItemCount(ITEM_TYPES.consumable, ITEM_IDS.berries),
         food: this.getFoodCount(),
         basicTools: this.getBasicToolCount(),
+        woodenPickaxe: this.getItemCount(ITEM_TYPES.tool, TOOL_IDS.pickaxe),
+        pickaxes: this.getPickaxeCount(),
         ironTools: this.getIronToolCount(),
         buildBlocks: this.getBuildBlockCount(),
         validBuildBlocks: this.getValidBuildBlockCount(),
@@ -387,7 +389,9 @@ export class EnginePlaytestAdapter {
         shelterIsValid: this.lastShelterValidation.isValid,
         shelterIsSafeForNight: this.lastShelterValidation.isSafeForNight,
         safeDistanceNoAggro: this.lastShelterValidation.safeDistanceNoAggro,
-        canHandMineStone: true,
+        canHandMineStone: false,
+        equippedTool: this.getActualEquippedTool(),
+        hasValidMiningTool: this.hasValidMiningTool(),
         nightSurvivedSeconds: this.nightSurvivedSeconds,
         nightSurvived: this.nightSurvivedSeconds >= 6 && this.lastShelterValidation.isSafeForNight,
         isNight: dayNightSnapshot.isNight,
@@ -420,7 +424,13 @@ export class EnginePlaytestAdapter {
         return this.craftRecipe(RECIPE_IDS.woodPlanks);
       case 'craftTools':
         return this.craftToolsForGoal();
+      case 'craftWoodenPickaxe':
+        return this.craftWoodenPickaxeForGoal();
       case 'gatherStone':
+        if (!this.hasValidMiningTool()) {
+          return this.createMissingPickaxeResult();
+        }
+        this.equipBestMiningTool();
         return this.withSecondaryActions(this.minePreferredBlock({
           elapsedSeconds,
           blockIds: [BLOCK_IDS.stone, BLOCK_IDS.rock, BLOCK_IDS.sandstone],
@@ -539,12 +549,59 @@ export class EnginePlaytestAdapter {
         return count;
       }
 
-      if (stack.itemId === TOOL_IDS.pickaxe || stack.itemId === TOOL_IDS.axe || stack.itemId === TOOL_IDS.hand) {
+      if (stack.itemId === TOOL_IDS.pickaxe || stack.itemId === TOOL_IDS.axe) {
         return count + 1;
       }
 
       return count;
     }, 0);
+  }
+
+  getPickaxeCount() {
+    return this.getItemCount(ITEM_TYPES.tool, TOOL_IDS.pickaxe) +
+      this.getItemCount(ITEM_TYPES.tool, TOOL_IDS.ironPickaxe);
+  }
+
+  hasValidMiningTool() {
+    return this.getPickaxeCount() > 0;
+  }
+
+  getActualEquippedTool() {
+    const selectedStack = this.engine.inventorySystem.getSelectedStack();
+
+    return selectedStack?.itemType === ITEM_TYPES.tool ? selectedStack.itemId : TOOL_IDS.hand;
+  }
+
+  equipBestMiningTool() {
+    const toolPriority = [TOOL_IDS.ironPickaxe, TOOL_IDS.pickaxe];
+    const slotIndex = toolPriority.reduce((bestIndex, toolId) => {
+      if (bestIndex >= 0) {
+        return bestIndex;
+      }
+
+      return this.engine.inventorySystem.hotbar.findIndex(
+        (stack) => stack?.itemType === ITEM_TYPES.tool && stack.itemId === toolId,
+      );
+    }, -1);
+
+    if (slotIndex >= 0) {
+      this.engine.inventorySystem.selectSlot(slotIndex);
+    }
+  }
+
+  createMissingPickaxeResult() {
+    return {
+      ok: false,
+      skipped: true,
+      event: 'missing pickaxe',
+      reason: 'Gather Stone requires a real pickaxe before mining.',
+      equippedTool: this.getActualEquippedTool(),
+      failures: [{
+        code: 'gather-stone-missing-pickaxe',
+        summary: 'Gather Stone started without a valid pickaxe.',
+        severity: 'medium',
+      }],
+    };
   }
 
   getIronToolCount() {
@@ -599,6 +656,10 @@ export class EnginePlaytestAdapter {
 
   craftToolsForGoal() {
     return this.craftRecipe(RECIPE_IDS.sticks);
+  }
+
+  craftWoodenPickaxeForGoal() {
+    return this.craftRecipe(RECIPE_IDS.woodenPickaxe);
   }
 
   craftUpgradeEquipment() {

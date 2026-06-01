@@ -286,6 +286,30 @@ export class AutonomousPlaytestSimulation {
     const inventoryDelta = diffInventory(beforeContext.inventory, afterContext.inventory);
     const worldDelta = diffInventory(beforeContext.world, afterContext.world);
 
+    if (plan.action === 'gatherStone' && !hasValidMiningTool(beforeContext)) {
+      const existingFailures = result.failures ?? [];
+      const hasMissingPickaxeFailure = existingFailures.some(
+        (f) => f.code === 'gather-stone-missing-pickaxe'
+      );
+
+      return {
+        ...result,
+        ok: false,
+        skipped: true,
+        failures: hasMissingPickaxeFailure
+          ? existingFailures
+          : [
+              ...existingFailures,
+              {
+                code: 'gather-stone-missing-pickaxe',
+                summary: 'Gather Stone started without a valid pickaxe.',
+                severity: 'medium',
+              },
+            ],
+        reason: 'Gather Stone requires a real pickaxe before mining.',
+      };
+    }
+
     if (actionName === 'craft') {
       if (result.ok && !hasInventoryChange(inventoryDelta)) {
         const reason = `Craft action "${plan.action}" returned success without changing inventory.`;
@@ -391,10 +415,9 @@ export class AutonomousPlaytestSimulation {
 
     const checks = {
       craftPlanks: () => Number(inventoryDelta.wood ?? 0) < 0 && Number(inventoryDelta.planks ?? 0) > 0,
-      craftTools: () => Number(inventoryDelta.sticks ?? 0) > 0 && (
-        Number(afterContext.inventory?.basicTools ?? 0) >= 1 ||
-        Boolean(afterContext.world?.canHandMineStone)
-      ),
+      craftTools: () => Number(inventoryDelta.sticks ?? 0) > 0,
+      craftWoodenPickaxe: () => Number(inventoryDelta.pickaxes ?? 0) > 0 && hasValidMiningTool(afterContext),
+      gatherStone: () => Number(inventoryDelta.stone ?? 0) > 0 && hasValidMiningTool(beforeContext),
       buildShelter: () => Number(worldDelta.validShelterBlocksPlaced ?? worldDelta.shelterBlocks ?? 0) > 0 &&
         Boolean(afterContext.world?.shelterIsValid || result.shelterValidation?.validShelterBlocksPlaced > beforeContext.world?.validShelterBlocksPlaced),
       surviveNight: () => Number(worldDelta.nightSurvivedSeconds ?? 0) > 0 &&
@@ -813,6 +836,7 @@ export class AutonomousPlaytestSimulation {
       remainingSeconds: round(Math.max(0, this.mode.durationSeconds - this.elapsedSeconds), 2),
       progress,
       startingInventoryProfile: this.startingInventoryProfileId,
+      actualEquippedTool: this.goalPlanner.lastContext?.world?.equippedTool ?? 'hand',
       actionCounts: { ...this.actionCounts },
       failureCounts: { ...this.failureCounts },
       failures: this.failures.map((failure) => ({ ...failure })),
@@ -882,7 +906,14 @@ function mapPlanActionToAction(planAction) {
     return 'mine';
   }
 
-  if (planAction === 'craftPlanks' || planAction === 'craftTools' || planAction === 'obtainFurnace' || planAction === 'smeltOre' || planAction === 'upgradeEquipment') {
+  if (
+    planAction === 'craftPlanks' ||
+    planAction === 'craftTools' ||
+    planAction === 'craftWoodenPickaxe' ||
+    planAction === 'obtainFurnace' ||
+    planAction === 'smeltOre' ||
+    planAction === 'upgradeEquipment'
+  ) {
     return 'craft';
   }
 
@@ -903,6 +934,10 @@ function mapPlanActionToAction(planAction) {
   }
 
   return planAction;
+}
+
+function hasValidMiningTool(context) {
+  return Number(context.inventory?.pickaxes ?? 0) > 0;
 }
 
 function createFailureCounts() {

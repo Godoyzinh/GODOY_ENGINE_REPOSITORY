@@ -499,6 +499,7 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     elapsedSeconds: simulationSnapshot.elapsedSeconds,
     progress: simulationSnapshot.progress,
     startingInventoryProfile: simulationSnapshot.startingInventoryProfile ?? 'unknown',
+    actualEquippedTool: simulationSnapshot.actualEquippedTool ?? 'hand',
     actionCounts: { ...(simulationSnapshot.actionCounts ?? {}) },
     failureCounts: { ...(simulationSnapshot.failureCounts ?? {}) },
     inventory: inventorySnapshot,
@@ -719,6 +720,8 @@ function classifySimulationFailure(code) {
     code.includes('craft-no-inventory-change') ||
     code.includes('mining-spam') ||
     code.includes('wood-target') ||
+    code.includes('gather-stone') ||
+    code.includes('missing-pickaxe') ||
     code.includes('invalid-shelter') ||
     code.includes('night-safety') ||
     code.includes('goal-reality-validation')
@@ -747,6 +750,8 @@ function getBottleneckSeverity(code) {
     code.includes('goal-no-progress') ||
     code.includes('action-loop') ||
     code.includes('mining-spam') ||
+    code.includes('gather-stone') ||
+    code.includes('missing-pickaxe') ||
     code.includes('invalid-shelter') ||
     code.includes('night-safety') ||
     code.includes('goal-reality-validation')

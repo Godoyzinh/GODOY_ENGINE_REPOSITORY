@@ -58,6 +58,8 @@ function classifyIssue(issue) {
     issue.code.includes('death') ||
     issue.code.includes('combat') ||
     issue.code.includes('wood-target') ||
+    issue.code.includes('gather-stone') ||
+    issue.code.includes('missing-pickaxe') ||
     issue.code.includes('invalid-shelter') ||
     issue.code.includes('night-safety') ||
     issue.code.includes('goal-reality-validation')
@@ -111,6 +113,8 @@ function proposeChange(issue) {
     issue.code.includes('failed-ai-actions') ||
     issue.code.includes('mining-spam') ||
     issue.code.includes('wood-target') ||
+    issue.code.includes('gather-stone') ||
+    issue.code.includes('missing-pickaxe') ||
     issue.code.includes('invalid-shelter') ||
     issue.code.includes('night-safety') ||
     issue.code.includes('goal-reality-validation')

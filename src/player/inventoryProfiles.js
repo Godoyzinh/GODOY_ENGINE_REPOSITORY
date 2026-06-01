@@ -46,6 +46,7 @@ const HEADLESS_INVENTORY_KEYS = [
   'ironIngot',
   'furnace',
   'basicTools',
+  'woodenPickaxe',
   'ironTools',
   'berries',
   'drops',
@@ -84,6 +85,7 @@ const PROFILE_DEFINITIONS = {
       wood: 32,
       berries: 6,
       basicTools: 3,
+      woodenPickaxe: 1,
     },
     engineStacks: [
       { itemType: ITEM_TYPES.block, itemId: BLOCK_IDS.grass, count: 32 },
