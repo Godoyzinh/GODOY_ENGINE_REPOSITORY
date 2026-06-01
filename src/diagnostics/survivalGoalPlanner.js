@@ -225,7 +225,7 @@ export const SURVIVAL_GOALS = [
     requirementsMet: (context) => getCount(context, 'furnace') >= 1 && (
       hasMiningPickaxe(context) ||
       getCount(context, 'sticks') >= 2 ||
-      getCount(context, 'wood') >= 1
+      getCount(context, 'planks') >= 2
     ),
     isSuccessful: (context) => getDelta(context, 'ironTools') >= 1,
     getProgress: (context) => getDelta(context, 'ironTools'),
