@@ -438,6 +438,7 @@ export class Engine {
 
     this.telemetrySystem.updateFrame(deltaTime);
     const autoTestUpdate = this.autonomousPlaytest.update(deltaTime);
+    const autoTestSnapshot = autoTestUpdate.snapshot;
     if (autoTestUpdate.report) {
       this.lastAutoTestReport = autoTestUpdate.report;
     }
@@ -593,6 +594,7 @@ export class Engine {
       networkSnapshot: this.networkSession.getSnapshot(),
       telemetrySnapshot: this.telemetrySystem.getSnapshot(),
       qaSnapshot: this.autoQaReportSystem.getSnapshot(),
+      autoTestSnapshot,
     });
 
     this.animationFrameId = requestAnimationFrame(this.update);

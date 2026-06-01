@@ -5,10 +5,14 @@ import { ITEM_IDS, ITEM_TYPES, normalizeDrop } from '../items/itemRegistry.js';
 import { TOOL_IDS } from '../tools/toolSystem.js';
 import { BLOCK_IDS } from '../world/blockTypes.js';
 import { getBlockDefinition, getBlockDrop, isPlaceableBlock } from '../world/blockRegistry.js';
+import { ResourceScanner, createEmptyResourceScanSnapshot } from './resourceScanner.js';
 
 const MOVEMENT_CODES = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'Space'];
 const MINE_RADIUS = 4;
 const PLACE_RADIUS = 3;
+const WOOD_SCAN_RADIUS = 24;
+const WOOD_EXPANDED_SCAN_RADIUS = 48;
+const WOOD_MINE_DISTANCE = 5.5;
 
 export class EnginePlaytestAdapter {
   constructor({ engine }) {
@@ -17,6 +21,10 @@ export class EnginePlaytestAdapter {
     this.lastSavedStateSize = 0;
     this.shelterBlocksPlaced = 0;
     this.nightSurvivedSeconds = 0;
+    this.resourceScanner = new ResourceScanner({
+      terrainGenerator: engine.terrainGenerator,
+    });
+    this.lastResourceScan = createEmptyResourceScanSnapshot();
   }
 
   begin() {
@@ -157,9 +165,12 @@ export class EnginePlaytestAdapter {
     };
   }
 
-  collectDrops() {
-    const droppedItem = this.engine.entitySystem.registry.getEntities()
-      .find((entity) => entity.itemStack && entity.state.removeRequested !== true);
+  collectDrops(preferredStack = null) {
+    const droppedItems = this.engine.entitySystem.registry.getEntities()
+      .filter((entity) => entity.itemStack && entity.state.removeRequested !== true);
+    const droppedItem = preferredStack
+      ? droppedItems.find((entity) => isMatchingItemStack(entity.itemStack, preferredStack)) ?? droppedItems[0]
+      : droppedItems[0];
 
     if (!droppedItem) {
       return {
@@ -334,7 +345,7 @@ export class EnginePlaytestAdapter {
   executeGoalStep({ plan, elapsedSeconds, deltaTime }) {
     const secondaryActions = [];
 
-    if (plan.action !== 'surviveNight') {
+    if (plan.action !== 'surviveNight' && plan.action !== 'gatherWood') {
       this.explore({ elapsedSeconds });
       secondaryActions.push({
         action: 'navigate',
@@ -344,10 +355,10 @@ export class EnginePlaytestAdapter {
 
     switch (plan.action) {
       case 'gatherWood':
-        return this.withSecondaryActions(this.minePreferredBlock({
+        return this.gatherWoodGoal({
           elapsedSeconds,
-          blockIds: [BLOCK_IDS.wood],
-        }), secondaryActions);
+          deltaTime,
+        });
       case 'craftPlanks':
         return this.craftRecipe(RECIPE_IDS.woodPlanks);
       case 'craftTools':
@@ -407,6 +418,19 @@ export class EnginePlaytestAdapter {
         type: 'engine',
         lastSavedStateSize: this.lastSavedStateSize,
       },
+    };
+  }
+
+  getResourceScanSnapshot() {
+    return {
+      ...this.lastResourceScan,
+      nearestWoodTarget: this.lastResourceScan.nearestWoodTarget
+        ? { ...this.lastResourceScan.nearestWoodTarget }
+        : null,
+      vegetationTarget: this.lastResourceScan.vegetationTarget
+        ? { ...this.lastResourceScan.vegetationTarget }
+        : null,
+      targets: (this.lastResourceScan.targets ?? []).map((target) => ({ ...target })),
     };
   }
 
@@ -496,6 +520,224 @@ export class EnginePlaytestAdapter {
     return this.craftRecipe(RECIPE_IDS.ironAxe);
   }
 
+  gatherWoodGoal({ elapsedSeconds }) {
+    const beforeWoodCount = this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.wood);
+    const scanResult = this.scanWoodTargets();
+    const target = scanResult.nearestWoodTarget;
+
+    if (!target) {
+      const fallbackResult = this.recoverWoodSearch({
+        elapsedSeconds,
+        scanResult,
+      });
+
+      return {
+        ...fallbackResult,
+        resourceScanResults: this.getResourceScanSnapshot(),
+      };
+    }
+
+    this.moveTowardTarget(target);
+    this.faceTarget(target);
+
+    if (target.distance > WOOD_MINE_DISTANCE) {
+      this.lastResourceScan = {
+        ...scanResult,
+        lastBlockedReason: `Nearest trunk is ${target.distance.toFixed(1)} blocks away, outside mining reach.`,
+        recovery: 'moving-to-trunk',
+      };
+
+      return {
+        ok: false,
+        skipped: true,
+        moving: true,
+        event: 'moving to wood target',
+        reason: this.lastResourceScan.lastBlockedReason,
+        resourceScanResults: this.getResourceScanSnapshot(),
+      };
+    }
+
+    const mineResult = this.mineSpecificBlock(target);
+    const afterWoodCount = this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.wood);
+    const woodDelta = afterWoodCount - beforeWoodCount;
+
+    if (mineResult.ok && woodDelta > 0) {
+      this.lastResourceScan = {
+        ...scanResult,
+        lastBlockedReason: null,
+        recovery: null,
+      };
+
+      return {
+        ...mineResult,
+        event: 'Wood',
+        woodDelta,
+        resourceScanResults: this.getResourceScanSnapshot(),
+      };
+    }
+
+    this.lastResourceScan = {
+      ...scanResult,
+      lastBlockedReason: mineResult.ok
+        ? 'Mined a trunk target but wood inventory did not increase.'
+        : (mineResult.reason ?? 'Failed to mine the selected trunk target.'),
+      recovery: 'rescan-next-step',
+    };
+
+    return {
+      ok: false,
+      skipped: true,
+      event: 'wood target blocked',
+      reason: this.lastResourceScan.lastBlockedReason,
+      failures: mineResult.failures,
+      resourceScanResults: this.getResourceScanSnapshot(),
+    };
+  }
+
+  scanWoodTargets() {
+    const origin = this.engine.playerController.position;
+    let scanResult = this.resourceScanner.scanWoodTargets({
+      origin,
+      radius: WOOD_SCAN_RADIUS,
+    });
+
+    if (scanResult.nearestWoodTarget || !scanResult.biomeHasTrees) {
+      this.lastResourceScan = scanResult;
+      return scanResult;
+    }
+
+    const expandedScanResult = this.resourceScanner.scanWoodTargets({
+      origin,
+      radius: WOOD_EXPANDED_SCAN_RADIUS,
+    });
+
+    scanResult = {
+      ...expandedScanResult,
+      recovery: 'expanded-scan',
+      lastBlockedReason: expandedScanResult.nearestWoodTarget
+        ? null
+        : 'No valid trunk block found nearby, even after expanding the scan radius.',
+    };
+    this.lastResourceScan = scanResult;
+
+    return scanResult;
+  }
+
+  recoverWoodSearch({ elapsedSeconds, scanResult }) {
+    const vegetationTarget = scanResult.vegetationTarget;
+
+    if (vegetationTarget) {
+      this.moveTowardTarget(vegetationTarget);
+      this.faceTarget(vegetationTarget);
+      this.lastResourceScan = {
+        ...scanResult,
+        lastBlockedReason: 'No valid trunk target found; moving toward dense vegetation and rescanning.',
+        recovery: 'moving-to-dense-vegetation',
+      };
+
+      return {
+        ok: false,
+        skipped: true,
+        moving: true,
+        event: 'searching forest',
+        reason: this.lastResourceScan.lastBlockedReason,
+      };
+    }
+
+    this.explore({ elapsedSeconds });
+    this.lastResourceScan = {
+      ...scanResult,
+      lastBlockedReason: scanResult.biomeHasTrees
+        ? 'Biome can spawn trees, but no trunk or dense vegetation target is loaded.'
+        : 'Current biome has no reliable tree targets near the bot.',
+      recovery: scanResult.biomeHasTrees ? 'wide-exploration-rescan' : 'biome-search',
+    };
+
+    return {
+      ok: false,
+      skipped: true,
+      event: 'wood search blocked',
+      reason: this.lastResourceScan.lastBlockedReason,
+    };
+  }
+
+  mineSpecificBlock(target) {
+    const currentBlockId = this.engine.terrainGenerator.getBlockAtWorldPosition(
+      target.worldX,
+      target.y,
+      target.worldZ,
+    );
+
+    const isValidWoodTarget = currentBlockId === BLOCK_IDS.wood ||
+      (target.isLeafDropTarget && currentBlockId === BLOCK_IDS.leaves);
+
+    if (currentBlockId !== target.blockId || !isValidWoodTarget) {
+      return {
+        ok: false,
+        reason: 'Selected wood target changed before mining.',
+        failures: [{
+          code: 'wood-target-stale',
+          summary: 'Bot selected a wood target that was no longer a valid trunk/drop block when mining executed.',
+          severity: 'low',
+        }],
+      };
+    }
+
+    return this.mineBlockAtTarget(target);
+  }
+
+  mineBlockAtTarget(target) {
+    const wasDestroyed = this.engine.terrainGenerator.setBlockAtWorldPosition(
+      target.worldX,
+      target.y,
+      target.worldZ,
+      BLOCK_IDS.air,
+    );
+
+    if (!wasDestroyed) {
+      return {
+        ok: false,
+        reason: 'Selected wood target was in an unloaded chunk.',
+        failures: [{
+          code: 'mine-unloaded-chunk',
+          summary: 'Bot tried to mine a selected trunk block in an unloaded chunk.',
+          severity: 'low',
+        }],
+      };
+    }
+
+    const dropStack = normalizeDrop(getBlockDrop(target.blockId));
+
+    this.engine.handleBlockMined({
+      targetBlock: {
+        worldX: target.worldX,
+        y: target.y,
+        worldZ: target.worldZ,
+        blockId: target.blockId,
+      },
+      dropStack,
+      blockDefinition: getBlockDefinition(target.blockId),
+    });
+    this.engine.networkSession.queueBlockEdits([{
+      worldX: target.worldX,
+      y: target.y,
+      worldZ: target.worldZ,
+      blockId: BLOCK_IDS.air,
+      action: 'destroy',
+    }]);
+    const collectResult = this.collectDrops(dropStack);
+
+    return {
+      ok: collectResult.ok,
+      event: getBlockDefinition(target.blockId).name,
+      secondaryActions: collectResult.ok
+        ? [{ action: 'collect', event: collectResult.event }]
+        : [],
+      failures: collectResult.failures,
+      reason: collectResult.ok ? null : 'Wood drop could not be collected after mining.',
+    };
+  }
+
   minePreferredBlock({ elapsedSeconds, blockIds }, fallback = null) {
     const target = this.findMineTarget(elapsedSeconds, blockIds);
 
@@ -524,9 +766,11 @@ export class EnginePlaytestAdapter {
       };
     }
 
+    const dropStack = normalizeDrop(getBlockDrop(target.blockId));
+
     this.engine.handleBlockMined({
       targetBlock: target,
-      dropStack: normalizeDrop(getBlockDrop(target.blockId)),
+      dropStack,
       blockDefinition: getBlockDefinition(target.blockId),
     });
     this.engine.networkSession.queueBlockEdits([{
@@ -536,7 +780,7 @@ export class EnginePlaytestAdapter {
       blockId: BLOCK_IDS.air,
       action: 'destroy',
     }]);
-    const collectResult = this.collectDrops();
+    const collectResult = this.collectDrops(dropStack);
 
     return {
       ok: true,
@@ -545,6 +789,33 @@ export class EnginePlaytestAdapter {
         ? [{ action: 'collect', event: collectResult.event }]
         : [],
     };
+  }
+
+  moveTowardTarget(target) {
+    const movement = this.engine.playerController.movementSystem;
+    const distance = Math.hypot(
+      target.worldX + 0.5 - this.engine.playerController.position.x,
+      target.worldZ + 0.5 - this.engine.playerController.position.z,
+    );
+
+    for (const code of MOVEMENT_CODES) {
+      movement.setInput(code, false);
+    }
+
+    if (distance > 2.2) {
+      movement.setInput('KeyW', true);
+      movement.setInput('ShiftLeft', distance > 8);
+    }
+  }
+
+  faceTarget(target) {
+    const playerPosition = this.engine.playerController.position;
+    const directionX = target.worldX + 0.5 - playerPosition.x;
+    const directionZ = target.worldZ + 0.5 - playerPosition.z;
+    const yaw = Math.atan2(-directionX, -directionZ);
+
+    this.engine.cameraSystem.yaw = yaw;
+    this.engine.playerController.movementSystem.setCameraYaw(yaw);
   }
 
   addInventoryResource({ itemType, itemId, name }) {
@@ -720,4 +991,8 @@ export class EnginePlaytestAdapter {
       maxActiveHostiles: 8,
     });
   }
+}
+
+function isMatchingItemStack(leftStack, rightStack) {
+  return leftStack?.itemType === rightStack?.itemType && leftStack?.itemId === rightStack?.itemId;
 }

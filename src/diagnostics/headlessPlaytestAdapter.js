@@ -42,6 +42,7 @@ export class HeadlessPlaytestAdapter {
       saveSizeKb: 2.4,
       lastSavedStateSize: 0,
     };
+    this.lastResourceScan = this.createResourceScanSnapshot();
   }
 
   begin() {
@@ -312,6 +313,18 @@ export class HeadlessPlaytestAdapter {
   }
 
   gatherWood(secondaryActions) {
+    this.lastResourceScan = this.createResourceScanSnapshot({
+      scannedWoodBlocks: 3,
+      woodTargetsFound: 3,
+      nearestWoodTarget: {
+        blockId: 6,
+        worldX: Math.round(this.position.x + 2),
+        y: Math.round(this.position.y),
+        worldZ: Math.round(this.position.z + 2),
+        distance: 2.8,
+        nearGround: true,
+      },
+    });
     this.inventory.wood += 1;
     this.inventory.drops += 1;
     this.stats.droppedItems += 1;
@@ -638,6 +651,38 @@ export class HeadlessPlaytestAdapter {
         completedFurnaceJobs: this.progression.completedFurnaceJobs,
         hostileDamageDone: this.stats.hostileDamageDone,
       },
+    };
+  }
+
+  getResourceScanSnapshot() {
+    return {
+      ...this.lastResourceScan,
+      nearestWoodTarget: this.lastResourceScan.nearestWoodTarget
+        ? { ...this.lastResourceScan.nearestWoodTarget }
+        : null,
+      targets: (this.lastResourceScan.targets ?? []).map((target) => ({ ...target })),
+    };
+  }
+
+  createResourceScanSnapshot(overrides = {}) {
+    const nearestWoodTarget = overrides.nearestWoodTarget ?? null;
+
+    return {
+      radius: 24,
+      scannedChunks: 9,
+      scannedWoodBlocks: overrides.scannedWoodBlocks ?? 0,
+      rejectedLeafTargets: 0,
+      rejectedUnreachableTargets: 0,
+      woodTargetsFound: overrides.woodTargetsFound ?? 0,
+      woodTargetsRejected: 0,
+      nearestWoodTarget,
+      woodTargetDistance: nearestWoodTarget?.distance ?? null,
+      targets: nearestWoodTarget ? [{ ...nearestWoodTarget }] : [],
+      vegetationTarget: null,
+      biome: this.stats.activeBiome,
+      biomeHasTrees: this.stats.activeBiome !== 'Desert',
+      lastBlockedReason: overrides.lastBlockedReason ?? null,
+      recovery: null,
     };
   }
 
