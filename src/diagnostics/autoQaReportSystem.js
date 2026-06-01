@@ -56,7 +56,15 @@ export class AutoQaReportSystem {
     };
 
     report.aiTasks = this.taskGenerator.createTasks(report);
-    this.persistReport(report);
+    const wasPersisted = this.persistReport(report);
+    const exportIntegrityIssue = this.createExportIntegrityIssue(report, wasPersisted);
+
+    if (exportIntegrityIssue) {
+      report.issues.push(exportIntegrityIssue);
+      report.aiTasks = this.taskGenerator.createTasks(report);
+      this.persistReport(report);
+    }
+
     this.telemetrySystem.recordGameplayEvent('feedback-report', {
       issues: report.issues.length,
       tasks: report.aiTasks.length,
@@ -92,6 +100,42 @@ export class AutoQaReportSystem {
       return false;
     }
   }
+
+  createExportIntegrityIssue(report, wasPersisted) {
+    if (!this.storage || !wasPersisted || ((report.issues?.length ?? 0) === 0 && (report.aiTasks?.length ?? 0) === 0)) {
+      return null;
+    }
+
+    try {
+      const storedReport = JSON.parse(this.storage.getItem(STORAGE_KEY) ?? 'null');
+      const storedIssueCount = Array.isArray(storedReport?.issues) ? storedReport.issues.length : 0;
+      const storedTaskCount = Array.isArray(storedReport?.aiTasks) ? storedReport.aiTasks.length : 0;
+      const lostIssues = (report.issues?.length ?? 0) > 0 && storedIssueCount === 0;
+      const lostTasks = (report.aiTasks?.length ?? 0) > 0 && storedTaskCount === 0;
+
+      if (!lostIssues && !lostTasks) {
+        return null;
+      }
+
+      return {
+        code: 'report-export-integrity-loss',
+        category: AI_TASK_CATEGORIES.bug,
+        severity: 'high',
+        title: 'Preserve AI report issues and tasks during export',
+        summary: 'The report generator produced issues or AI tasks, but the persisted JSON did not retain them.',
+        evidence: `Generated issues/tasks: ${report.issues.length}/${report.aiTasks.length}; persisted issues/tasks: ${storedIssueCount}/${storedTaskCount}.`,
+      };
+    } catch {
+      return {
+        code: 'report-export-integrity-loss',
+        category: AI_TASK_CATEGORIES.bug,
+        severity: 'high',
+        title: 'Preserve AI report issues and tasks during export',
+        summary: 'The report generator could not re-read the persisted JSON report for integrity validation.',
+        evidence: 'Report storage returned malformed JSON during export integrity verification.',
+      };
+    }
+  }
 }
 
 export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
@@ -107,6 +151,8 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
   const failedCrafts = simulationSnapshot.crafting?.failedCrafts ?? simulationSnapshot.failedCrafts ?? [];
   const failedActions = simulationSnapshot.failedActions ?? [];
   const resourceScanResults = simulationSnapshot.resourceScanResults ?? {};
+  const shelterValidation = simulationSnapshot.shelterValidation ?? {};
+  const blockedGoals = simulationSnapshot.blockedGoals ?? [];
   const miningRatePerMinute = calculateActionRatePerMinute({
     count: simulationSnapshot.actionCounts?.mine,
     elapsedSeconds: simulationSnapshot.elapsedSeconds,
@@ -223,6 +269,34 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
   }
 
   if (
+    Number(shelterValidation.invalidShelterBlocksRejected ?? simulationSnapshot.invalidShelterBlocksRejected ?? 0) > 0 ||
+    failedActions.some((failedAction) => String(failedAction.reason ?? '').toLowerCase().includes('not valid shelter material'))
+  ) {
+    issues.push({
+      code: 'invalid-shelter-material',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Reject invalid AI shelter materials',
+      summary: 'The autonomous player attempted to use invalid shelter material during buildShelter.',
+      evidence: `Rejected invalid shelter blocks: ${shelterValidation.invalidShelterBlocksRejected ?? simulationSnapshot.invalidShelterBlocksRejected ?? 0}.`,
+    });
+  }
+
+  if (
+    shelterValidation.lastBlockedReason &&
+    plannerSnapshot?.currentGoalId === 'surviveNight'
+  ) {
+    issues.push({
+      code: 'night-safety-not-proven',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Require real shelter safety before surviveNight',
+      summary: shelterValidation.lastBlockedReason,
+      evidence: `Shelter blocks: ${shelterValidation.validShelterBlocksPlaced ?? 0}; score: ${shelterValidation.safetyScore ?? 0}; safe distance: ${Boolean(shelterValidation.safeDistanceNoAggro)}.`,
+    });
+  }
+
+  if (
     resourceScanResults.lastBlockedReason &&
     plannerSnapshot?.currentGoalId === 'gatherWood'
   ) {
@@ -236,6 +310,22 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
     });
   }
 
+  if (
+    !issues.some((issue) => issue.code === 'wood-target-scan-blocked') &&
+    resourceScanResults.biomeHasTrees &&
+    Number(resourceScanResults.woodTargetsFound ?? 0) === 0 &&
+    resourceScanResults.lastBlockedReason
+  ) {
+    issues.push({
+      code: 'wood-target-scan-blocked',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Review AI wood target scanning',
+      summary: resourceScanResults.lastBlockedReason,
+      evidence: `No reachable trunks found in ${resourceScanResults.biome ?? 'unknown'}; rejected leaves: ${resourceScanResults.rejectedLeafTargets ?? 0}.`,
+    });
+  }
+
   for (const failedGoal of plannerSnapshot?.goalsFailed ?? []) {
     issues.push({
       code: `goal-failed-${failedGoal.id}`,
@@ -244,6 +334,17 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
       title: `Review failed AI goal: ${failedGoal.label}`,
       summary: failedGoal.reason ?? `${failedGoal.label} did not complete during the autonomous playtest.`,
       evidence: `Time spent: ${failedGoal.timeSpentSeconds}s; failed at ${failedGoal.failedAtSeconds}s.`,
+    });
+  }
+
+  for (const blockedGoal of blockedGoals.slice(0, 6)) {
+    issues.push({
+      code: blockedGoal.code,
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: getBottleneckSeverity(blockedGoal.code),
+      title: `Review blocked AI goal: ${blockedGoal.goalName}`,
+      summary: blockedGoal.reason,
+      evidence: `Count: ${blockedGoal.count ?? 1}; last seen at ${blockedGoal.lastAtSeconds ?? 'unknown'}s.`,
     });
   }
 
@@ -365,6 +466,16 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     'atSeconds',
   ]));
   const resourceScanResults = sanitizeResourceScanSnapshot(simulationSnapshot.resourceScanResults);
+  const shelterValidation = sanitizeShelterValidationSnapshot(simulationSnapshot.shelterValidation);
+  const recoveryActions = (simulationSnapshot.recoveryActions ?? []).slice(0, 48).map(sanitizeRecoveryAction);
+  const blockedGoals = (simulationSnapshot.blockedGoals ?? []).slice(0, 24).map((blockedGoal) => pick(blockedGoal, [
+    'goalId',
+    'goalName',
+    'code',
+    'reason',
+    'count',
+    'lastAtSeconds',
+  ]));
 
   return {
     status: simulationSnapshot.status,
@@ -380,9 +491,15 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     craftedItems: craftingSnapshot.craftedItems,
     failedCrafts: craftingSnapshot.failedCrafts,
     failedActions,
+    recoveryActions,
     resourceScanResults,
     woodTargetsFound: Number(simulationSnapshot.woodTargetsFound ?? resourceScanResults?.woodTargetsFound ?? 0),
     woodTargetsRejected: Number(simulationSnapshot.woodTargetsRejected ?? resourceScanResults?.woodTargetsRejected ?? 0),
+    rejectedLeafTargets: Number(simulationSnapshot.rejectedLeafTargets ?? resourceScanResults?.rejectedLeafTargets ?? 0),
+    shelterValidation,
+    validShelterBlocksPlaced: Number(simulationSnapshot.validShelterBlocksPlaced ?? shelterValidation?.validShelterBlocksPlaced ?? 0),
+    invalidShelterBlocksRejected: Number(simulationSnapshot.invalidShelterBlocksRejected ?? shelterValidation?.invalidShelterBlocksRejected ?? 0),
+    blockedGoals,
     goalTransitions,
     failures: (simulationSnapshot.failures ?? []).slice(0, 24).map((failure) => pick(failure, [
       'code',
@@ -436,6 +553,36 @@ function sanitizeResourceTarget(target = null) {
     'verticalDelta',
     'nearGround',
     'isLeafDropTarget',
+  ]);
+}
+
+function sanitizeShelterValidationSnapshot(shelterValidation = null) {
+  if (!shelterValidation) {
+    return null;
+  }
+
+  return {
+    validShelterBlocksPlaced: Number(shelterValidation.validShelterBlocksPlaced ?? 0),
+    invalidShelterBlocksRejected: Number(shelterValidation.invalidShelterBlocksRejected ?? 0),
+    minValidBlocks: Number(shelterValidation.minValidBlocks ?? 0),
+    hasPartialWall: Boolean(shelterValidation.hasPartialWall),
+    hasRoof: Boolean(shelterValidation.hasRoof),
+    safetyScore: Number(shelterValidation.safetyScore ?? 0),
+    isValid: Boolean(shelterValidation.isValid),
+    isSafeForNight: Boolean(shelterValidation.isSafeForNight),
+    safeDistanceNoAggro: Boolean(shelterValidation.safeDistanceNoAggro),
+    lastBlockedReason: shelterValidation.lastBlockedReason ?? null,
+  };
+}
+
+function sanitizeRecoveryAction(recoveryAction = {}) {
+  return pick(recoveryAction, [
+    'goalId',
+    'goalName',
+    'action',
+    'type',
+    'reason',
+    'atSeconds',
   ]);
 }
 
@@ -547,7 +694,15 @@ function classifySimulationFailure(code) {
     return AI_TASK_CATEGORIES.performance;
   }
 
-  if (code.includes('action-loop') || code.includes('craft-no-inventory-change') || code.includes('mining-spam') || code.includes('wood-target')) {
+  if (
+    code.includes('action-loop') ||
+    code.includes('craft-no-inventory-change') ||
+    code.includes('mining-spam') ||
+    code.includes('wood-target') ||
+    code.includes('invalid-shelter') ||
+    code.includes('night-safety') ||
+    code.includes('goal-reality-validation')
+  ) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
@@ -567,7 +722,15 @@ function classifySimulationFailure(code) {
 }
 
 function getBottleneckSeverity(code) {
-  if (code.includes('missing-sticks') || code.includes('goal-no-progress') || code.includes('action-loop') || code.includes('mining-spam')) {
+  if (
+    code.includes('missing-sticks') ||
+    code.includes('goal-no-progress') ||
+    code.includes('action-loop') ||
+    code.includes('mining-spam') ||
+    code.includes('invalid-shelter') ||
+    code.includes('night-safety') ||
+    code.includes('goal-reality-validation')
+  ) {
     return 'medium';
   }
 

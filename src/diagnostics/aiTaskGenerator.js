@@ -54,7 +54,14 @@ function classifyIssue(issue) {
     return AI_TASK_CATEGORIES.performance;
   }
 
-  if (issue.code.includes('death') || issue.code.includes('combat') || issue.code.includes('wood-target')) {
+  if (
+    issue.code.includes('death') ||
+    issue.code.includes('combat') ||
+    issue.code.includes('wood-target') ||
+    issue.code.includes('invalid-shelter') ||
+    issue.code.includes('night-safety') ||
+    issue.code.includes('goal-reality-validation')
+  ) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
@@ -69,7 +76,7 @@ function classifyIssue(issue) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
-  if (issue.code.includes('console')) {
+  if (issue.code.includes('console') || issue.code.includes('report-export')) {
     return AI_TASK_CATEGORIES.bug;
   }
 
@@ -79,6 +86,10 @@ function classifyIssue(issue) {
 function proposeChange(issue) {
   if (issue.code === 'console-errors') {
     return 'Reproduce the session path, fix the source error, and add a focused smoke test when possible.';
+  }
+
+  if (issue.code.includes('report-export')) {
+    return 'Verify report serialization, persistence, copy, and download paths preserve non-empty issues and aiTasks arrays.';
   }
 
   if (issue.code === 'low-average-fps' || issue.code === 'low-min-fps') {
@@ -99,7 +110,10 @@ function proposeChange(issue) {
     issue.code.includes('failed-ai-crafts') ||
     issue.code.includes('failed-ai-actions') ||
     issue.code.includes('mining-spam') ||
-    issue.code.includes('wood-target')
+    issue.code.includes('wood-target') ||
+    issue.code.includes('invalid-shelter') ||
+    issue.code.includes('night-safety') ||
+    issue.code.includes('goal-reality-validation')
   ) {
     return 'Inspect the AI planner requirement chain, adapter execution result, and inventory/world state for this progression goal.';
   }

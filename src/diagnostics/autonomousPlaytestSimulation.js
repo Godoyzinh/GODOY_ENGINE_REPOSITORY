@@ -50,8 +50,10 @@ export class AutonomousPlaytestSimulation {
     this.craftedItems = [];
     this.failedCrafts = [];
     this.failedActions = [];
+    this.recoveryActions = [];
     this.inventorySnapshot = null;
     this.resourceScanResults = null;
+    this.shelterValidation = null;
     this.miningSpamReported = false;
   }
 
@@ -81,8 +83,10 @@ export class AutonomousPlaytestSimulation {
     this.craftedItems = [];
     this.failedCrafts = [];
     this.failedActions = [];
+    this.recoveryActions = [];
     this.inventorySnapshot = null;
     this.resourceScanResults = null;
+    this.shelterValidation = null;
     this.miningSpamReported = false;
     this.status = 'running';
     this.telemetrySystem.recordGameplayEvent('auto-test-start', {
@@ -222,6 +226,9 @@ export class AutonomousPlaytestSimulation {
     this.detectActionLoop(plan);
     this.updateInventorySnapshot(nextContext);
     this.updateResourceScanSnapshot(result);
+    this.updateShelterValidationSnapshot(result);
+    this.recordResultFailedActions(plan, actionName, result);
+    this.recordRecoveryAction(plan, result);
 
     if (!result.ok && !result.moving) {
       this.recordFailedAction({
@@ -264,6 +271,7 @@ export class AutonomousPlaytestSimulation {
 
   validatePlannedResult({ plan, actionName, result, beforeContext, afterContext }) {
     const inventoryDelta = diffInventory(beforeContext.inventory, afterContext.inventory);
+    const worldDelta = diffInventory(beforeContext.world, afterContext.world);
 
     if (actionName === 'craft') {
       if (result.ok && !hasInventoryChange(inventoryDelta)) {
@@ -338,7 +346,58 @@ export class AutonomousPlaytestSimulation {
       };
     }
 
+    const realityFailure = this.validateGoalReality({
+      plan,
+      result,
+      inventoryDelta,
+      worldDelta,
+      beforeContext,
+      afterContext,
+    });
+
+    if (realityFailure) {
+      return {
+        ...result,
+        ok: false,
+        skipped: true,
+        failures: [
+          ...(result.failures ?? []),
+          realityFailure,
+        ],
+        reason: realityFailure.summary,
+      };
+    }
+
     return result;
+  }
+
+  validateGoalReality({ plan, result, inventoryDelta, worldDelta, beforeContext, afterContext }) {
+    if (!result.ok) {
+      return null;
+    }
+
+    const checks = {
+      craftPlanks: () => Number(inventoryDelta.wood ?? 0) < 0 && Number(inventoryDelta.planks ?? 0) > 0,
+      craftTools: () => Number(inventoryDelta.sticks ?? 0) > 0 && Number(afterContext.inventory?.basicTools ?? 0) >= 1,
+      buildShelter: () => Number(worldDelta.validShelterBlocksPlaced ?? worldDelta.shelterBlocks ?? 0) > 0 &&
+        Boolean(afterContext.world?.shelterIsValid || result.shelterValidation?.validShelterBlocksPlaced > beforeContext.world?.validShelterBlocksPlaced),
+      surviveNight: () => Number(worldDelta.nightSurvivedSeconds ?? 0) > 0 &&
+        (Boolean(afterContext.world?.shelterIsSafeForNight) || Boolean(afterContext.world?.safeDistanceNoAggro)),
+      obtainFurnace: () => Number(inventoryDelta.furnace ?? 0) > 0 || Number(afterContext.world?.placedFurnaces ?? 0) > Number(beforeContext.world?.placedFurnaces ?? 0),
+      smeltOre: () => Number(inventoryDelta.ironIngot ?? 0) > 0,
+      upgradeEquipment: () => Number(inventoryDelta.ironTools ?? 0) > 0,
+    };
+    const check = checks[plan.action];
+
+    if (!check || check()) {
+      return null;
+    }
+
+    return {
+      code: `goal-reality-validation:${plan.action}`,
+      summary: `Planner action "${plan.action}" returned ok without the required real inventory/world delta.`,
+      severity: 'medium',
+    };
   }
 
   detectActionLoop(plan) {
@@ -417,6 +476,46 @@ export class AutonomousPlaytestSimulation {
     this.failedActions = this.failedActions.slice(-48);
   }
 
+  recordResultFailedActions(plan, actionName, result) {
+    for (const failedAction of result.failedActions ?? []) {
+      this.failedActions.push({
+        goalId: failedAction.goalId ?? plan.goalId,
+        goalName: failedAction.goalName ?? plan.goalName,
+        action: failedAction.action ?? plan.action,
+        actionName: failedAction.actionName ?? actionName,
+        reason: failedAction.reason ?? result.reason ?? 'Action reported a failed sub-step.',
+        atSeconds: round(this.elapsedSeconds, 2),
+      });
+    }
+
+    this.failedActions = this.failedActions.slice(-48);
+  }
+
+  recordRecoveryAction(plan, result) {
+    const recoveryAction = result.recoveryAction ?? (
+      result.resourceScanResults?.recovery
+        ? {
+          type: result.resourceScanResults.recovery,
+          reason: result.resourceScanResults.lastBlockedReason,
+        }
+        : null
+    );
+
+    if (!recoveryAction) {
+      return;
+    }
+
+    this.recoveryActions.push({
+      goalId: plan.goalId,
+      goalName: plan.goalName,
+      action: plan.action,
+      type: recoveryAction.type,
+      reason: recoveryAction.reason ?? result.reason ?? 'Recovery action requested.',
+      atSeconds: round(this.elapsedSeconds, 2),
+    });
+    this.recoveryActions = this.recoveryActions.slice(-48);
+  }
+
   updateInventorySnapshot(context) {
     const progressContext = this.goalPlanner.createProgressContext(context);
 
@@ -440,6 +539,16 @@ export class AutonomousPlaytestSimulation {
         : null,
       targets: (resourceScanResults.targets ?? []).map((target) => ({ ...target })),
     };
+  }
+
+  updateShelterValidationSnapshot(result = {}) {
+    const shelterValidation = result.shelterValidation ?? this.adapter.getShelterValidationSnapshot?.();
+
+    if (!shelterValidation) {
+      return;
+    }
+
+    this.shelterValidation = { ...shelterValidation };
   }
 
   updateTimedAction(actionName, deltaTime, intervalSeconds, callback) {
@@ -674,6 +783,8 @@ export class AutonomousPlaytestSimulation {
     const plannerSnapshot = this.goalPlanner.getSnapshot();
     const inventorySnapshot = this.inventorySnapshot ?? this.goalPlanner.getInventorySnapshot();
     const resourceScanResults = this.resourceScanResults ?? this.adapter.getResourceScanSnapshot?.() ?? null;
+    const shelterValidation = this.shelterValidation ?? this.adapter.getShelterValidationSnapshot?.() ?? null;
+    const blockedGoals = createBlockedGoalsSnapshot(plannerSnapshot);
 
     return {
       status: this.status,
@@ -698,9 +809,15 @@ export class AutonomousPlaytestSimulation {
       craftedItems: this.craftedItems.map((craftedItem) => ({ ...craftedItem })),
       failedCrafts: this.failedCrafts.map((failedCraft) => ({ ...failedCraft })),
       failedActions: this.failedActions.map((failedAction) => ({ ...failedAction })),
+      recoveryActions: this.recoveryActions.map((recoveryAction) => ({ ...recoveryAction })),
       resourceScanResults,
       woodTargetsFound: resourceScanResults?.woodTargetsFound ?? 0,
       woodTargetsRejected: resourceScanResults?.woodTargetsRejected ?? 0,
+      rejectedLeafTargets: resourceScanResults?.rejectedLeafTargets ?? 0,
+      shelterValidation,
+      validShelterBlocksPlaced: shelterValidation?.validShelterBlocksPlaced ?? 0,
+      invalidShelterBlocksRejected: shelterValidation?.invalidShelterBlocksRejected ?? 0,
+      blockedGoals,
       goalTransitions: (plannerSnapshot.goalTransitions ?? []).map((transition) => ({ ...transition })),
       planner: plannerSnapshot,
       lastResult: this.lastResult ? { ...this.lastResult } : null,
@@ -797,6 +914,52 @@ function hasInventoryChange(inventoryDelta) {
 
 function getPositiveDeltaTotal(inventoryDelta) {
   return Object.values(inventoryDelta).reduce((total, value) => total + Math.max(0, Number(value) || 0), 0);
+}
+
+function createBlockedGoalsSnapshot(plannerSnapshot = {}) {
+  const blockedGoals = [];
+
+  for (const bottleneck of plannerSnapshot.bottlenecks ?? []) {
+    blockedGoals.push({
+      goalId: bottleneck.goalId,
+      goalName: bottleneck.goalName,
+      code: bottleneck.code,
+      reason: bottleneck.summary,
+      count: bottleneck.count,
+      lastAtSeconds: bottleneck.lastAtSeconds,
+    });
+  }
+
+  for (const failedGoal of plannerSnapshot.goalsFailed ?? []) {
+    blockedGoals.push({
+      goalId: failedGoal.id,
+      goalName: failedGoal.label,
+      code: `goal-failed:${failedGoal.id}`,
+      reason: failedGoal.reason,
+      count: 1,
+      lastAtSeconds: failedGoal.failedAtSeconds,
+    });
+  }
+
+  return dedupeBlockedGoals(blockedGoals).slice(0, 24);
+}
+
+function dedupeBlockedGoals(blockedGoals) {
+  const seen = new Set();
+  const deduped = [];
+
+  for (const blockedGoal of blockedGoals) {
+    const key = `${blockedGoal.code}:${blockedGoal.goalId}`;
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(blockedGoal);
+  }
+
+  return deduped;
 }
 
 function getHorizontalDistance(leftPosition, rightPosition) {

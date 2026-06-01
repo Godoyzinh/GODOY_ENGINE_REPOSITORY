@@ -61,6 +61,8 @@ The CLI writes JSON reports into `reports/`. Generated report files are ignored 
 - Inventory initial/current/delta snapshots for autonomous playtests, also exported as `inventorySnapshot` and `resourceDeltas`.
 - Goal transition history, failed action evidence, and crafted item/failed craft attempt lists, including no-delta craft failures.
 - Resource scan results for wood progression, including nearest trunk target, scan radius, scanned wood blocks, rejected leaves, target counts, and blocked reasons.
+- Shelter validation results, including valid placed blocks, rejected invalid blocks, wall/roof coverage, safety score, and night safety status.
+- Blocked goal and recovery action history for cases where the bot expands wood scans, gathers missing shelter material, or requests a safer shelter footprint.
 - Recent sanitized gameplay events.
 - Runtime stats for renderer, settings, terrain, entities, survival, networking, and persistence.
 - Browser/system capabilities needed for QA.
@@ -86,6 +88,7 @@ AI-generated tasks are suggestions, not commands.
 - Treat repeated same-action loops and 30 second no-progress goal states as actionable gameplay tasks.
 - Treat mining spam above the QA threshold as an actionable gameplay task, especially when resource deltas do not justify the action count.
 - Treat wood target scan blocks as gameplay tasks when the bot is in Gather Wood and a tree-capable biome has no reachable trunk target.
+- Treat invalid shelter material, failed shelter safety validation, and no-delta goal success as actionable gameplay tasks.
 
 ## Branch And PR Rules
 

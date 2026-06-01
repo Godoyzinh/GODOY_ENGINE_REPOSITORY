@@ -23,6 +23,8 @@
 - Tree canopy columns no longer count as high walkable ground for player vertical snapping.
 - Technical debug data is hidden by default and kept behind menu settings or `F3`.
 - Autonomous playtest behavior now follows survival progression goals instead of random timed action loops.
+- Autonomous wood gathering now validates real trunk targets and wood inventory deltas.
+- Autonomous shelter progression now rejects invalid materials and requires real shelter safety before Survive Night can advance.
 
 ## WebGL Fallback
 

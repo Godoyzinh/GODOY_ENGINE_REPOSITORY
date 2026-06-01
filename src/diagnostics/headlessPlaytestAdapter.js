@@ -1,3 +1,12 @@
+import {
+  createEmptyShelterValidation,
+  isInvalidShelterResourceKey,
+  isValidShelterResourceKey,
+  validateShelter,
+} from './shelterValidator.js';
+
+const VALID_HEADLESS_SHELTER_KEYS = new Set(['wood', 'planks', 'stone', 'dirt']);
+
 export class HeadlessPlaytestAdapter {
   constructor({ seed = 1337 } = {}) {
     this.seed = seed;
@@ -18,6 +27,10 @@ export class HeadlessPlaytestAdapter {
       ironTools: 0,
       berries: 4,
       drops: 0,
+      grass: 8,
+      leaves: 0,
+      water: 0,
+      campfire: 0,
     };
     this.progression = {
       shelterBlocks: 0,
@@ -25,6 +38,8 @@ export class HeadlessPlaytestAdapter {
       nightSurvived: false,
       equipmentTier: 'starter',
       completedFurnaceJobs: 0,
+      shelterPlacements: [],
+      invalidShelterBlocksRejected: 0,
     };
     this.stats = {
       chunksLoaded: 9,
@@ -35,6 +50,7 @@ export class HeadlessPlaytestAdapter {
       activeEntities: 2,
       droppedItems: 0,
       hostiles: 1,
+      aggroHostiles: 1,
       health: 100,
       hunger: 100,
       stamina: 100,
@@ -43,6 +59,9 @@ export class HeadlessPlaytestAdapter {
       lastSavedStateSize: 0,
     };
     this.lastResourceScan = this.createResourceScanSnapshot();
+    this.lastShelterValidation = createEmptyShelterValidation();
+    this.selectedShelterMaterial = 'grass';
+    this.reportedInvalidShelterMaterials = new Set();
   }
 
   begin() {
@@ -51,6 +70,11 @@ export class HeadlessPlaytestAdapter {
     this.stats.stamina = 100;
     this.progression.nightSurvivedSeconds = 0;
     this.progression.nightSurvived = false;
+    this.progression.shelterBlocks = 0;
+    this.progression.shelterPlacements = [];
+    this.progression.invalidShelterBlocksRejected = 0;
+    this.lastShelterValidation = createEmptyShelterValidation();
+    this.reportedInvalidShelterMaterials.clear();
   }
 
   end() {
@@ -236,6 +260,7 @@ export class HeadlessPlaytestAdapter {
         basicTools: this.inventory.basicTools,
         ironTools: this.inventory.ironTools,
         buildBlocks: this.inventory.dirt + this.inventory.stone + this.inventory.wood + this.inventory.planks,
+        validBuildBlocks: this.getValidBuildBlockCount(),
       },
       survival: {
         health: this.stats.health,
@@ -244,9 +269,14 @@ export class HeadlessPlaytestAdapter {
       },
       world: {
         activeBiome: this.stats.activeBiome,
-        shelterBlocks: this.progression.shelterBlocks,
+        shelterBlocks: this.lastShelterValidation.validShelterBlocksPlaced,
+        validShelterBlocksPlaced: this.lastShelterValidation.validShelterBlocksPlaced,
+        invalidShelterBlocksRejected: this.lastShelterValidation.invalidShelterBlocksRejected,
+        shelterIsValid: this.lastShelterValidation.isValid,
+        shelterIsSafeForNight: this.lastShelterValidation.isSafeForNight,
+        safeDistanceNoAggro: this.lastShelterValidation.safeDistanceNoAggro,
         nightSurvivedSeconds: this.progression.nightSurvivedSeconds,
-        nightSurvived: this.progression.nightSurvived,
+        nightSurvived: this.progression.nightSurvived && this.lastShelterValidation.isSafeForNight,
       },
       progression: {
         equipmentTier: this.progression.equipmentTier,
@@ -406,30 +436,75 @@ export class HeadlessPlaytestAdapter {
   }
 
   buildShelter() {
+    const invalidSelectionFailure = this.consumeInvalidShelterSelectionFailure();
     const blockType = this.consumeShelterBlock();
 
     if (!blockType) {
+      this.updateShelterValidation({
+        lastBlockedReason: 'No valid shelter material available. Need wood, planks, stone, or dirt.',
+      });
+
       return {
         ok: false,
         skipped: true,
+        event: 'missing shelter material',
+        reason: this.lastShelterValidation.lastBlockedReason,
+        failures: invalidSelectionFailure ? [invalidSelectionFailure] : [],
+        failedActions: invalidSelectionFailure ? [createInvalidShelterFailedAction(invalidSelectionFailure)] : [],
+        recoveryAction: {
+          type: 'gather-valid-shelter-material',
+          reason: 'Shelter placement needs wood, planks, stone, or dirt.',
+        },
+        shelterValidation: this.getShelterValidationSnapshot(),
       };
     }
 
-    const placedCount = blockType === 'planks' ? 2 : 3;
+    const pattern = createHeadlessShelterPattern(this.progression.shelterPlacements.length);
 
-    this.progression.shelterBlocks += placedCount;
+    this.progression.shelterPlacements.push({
+      resourceKey: blockType,
+      role: pattern.role,
+      side: pattern.side,
+    });
+    this.updateShelterValidation();
+    this.progression.shelterBlocks = this.lastShelterValidation.validShelterBlocksPlaced;
 
     return {
       ok: true,
       event: blockType,
-      count: placedCount,
+      count: 1,
+      failures: invalidSelectionFailure ? [invalidSelectionFailure] : [],
+      failedActions: invalidSelectionFailure ? [createInvalidShelterFailedAction(invalidSelectionFailure)] : [],
+      shelterValidation: this.getShelterValidationSnapshot(),
+      validShelterBlocksPlaced: this.lastShelterValidation.validShelterBlocksPlaced,
+      invalidShelterBlocksRejected: this.lastShelterValidation.invalidShelterBlocksRejected,
     };
   }
 
   surviveNight(deltaTime, secondaryActions) {
     this.survive();
+    const shelterValidation = this.updateShelterValidation();
 
-    if (this.progression.shelterBlocks >= 8) {
+    if (!shelterValidation.isSafeForNight) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'night safety blocked',
+        reason: shelterValidation.lastBlockedReason,
+        recoveryAction: {
+          type: 'improve-shelter',
+          reason: shelterValidation.lastBlockedReason,
+        },
+        shelterValidation,
+        failures: [{
+          code: 'night-safety-not-proven',
+          summary: shelterValidation.lastBlockedReason,
+          severity: 'medium',
+        }],
+      };
+    }
+
+    if (shelterValidation.isSafeForNight) {
       this.progression.nightSurvivedSeconds += deltaTime;
     }
 
@@ -453,6 +528,7 @@ export class HeadlessPlaytestAdapter {
       ok: true,
       event: 'night shelter',
       secondaryActions,
+      shelterValidation: this.getShelterValidationSnapshot(),
     };
   }
 
@@ -560,23 +636,58 @@ export class HeadlessPlaytestAdapter {
   }
 
   consumeShelterBlock() {
-    if (consumeFromInventory(this.inventory, 'dirt')) {
+    if (consumeFromInventory(this.inventory, 'dirt') && isValidShelterResourceKey('dirt')) {
       return 'dirt';
     }
 
-    if (consumeFromInventory(this.inventory, 'planks')) {
+    if (consumeFromInventory(this.inventory, 'planks') && isValidShelterResourceKey('planks')) {
       return 'planks';
     }
 
-    if (consumeFromInventory(this.inventory, 'stone')) {
+    if (consumeFromInventory(this.inventory, 'stone') && isValidShelterResourceKey('stone')) {
       return 'stone';
     }
 
-    if (consumeFromInventory(this.inventory, 'wood')) {
+    if (consumeFromInventory(this.inventory, 'wood') && isValidShelterResourceKey('wood')) {
       return 'wood';
     }
 
     return null;
+  }
+
+  consumeInvalidShelterSelectionFailure() {
+    const material = this.selectedShelterMaterial;
+
+    if (!isInvalidShelterResourceKey(material) || this.reportedInvalidShelterMaterials.has(material)) {
+      return null;
+    }
+
+    this.reportedInvalidShelterMaterials.add(material);
+    this.progression.invalidShelterBlocksRejected += 1;
+
+    return {
+      code: 'invalid-shelter-material',
+      summary: `${material} is not valid shelter material.`,
+      severity: 'medium',
+    };
+  }
+
+  updateShelterValidation({ lastBlockedReason = null } = {}) {
+    const safeDistanceNoAggro = this.stats.aggroHostiles === 0 && this.stats.hostiles === 0;
+
+    this.lastShelterValidation = validateShelter({
+      placements: this.progression.shelterPlacements,
+      invalidRejected: this.progression.invalidShelterBlocksRejected,
+      safeDistanceNoAggro,
+      lastBlockedReason,
+    });
+
+    return this.getShelterValidationSnapshot();
+  }
+
+  getValidBuildBlockCount() {
+    return [...VALID_HEADLESS_SHELTER_KEYS]
+      .reduce((count, key) => count + (this.inventory[key] ?? 0), 0);
   }
 
   getPosition() {
@@ -627,7 +738,7 @@ export class HeadlessPlaytestAdapter {
         droppedItems: this.stats.droppedItems,
         npcs: 1,
         hostiles: this.stats.hostiles,
-        aggroHostiles: 1,
+        aggroHostiles: this.stats.aggroHostiles,
       },
       network: {
         mode: 'headless',
@@ -664,17 +775,21 @@ export class HeadlessPlaytestAdapter {
     };
   }
 
+  getShelterValidationSnapshot() {
+    return { ...this.lastShelterValidation };
+  }
+
   createResourceScanSnapshot(overrides = {}) {
     const nearestWoodTarget = overrides.nearestWoodTarget ?? null;
 
     return {
-      radius: 24,
+      radius: overrides.radius ?? 24,
       scannedChunks: 9,
       scannedWoodBlocks: overrides.scannedWoodBlocks ?? 0,
-      rejectedLeafTargets: 0,
-      rejectedUnreachableTargets: 0,
+      rejectedLeafTargets: overrides.rejectedLeafTargets ?? 0,
+      rejectedUnreachableTargets: overrides.rejectedUnreachableTargets ?? 0,
       woodTargetsFound: overrides.woodTargetsFound ?? 0,
-      woodTargetsRejected: 0,
+      woodTargetsRejected: overrides.woodTargetsRejected ?? overrides.rejectedLeafTargets ?? 0,
       nearestWoodTarget,
       woodTargetDistance: nearestWoodTarget?.distance ?? null,
       targets: nearestWoodTarget ? [{ ...nearestWoodTarget }] : [],
@@ -682,7 +797,7 @@ export class HeadlessPlaytestAdapter {
       biome: this.stats.activeBiome,
       biomeHasTrees: this.stats.activeBiome !== 'Desert',
       lastBlockedReason: overrides.lastBlockedReason ?? null,
-      recovery: null,
+      recovery: overrides.recovery ?? null,
     };
   }
 
@@ -704,6 +819,36 @@ function consumeFromInventory(inventory, key, count = 1) {
 
   inventory[key] -= count;
   return true;
+}
+
+function createHeadlessShelterPattern(index) {
+  const pattern = [
+    { role: 'wall', side: 'north' },
+    { role: 'wall', side: 'north' },
+    { role: 'wall', side: 'north' },
+    { role: 'wall', side: 'west' },
+    { role: 'wall', side: 'east' },
+    { role: 'wall', side: 'south' },
+    { role: 'wall', side: 'south' },
+    { role: 'wall', side: 'south' },
+    { role: 'roof', side: 'west' },
+    { role: 'roof', side: 'center' },
+    { role: 'roof', side: 'east' },
+    { role: 'roof', side: 'north' },
+    { role: 'roof', side: 'south' },
+  ];
+
+  return pattern[index % pattern.length];
+}
+
+function createInvalidShelterFailedAction(failure) {
+  return {
+    goalId: 'buildShelter',
+    goalName: 'Build Shelter',
+    action: 'buildShelter',
+    actionName: 'place',
+    reason: failure.summary,
+  };
 }
 
 function getBiomeName(x, z) {

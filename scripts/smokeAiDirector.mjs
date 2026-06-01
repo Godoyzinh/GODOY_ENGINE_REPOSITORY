@@ -5,6 +5,7 @@ import { TelemetrySystem } from '../src/diagnostics/telemetrySystem.js';
 
 assertTelemetryCountsAndConsoleCapture();
 assertAutoQaReportAndTaskGeneration();
+assertReportExportIntegrityTask();
 
 console.log('smoke:ai-director ok');
 
@@ -109,12 +110,57 @@ function assertAutoQaReportAndTaskGeneration() {
   assert.equal(report.runtimeStats.renderer.width, 1280);
 }
 
+function assertReportExportIntegrityTask() {
+  const telemetry = new TelemetrySystem({
+    now: () => 0,
+  });
+  const reportSystem = new AutoQaReportSystem({
+    telemetrySystem: telemetry,
+    storage: createLossyReportStorage(),
+  });
+
+  telemetry.recordConsoleEvent('error', ['Synthetic export loss trigger'], {
+    source: 'feedbackReport.js',
+  });
+
+  const report = reportSystem.createReport();
+
+  assert.ok(
+    report.issues.some((issue) => issue.code === 'report-export-integrity-loss'),
+    'report export loss should create a bug issue',
+  );
+  assert.ok(
+    report.aiTasks.some((task) => task.id.includes('report-export-integrity-loss')),
+    'report export loss should create an AI task',
+  );
+}
+
 function createMemoryStorage() {
   const values = new Map();
 
   return {
     setItem(key, value) {
       values.set(key, String(value));
+    },
+    getItem(key) {
+      return values.get(key) ?? null;
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+  };
+}
+
+function createLossyReportStorage() {
+  const values = new Map();
+
+  return {
+    setItem(key, value) {
+      const report = JSON.parse(String(value));
+
+      report.issues = [];
+      report.aiTasks = [];
+      values.set(key, JSON.stringify(report));
     },
     getItem(key) {
       return values.get(key) ?? null;

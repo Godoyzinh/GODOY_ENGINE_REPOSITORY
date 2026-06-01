@@ -6,6 +6,7 @@ import { ResourceScanner } from '../src/diagnostics/resourceScanner.js';
 import { TelemetrySystem } from '../src/diagnostics/telemetrySystem.js';
 import { BLOCK_IDS } from '../src/world/blockTypes.js';
 import { getBlockKey } from '../src/world/chunkMath.js';
+import { SHELTER_BLOCK_TARGET } from '../src/diagnostics/shelterValidator.js';
 
 class StuckCraftAdapter extends HeadlessPlaytestAdapter {
   constructor(options) {
@@ -22,9 +23,61 @@ class StuckCraftAdapter extends HeadlessPlaytestAdapter {
   }
 }
 
+class NoDeltaWoodAdapter extends HeadlessPlaytestAdapter {
+  gatherWood() {
+    this.lastResourceScan = this.createResourceScanSnapshot({
+      scannedWoodBlocks: 2,
+      woodTargetsFound: 2,
+      nearestWoodTarget: {
+        blockId: BLOCK_IDS.wood,
+        worldX: 2,
+        y: 8,
+        worldZ: 2,
+        distance: 2,
+        nearGround: true,
+      },
+    });
+
+    return {
+      ok: true,
+      event: 'wood',
+    };
+  }
+}
+
+class BlockedWoodAdapter extends HeadlessPlaytestAdapter {
+  gatherWood() {
+    this.lastResourceScan = this.createResourceScanSnapshot({
+      radius: 48,
+      scannedWoodBlocks: 0,
+      woodTargetsFound: 0,
+      rejectedLeafTargets: 12,
+      lastBlockedReason: 'No reachable wood target found in a tree-capable biome.',
+      recovery: 'expand-wood-scan',
+    });
+
+    return {
+      ok: false,
+      skipped: true,
+      event: 'wood target blocked',
+      reason: this.lastResourceScan.lastBlockedReason,
+      resourceScanResults: this.lastResourceScan,
+      recoveryAction: {
+        type: 'expand-wood-scan',
+        reason: this.lastResourceScan.lastBlockedReason,
+      },
+      failures: [{
+        code: 'wood-target-scan-blocked',
+        summary: this.lastResourceScan.lastBlockedReason,
+        severity: 'medium',
+      }],
+    };
+  }
+}
+
 const { report, snapshot } = runHeadlessAiSimulation({
   mode: 'quick',
-  durationSeconds: 24,
+  durationSeconds: 60,
   deltaTime: 0.25,
   seed: 20260529,
 });
@@ -42,7 +95,7 @@ assert.ok(snapshot.actionCounts.collect > 0, 'bot should collect planned drops')
 assert.ok(snapshot.actionCounts.combat > 0, 'bot should test combat');
 assert.ok(snapshot.actionCounts.saveLoad > 0, 'bot should test save/load');
 assert.ok(snapshot.planner, 'bot should include goal planner state');
-assert.ok(snapshot.planner.goalsCompleted.length >= 4, 'bot should complete early survival goals');
+assert.ok(snapshot.planner.goalsCompleted.length >= 9, 'bot should complete the current survival progression route');
 assert.equal(snapshot.planner.goalsFailed.length, 0, 'quick smoke should not fail progression goals');
 assert.notEqual(snapshot.planner.progressionTierReached, 'starter', 'bot should reach a progression tier');
 assert.ok(snapshot.planner.currentGoal, 'bot should expose current goal');
@@ -64,6 +117,22 @@ assert.ok(Array.isArray(report.runtimeStats.simulation.goalTransitions), 'report
 assert.ok(report.runtimeStats.simulation.resourceScanResults, 'report should include resource scan results');
 assert.ok(report.runtimeStats.simulation.resourceScanResults.scannedWoodBlocks > 0, 'report should include scanned wood count');
 assert.ok(report.runtimeStats.simulation.woodTargetsFound > 0, 'report should include wood target count');
+assert.equal(report.runtimeStats.simulation.rejectedLeafTargets >= 0, true, 'report should include rejected leaf target count');
+assert.ok(report.runtimeStats.simulation.shelterValidation, 'report should include shelter validation');
+assert.ok(
+  report.runtimeStats.simulation.validShelterBlocksPlaced >= SHELTER_BLOCK_TARGET,
+  'shelter should only complete after enough valid shelter blocks are placed',
+);
+assert.ok(
+  report.runtimeStats.simulation.invalidShelterBlocksRejected >= 1,
+  'shelter builder should reject invalid selected material before placement',
+);
+assert.ok(
+  report.runtimeStats.simulation.failedActions.some((failedAction) => failedAction.reason.includes('not valid shelter material')),
+  'invalid shelter material should be preserved as failedActions evidence',
+);
+assert.ok(Array.isArray(report.runtimeStats.simulation.recoveryActions), 'report should include recoveryActions list');
+assert.ok(Array.isArray(report.runtimeStats.simulation.blockedGoals), 'report should include blockedGoals list');
 assert.ok(report.runtimeStats.simulation.planner, 'report should include sanitized planner stats');
 assert.deepEqual(
   report.runtimeStats.simulation.planner.goalsCompleted.map((goal) => goal.id),
@@ -78,6 +147,11 @@ assert.equal(
 assert.ok(Array.isArray(report.runtimeStats.simulation.planner.bottlenecks), 'report should include bottlenecks list');
 assert.ok(Array.isArray(report.runtimeStats.simulation.planner.goalTransitions), 'report should include planner goal transitions');
 assert.ok(Array.isArray(report.aiTasks), 'report should include AI task proposals');
+assert.ok(report.issues.length > 0, 'invalid shelter material should generate a report issue');
+assert.ok(report.aiTasks.length > 0, 'invalid shelter material should generate an AI task');
+const exportedReport = JSON.parse(JSON.stringify(report));
+assert.ok(exportedReport.issues.length > 0, 'exported JSON should preserve issues');
+assert.ok(exportedReport.aiTasks.length > 0, 'exported JSON should preserve aiTasks');
 assert.equal(JSON.stringify(report).includes(['C:', 'Users'].join('\\\\')), false, 'report should avoid local machine paths');
 
 const stuckResult = runHeadlessAiSimulation({
@@ -101,6 +175,67 @@ assert.ok(
   'stuck craft loop should produce gameplay AI tasks',
 );
 assert.ok(stuckResult.report.issues.length > 0, 'stuck craft loop should export issues');
+
+const noDeltaWoodResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 14,
+  deltaTime: 0.25,
+  seed: 20260531,
+  adapter: new NoDeltaWoodAdapter({ seed: 20260531 }),
+});
+
+assert.ok(
+  noDeltaWoodResult.snapshot.failures.some((failure) => failure.code === 'gather-wood-no-inventory-delta'),
+  'gatherWood should fail validation when wood inventory does not increase',
+);
+assert.equal(
+  noDeltaWoodResult.snapshot.planner.goalsCompleted.some((goal) => goal.id === 'gatherWood'),
+  false,
+  'gatherWood should not complete from assumed readiness',
+);
+
+const invalidShelterAdapter = new HeadlessPlaytestAdapter({ seed: 20260532 });
+invalidShelterAdapter.inventory.dirt = 0;
+invalidShelterAdapter.inventory.stone = 0;
+invalidShelterAdapter.inventory.wood = 0;
+invalidShelterAdapter.inventory.planks = 0;
+invalidShelterAdapter.begin();
+const invalidShelterResult = invalidShelterAdapter.buildShelter();
+
+assert.equal(invalidShelterResult.ok, false, 'shelter placement should fail without valid materials');
+assert.ok(
+  invalidShelterResult.failedActions.some((failedAction) => failedAction.reason.includes('not valid shelter material')),
+  'shelter should reject Grass before placement',
+);
+assert.equal(
+  invalidShelterResult.shelterValidation.validShelterBlocksPlaced,
+  0,
+  'invalid shelter material should not count as placed shelter',
+);
+
+const unsafeNightAdapter = new HeadlessPlaytestAdapter({ seed: 20260533 });
+unsafeNightAdapter.begin();
+const unsafeNightResult = unsafeNightAdapter.surviveNight(1, []);
+
+assert.equal(unsafeNightResult.ok, false, 'surviveNight should require shelter or safe no-aggro validation');
+assert.equal(unsafeNightResult.failures[0].code, 'night-safety-not-proven');
+
+const blockedWoodResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 36,
+  deltaTime: 0.25,
+  seed: 20260534,
+  adapter: new BlockedWoodAdapter({ seed: 20260534 }),
+});
+const blockedWoodSimulation = blockedWoodResult.report.runtimeStats.simulation;
+
+assert.ok(blockedWoodSimulation.recoveryActions.length > 0, 'blocked gatherWood should record recovery actions');
+assert.ok(blockedWoodSimulation.resourceScanResults.biomeHasTrees, 'blocked wood scan should report tree-capable biome evidence');
+assert.equal(blockedWoodSimulation.woodTargetsFound, 0, 'blocked wood scan should preserve no-target evidence');
+assert.ok(
+  blockedWoodResult.report.aiTasks.some((task) => task.id.includes('wood-target-scan-blocked')),
+  'blocked wood scan should generate an AI task',
+);
 
 const spamReportSystem = new AutoQaReportSystem({
   telemetrySystem: new TelemetrySystem({ now: () => 0 }),

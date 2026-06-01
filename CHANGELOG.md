@@ -1,5 +1,20 @@
 # Changelog
 
+## AI Survival Validation And Shelter Progression
+
+### Fixed
+
+- Build Shelter now rejects Grass, Leaves, Water, Campfire, and decorative blocks before placement.
+- Shelter and Survive Night goals now validate real world safety instead of assumed progress.
+- Gather Wood, crafting, furnace, smelting, and equipment goals now require the expected inventory or world delta before reporting success.
+- Exported autonomous QA JSON preserves generated `issues` and `aiTasks` alongside the full simulation result.
+
+### Added
+
+- Shelter validation diagnostics for valid placed blocks, rejected invalid shelter blocks, partial wall/roof coverage, safety score, and night safety.
+- AI reports now include `shelterValidation`, `validShelterBlocksPlaced`, `invalidShelterBlocksRejected`, `blockedGoals`, and `recoveryActions`.
+- Autonomous smoke coverage now verifies real wood deltas, invalid shelter rejection, night safety validation, export preservation, and blocked-goal recovery.
+
 ## AI Tree Detection And Wood Targeting
 
 ### Fixed
