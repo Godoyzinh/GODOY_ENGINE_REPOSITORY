@@ -64,6 +64,8 @@ Run these before tagging an Alpha build.
 - Fake craft loops must not count as craft success and must produce failed-craft, action-loop, and missing-sticks evidence.
 - Gather Wood must target real trunk blocks, advance from real wood deltas, avoid leaf-only progress, and stay below the mining spam threshold.
 - Empty-inventory runs must select Gather Wood first and avoid simulated craft completions.
+- Gather Stone must not start until Craft Wooden Pickaxe has produced a real pickaxe item.
+- Reports must include `actualEquippedTool` and create an issue/task if Gather Stone starts without a valid mining tool.
 - Build Shelter must reject Grass, Leaves, Water, Campfire, and decorative blocks before placement.
 - Survive Night must require a valid shelter or safe-distance/no-aggro validation before progress can count.
 - Exported autonomous report JSON must preserve non-empty `issues` and `aiTasks` when the report generator produced them.

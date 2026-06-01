@@ -4,6 +4,7 @@ export const SURVIVAL_GOAL_IDS = {
   gatherWood: 'gatherWood',
   craftPlanks: 'craftPlanks',
   craftTools: 'craftTools',
+  craftWoodenPickaxe: 'craftWoodenPickaxe',
   gatherStone: 'gatherStone',
   buildShelter: 'buildShelter',
   surviveNight: 'surviveNight',
@@ -60,15 +61,12 @@ export const SURVIVAL_GOALS = [
     label: 'Craft Tools',
     priority: 80,
     requirements: ['At least 2 planks are available for the tool chain.'],
-    successCriteria: ['Inventory gains at least 2 sticks, then either an actual tool exists or hand-mining is explicitly allowed.'],
-    failureCriteria: ['No stick output or real tool readiness progress for 60 seconds.'],
-    target: '2 sticks + mining rule',
+    successCriteria: ['Inventory gains at least 2 sticks.'],
+    failureCriteria: ['No stick output for 60 seconds.'],
+    target: '2 sticks',
     maxSeconds: 60,
     requirementsMet: (context) => getCount(context, 'planks') >= 2 || getDelta(context, 'sticks') >= 2,
-    isSuccessful: (context) => (
-      getDelta(context, 'sticks') >= 2 &&
-      (getCount(context, 'basicTools') >= 1 || Boolean(context.world?.canHandMineStone))
-    ),
+    isSuccessful: (context) => getDelta(context, 'sticks') >= 2,
     getProgress: (context) => getDelta(context, 'sticks') / 2,
     createPlan: (context) => ({
       action: 'craftTools',
@@ -78,21 +76,54 @@ export const SURVIVAL_GOALS = [
     }),
   },
   {
+    id: SURVIVAL_GOAL_IDS.craftWoodenPickaxe,
+    label: 'Craft Wooden Pickaxe',
+    priority: 75,
+    requirements: ['At least 2 sticks and 2 planks, or wood that can be crafted into planks.'],
+    successCriteria: ['An actual pickaxe item exists in inventory.'],
+    failureCriteria: ['No wooden pickaxe craft output for 60 seconds while handle materials are available.'],
+    target: '1 wooden pickaxe',
+    maxSeconds: 60,
+    requirementsMet: (context) => hasMiningPickaxe(context) || (
+      getCount(context, 'sticks') >= 2 &&
+      (getCount(context, 'planks') >= 2 || getCount(context, 'wood') >= 1)
+    ),
+    isSuccessful: (context) => hasMiningPickaxe(context),
+    getProgress: (context) => Math.min(getCount(context, 'pickaxes'), 1),
+    createPlan: (context) => {
+      if (getCount(context, 'planks') < 2 && getCount(context, 'wood') >= 1) {
+        return {
+          action: 'craftPlanks',
+          subgoal: 'Craft extra planks for the wooden pickaxe head.',
+          reason: 'Gather Stone requires a real pickaxe, not assumed hand-mining readiness.',
+          target: `${Math.min(getCount(context, 'planks'), 2)}/2 planks`,
+        };
+      }
+
+      return {
+        action: 'craftWoodenPickaxe',
+        subgoal: 'Craft a real wooden pickaxe from planks and sticks.',
+        reason: 'Stone mining must prove an actual mining tool exists before the bot enters Gather Stone.',
+        target: `${Math.min(getCount(context, 'pickaxes'), 1)}/1 pickaxe`,
+      };
+    },
+  },
+  {
     id: SURVIVAL_GOAL_IDS.gatherStone,
     label: 'Gather Stone',
     priority: 70,
-    requirements: ['A basic mining tool is available, or hand-mining stone is explicitly allowed.'],
+    requirements: ['A real pickaxe item is available.'],
     successCriteria: [`Inventory gains at least ${STONE_TARGET_COUNT} stone after the bot starts.`],
     failureCriteria: ['No stone progress for 120 seconds.'],
     target: `${STONE_TARGET_COUNT} stone`,
     maxSeconds: 120,
-    requirementsMet: (context) => getCount(context, 'basicTools') >= 1 || Boolean(context.world?.canHandMineStone),
+    requirementsMet: (context) => hasMiningPickaxe(context),
     isSuccessful: (context) => getDelta(context, 'stone') >= STONE_TARGET_COUNT,
     getProgress: (context) => getDelta(context, 'stone') / STONE_TARGET_COUNT,
     createPlan: (context) => ({
       action: 'gatherStone',
       subgoal: 'Mine surface stone or rocks.',
-      reason: 'Stone is needed for furnace access and stronger progression loops.',
+      reason: `Stone is needed for furnace access and stronger progression loops. Equipped tool: ${getEquippedTool(context)}.`,
       target: `${Math.min(getDelta(context, 'stone'), STONE_TARGET_COUNT)}/${STONE_TARGET_COUNT} stone`,
     }),
   },
@@ -192,9 +223,9 @@ export const SURVIVAL_GOALS = [
     target: '1 iron tool',
     maxSeconds: 180,
     requirementsMet: (context) => getCount(context, 'furnace') >= 1 && (
-      getCount(context, 'basicTools') >= 1 ||
+      hasMiningPickaxe(context) ||
       getCount(context, 'sticks') >= 2 ||
-      Boolean(context.world?.canHandMineStone)
+      getCount(context, 'wood') >= 1
     ),
     isSuccessful: (context) => getDelta(context, 'ironTools') >= 1,
     getProgress: (context) => getDelta(context, 'ironTools'),
@@ -205,6 +236,15 @@ export const SURVIVAL_GOALS = [
           subgoal: 'Prepare sticks for iron tool handles.',
           reason: 'Iron equipment still needs the wood tooling chain.',
           target: `${Math.min(getCount(context, 'sticks'), 2)}/2 sticks`,
+        };
+      }
+
+      if (!hasMiningPickaxe(context)) {
+        return {
+          action: 'craftWoodenPickaxe',
+          subgoal: 'Replace missing wooden pickaxe before upgrading equipment.',
+          reason: 'Iron equipment should build on a verified tool chain.',
+          target: `${Math.min(getCount(context, 'pickaxes'), 1)}/1 pickaxe`,
         };
       }
 
@@ -220,7 +260,7 @@ export const SURVIVAL_GOALS = [
         action: 'upgradeEquipment',
         subgoal: 'Craft the first iron tool.',
         reason: 'Iron equipment confirms the survival progression chain can advance tiers.',
-      target: `${Math.min(getDelta(context, 'ironTools'), 1)}/1 iron tool`,
+        target: `${Math.min(getDelta(context, 'ironTools'), 1)}/1 iron tool`,
       };
     },
   },
@@ -677,6 +717,14 @@ function getCount(context, key) {
 
 function getDelta(context, key) {
   return Number(context.progressDeltas?.inventory?.[key] ?? context.progressDeltas?.world?.[key] ?? 0);
+}
+
+function hasMiningPickaxe(context) {
+  return getCount(context, 'pickaxes') >= 1;
+}
+
+function getEquippedTool(context) {
+  return context.world?.equippedTool ?? context.inventory?.equippedTool ?? 'hand';
 }
 
 function getStat(context, key, fallback) {

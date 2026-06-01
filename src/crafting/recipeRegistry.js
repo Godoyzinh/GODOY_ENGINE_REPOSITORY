@@ -5,6 +5,7 @@ import { BLOCK_IDS } from '../world/blockTypes.js';
 export const RECIPE_IDS = {
   woodPlanks: 'woodPlanks',
   sticks: 'sticks',
+  woodenPickaxe: 'woodenPickaxe',
   berrySnack: 'berrySnack',
   furnace: 'furnace',
   campfire: 'campfire',
@@ -30,6 +31,16 @@ export const RECIPE_REGISTRY = {
       { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.woodPlank, count: 2 },
     ],
     output: { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.stick, count: 4 },
+  },
+  [RECIPE_IDS.woodenPickaxe]: {
+    id: RECIPE_IDS.woodenPickaxe,
+    name: 'Wooden Pickaxe',
+    category: 'tooling',
+    inputs: [
+      { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.woodPlank, count: 2 },
+      { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.stick, count: 2 },
+    ],
+    output: { itemType: ITEM_TYPES.tool, itemId: TOOL_IDS.pickaxe, count: 1 },
   },
   [RECIPE_IDS.berrySnack]: {
     id: RECIPE_IDS.berrySnack,

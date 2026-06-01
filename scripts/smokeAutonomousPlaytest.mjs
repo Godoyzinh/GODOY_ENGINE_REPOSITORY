@@ -81,6 +81,56 @@ class BlockedWoodAdapter extends HeadlessPlaytestAdapter {
   }
 }
 
+class MissingPickaxeStoneAdapter extends HeadlessPlaytestAdapter {
+  constructor(options) {
+    super(options);
+    this.reportedPickaxe = false;
+  }
+
+  begin(options) {
+    super.begin(options);
+    this.reportedPickaxe = false;
+  }
+
+  craftWoodenPickaxe() {
+    if (this.inventory.planks < 2 || this.inventory.sticks < 2) {
+      return {
+        ok: false,
+        skipped: true,
+      };
+    }
+
+    this.inventory.planks -= 2;
+    this.inventory.sticks -= 2;
+    this.reportedPickaxe = true;
+
+    return {
+      ok: true,
+      event: 'Wooden Pickaxe',
+      craftedItem: {
+        itemType: 'tool',
+        itemId: 'pickaxe',
+        name: 'Wooden Pickaxe',
+        count: 1,
+      },
+    };
+  }
+
+  getPlanningState(options) {
+    const state = super.getPlanningState(options);
+
+    if (this.reportedPickaxe) {
+      state.inventory.basicTools = 1;
+      state.inventory.woodenPickaxe = 1;
+      state.inventory.pickaxes = 1;
+      state.world.equippedTool = 'woodenPickaxe';
+      state.world.hasValidMiningTool = true;
+    }
+
+    return state;
+  }
+}
+
 const { report, snapshot } = runHeadlessAiSimulation({
   mode: 'quick',
   durationSeconds: 60,
@@ -103,14 +153,24 @@ assert.ok(snapshot.actionCounts.collect > 0, 'bot should collect planned drops')
 assert.ok(snapshot.actionCounts.combat > 0, 'bot should test combat');
 assert.ok(snapshot.actionCounts.saveLoad > 0, 'bot should test save/load');
 assert.ok(snapshot.planner, 'bot should include goal planner state');
-assert.ok(snapshot.planner.goalsCompleted.length >= 9, 'bot should complete the current survival progression route');
+assert.ok(snapshot.planner.goalsCompleted.length >= 10, 'bot should complete the current survival progression route');
 assert.equal(snapshot.planner.goalsFailed.length, 0, 'quick smoke should not fail progression goals');
 assert.notEqual(snapshot.planner.progressionTierReached, 'starter', 'bot should reach a progression tier');
 assert.ok(snapshot.planner.currentGoal, 'bot should expose current goal');
 assert.ok(snapshot.planner.currentSubgoal, 'bot should expose current subgoal');
 assert.ok(snapshot.planner.reason, 'bot should explain goal reasoning');
 assert.ok(snapshot.planner.target, 'bot should expose the current target');
-assert.ok(Object.keys(snapshot.planner.timeSpentByGoal).length >= 9, 'bot should track time spent per goal');
+assert.ok(Object.keys(snapshot.planner.timeSpentByGoal).length >= 10, 'bot should track time spent per goal');
+const completedGoalIds = snapshot.planner.goalsCompleted.map((goal) => goal.id);
+assert.ok(completedGoalIds.includes('craftWoodenPickaxe'), 'bot should craft a real wooden pickaxe before mining stone');
+assert.ok(
+  completedGoalIds.indexOf('craftWoodenPickaxe') > completedGoalIds.indexOf('craftTools'),
+  'Craft Wooden Pickaxe should happen after Craft Tools prepares sticks',
+);
+assert.ok(
+  completedGoalIds.indexOf('gatherStone') > completedGoalIds.indexOf('craftWoodenPickaxe'),
+  'Gather Stone should happen after a pickaxe exists',
+);
 assert.ok(report.telemetry.counts.gameplayEvents > 0, 'telemetry should receive simulated events');
 assert.ok(report.runtimeStats.simulation.inventory, 'report should include inventory snapshot');
 assert.ok(report.runtimeStats.simulation.inventorySnapshot, 'report should include explicit inventorySnapshot field');
@@ -119,10 +179,20 @@ assert.equal(report.runtimeStats.simulation.initialInventory.stone, 0, 'survival
 assert.equal(report.runtimeStats.simulation.initialInventory.basicTools, 0, 'survival-start should begin with no tools');
 assert.equal(report.runtimeStats.simulation.initialInventory.berries, 2, 'survival-start should include minimal food only');
 assert.ok(report.runtimeStats.simulation.currentInventory.wood >= 0, 'report should include currentInventory');
+assert.ok(report.runtimeStats.simulation.currentInventory.pickaxes >= 1, 'report should include a real pickaxe after progression');
 assert.ok(report.runtimeStats.simulation.inventoryDelta.wood >= 0, 'report should include inventoryDelta');
+assert.ok(report.runtimeStats.simulation.inventoryDelta.pickaxes >= 1, 'pickaxe progress should be based on real inventory deltas');
+assert.notEqual(report.runtimeStats.simulation.actualEquippedTool, 'hand', 'report should include the actual equipped mining tool');
 assert.ok(report.runtimeStats.simulation.inventory.delta.wood >= 0, 'inventory snapshot should include resource deltas');
 assert.ok(report.runtimeStats.simulation.resourceDeltas.wood >= 0, 'report should include explicit resourceDeltas field');
 assert.ok(report.runtimeStats.simulation.crafting.craftedItems.length > 0, 'report should include crafted items');
+assert.ok(
+  report.runtimeStats.simulation.crafting.craftedItems.some((craftedItem) => (
+    craftedItem.action === 'craftWoodenPickaxe' &&
+    craftedItem.itemId === 'pickaxe'
+  )),
+  'report should include the wooden pickaxe craft output',
+);
 assert.ok(report.runtimeStats.simulation.craftedItems.length > 0, 'report should include explicit craftedItems field');
 assert.equal(report.runtimeStats.simulation.crafting.failedCrafts.length, 0, 'healthy quick smoke should not include failed crafts');
 assert.equal(report.runtimeStats.simulation.failedCrafts.length, 0, 'report should include explicit failedCrafts field');
@@ -203,6 +273,8 @@ assert.equal(debugRichInitialInventory.stone, 32, 'debug-rich should preserve ol
 assert.equal(debugRichInitialInventory.wood, 32, 'debug-rich should preserve old wood count');
 assert.equal(debugRichInitialInventory.berries, 6, 'debug-rich should preserve old berry count');
 assert.equal(debugRichInitialInventory.basicTools, 3, 'debug-rich should preserve old tool count');
+assert.equal(debugRichInitialInventory.woodenPickaxe, 1, 'debug-rich should include an explicit wooden pickaxe');
+assert.equal(debugRichInitialInventory.pickaxes, 1, 'debug-rich should expose real pickaxe count');
 
 const stuckResult = runHeadlessAiSimulation({
   mode: 'quick',
@@ -225,6 +297,27 @@ assert.ok(
   'stuck craft loop should produce gameplay AI tasks',
 );
 assert.ok(stuckResult.report.issues.length > 0, 'stuck craft loop should export issues');
+
+const missingPickaxeStoneResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 18,
+  deltaTime: 0.25,
+  seed: 20260535,
+  adapter: new MissingPickaxeStoneAdapter({ seed: 20260535 }),
+});
+
+assert.ok(
+  missingPickaxeStoneResult.snapshot.failures.some((failure) => failure.code === 'gather-stone-missing-pickaxe'),
+  'Gather Stone should create a failure when it starts without a real pickaxe',
+);
+assert.ok(
+  missingPickaxeStoneResult.report.issues.some((issue) => issue.code === 'gather-stone-missing-pickaxe'),
+  'Gather Stone missing-pickaxe failure should become a report issue',
+);
+assert.ok(
+  missingPickaxeStoneResult.report.aiTasks.some((task) => task.category === 'gameplay'),
+  'Gather Stone missing-pickaxe issue should create a gameplay AI task',
+);
 
 const noDeltaWoodResult = runHeadlessAiSimulation({
   mode: 'quick',

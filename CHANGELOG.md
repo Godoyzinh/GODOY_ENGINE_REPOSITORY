@@ -1,5 +1,19 @@
 # Changelog
 
+## Goal-Oriented AI Stone Progression
+
+### Fixed
+
+- Gather Stone now requires a real pickaxe instead of relying on assumed hand-mining readiness.
+- Craft Tools now only validates stick creation; Craft Wooden Pickaxe owns the actual mining-tool gate.
+- Autonomous reports now create gameplay issues/tasks if Gather Stone starts without a valid mining tool.
+
+### Added
+
+- Wooden Pickaxe recipe and a dedicated Craft Wooden Pickaxe planner goal.
+- Autonomous reports now include the actual equipped tool and pickaxe inventory deltas.
+- Smoke coverage for the pickaxe gate before stone progression.
+
 ## Player Inventory Initialization Consistency
 
 ### Fixed
