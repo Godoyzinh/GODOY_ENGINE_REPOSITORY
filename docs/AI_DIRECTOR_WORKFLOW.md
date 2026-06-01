@@ -19,9 +19,10 @@ Run from the game:
 
 1. Open the `Feedback` panel.
 2. Choose Quick, Standard, or Stress.
-3. Click `Run Auto Test`.
-4. Wait for the report to complete.
-5. Review, copy, or download the JSON.
+3. Choose a Starting Inventory profile.
+4. Click `Run Auto Test`.
+5. Wait for the report to complete.
+6. Review, copy, or download the JSON.
 
 Run from the CLI:
 
@@ -29,6 +30,9 @@ Run from the CLI:
 npm run simulate:ai
 npm run simulate:ai -- --mode=standard
 npm run simulate:ai -- --mode=stress
+npm run simulate:ai -- --inventory=empty
+npm run simulate:ai -- --inventory=survival-start
+npm run simulate:ai -- --inventory=debug-rich
 ```
 
 Simulation modes:
@@ -36,6 +40,12 @@ Simulation modes:
 - Quick Smoke: 60 seconds.
 - Standard Test: 5 minutes.
 - Stress Test: 15 minutes.
+
+Starting inventory profiles:
+
+- Empty: no wood, stone, planks, sticks, tools, furnace, or food.
+- Survival Start: minimal food only, with no tools or building resources.
+- Debug Rich: the old rich hotbar for fast system checks.
 
 Goal route:
 
@@ -59,6 +69,7 @@ The CLI writes JSON reports into `reports/`. Generated report files are ignored 
 - Autonomous playtest actions, failures, and completion state when a bot run generated the report.
 - Goal planner state: current goal, current subgoal, reason, progress, target, completed goals, failed goals, progression tier reached, time spent per goal, and bottlenecks.
 - Inventory initial/current/delta snapshots for autonomous playtests, also exported as `inventorySnapshot` and `resourceDeltas`.
+- Starting inventory profile plus explicit `initialInventory`, `currentInventory`, and `inventoryDelta` aliases.
 - Goal transition history, failed action evidence, and crafted item/failed craft attempt lists, including no-delta craft failures.
 - Resource scan results for wood progression, including nearest trunk target, scan radius, scanned wood blocks, rejected leaves, target counts, and blocked reasons.
 - Shelter validation results, including valid placed blocks, rejected invalid blocks, wall/roof coverage, safety score, and night safety status.

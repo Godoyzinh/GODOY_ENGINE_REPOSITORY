@@ -252,6 +252,15 @@ export class InventorySystem {
     };
   }
 
+  replaceContents({ hotbar = [], backpack = [] } = {}) {
+    this.hotbar = normalizeHotbar(hotbar.map(normalizeStorageStack), this.hotbarSize);
+    this.backpack = backpack
+      .map(normalizeStorageStack)
+      .filter(Boolean)
+      .slice(0, this.backpackSize);
+    this.notifyChanged();
+  }
+
   getAllStacks() {
     return [...this.hotbar, ...this.backpack];
   }
@@ -340,6 +349,10 @@ function createConsumableStack(itemId, count) {
 
 function normalizeHotbar(stacks, hotbarSize) {
   return Array.from({ length: hotbarSize }, (_, index) => stacks[index] ?? null);
+}
+
+function normalizeStorageStack(stack) {
+  return stack ? createItemStack(stack) : null;
 }
 
 function wrapSlot(slotIndex, hotbarSize) {

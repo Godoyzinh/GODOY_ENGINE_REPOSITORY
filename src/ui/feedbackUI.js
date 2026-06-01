@@ -1,3 +1,8 @@
+import {
+  AUTONOMOUS_INVENTORY_PROFILE_OPTIONS,
+  DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
+} from '../diagnostics/autonomousInventoryProfiles.js';
+
 export class FeedbackUI {
   constructor({
     rootElement,
@@ -18,6 +23,7 @@ export class FeedbackUI {
     this.lastReport = null;
     this.autoTestSnapshot = getAutoTestSnapshot?.() ?? null;
     this.selectedAutoTestMode = 'quick';
+    this.selectedInventoryProfile = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID;
     this.statusMessage = 'Reports stay local until you copy or download them.';
     this.element = document.createElement('div');
     this.element.className = 'feedback-ui';
@@ -90,6 +96,16 @@ export class FeedbackUI {
             <option value="quick" ${this.selectedAutoTestMode === 'quick' ? 'selected' : ''}>Quick 60s</option>
             <option value="standard" ${this.selectedAutoTestMode === 'standard' ? 'selected' : ''}>Standard 5m</option>
             <option value="stress" ${this.selectedAutoTestMode === 'stress' ? 'selected' : ''}>Stress 15m</option>
+          </select>
+        </div>
+        <div class="feedback-ui__auto-test-row">
+          <span>Starting Inventory</span>
+          <select data-action="auto-test-inventory" ${isRunning ? 'disabled' : ''}>
+            ${AUTONOMOUS_INVENTORY_PROFILE_OPTIONS.map((profile) => `
+              <option value="${escapeAttribute(profile.id)}" ${this.selectedInventoryProfile === profile.id ? 'selected' : ''}>
+                ${escapeHtml(profile.label)}
+              </option>
+            `).join('')}
           </select>
         </div>
         <div class="feedback-ui__progress" aria-hidden="true">
@@ -166,6 +182,9 @@ export class FeedbackUI {
     this.element.querySelector('[data-action="auto-test-mode"]')?.addEventListener('change', (event) => {
       this.selectedAutoTestMode = event.target.value;
     });
+    this.element.querySelector('[data-action="auto-test-inventory"]')?.addEventListener('change', (event) => {
+      this.selectedInventoryProfile = event.target.value;
+    });
     this.element.querySelector('[data-action="run-auto-test"]')?.addEventListener('click', () => {
       this.runAutoTest();
     });
@@ -184,6 +203,7 @@ export class FeedbackUI {
   runAutoTest() {
     const result = this.onRunAutoTest?.({
       modeId: this.selectedAutoTestMode,
+      inventoryProfileId: this.selectedInventoryProfile,
     });
 
     this.autoTestSnapshot = result?.snapshot ?? this.getAutoTestSnapshot?.() ?? this.autoTestSnapshot;

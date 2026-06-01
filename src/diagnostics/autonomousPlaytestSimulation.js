@@ -1,5 +1,9 @@
 import { resolvePlaytestMode } from './playtestSimulationModes.js';
 import { SurvivalGoalPlanner } from './survivalGoalPlanner.js';
+import {
+  DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
+  normalizeAutonomousInventoryProfileId,
+} from './autonomousInventoryProfiles.js';
 
 const DEFAULT_STEP_SECONDS = 0.25;
 const POSITION_SAMPLE_SECONDS = 5;
@@ -34,6 +38,7 @@ export class AutonomousPlaytestSimulation {
     this.advanceClock = advanceClock;
     this.status = 'idle';
     this.mode = resolvePlaytestMode('quick');
+    this.startingInventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID;
     this.elapsedSeconds = 0;
     this.lastReport = null;
     this.lastResult = null;
@@ -57,7 +62,7 @@ export class AutonomousPlaytestSimulation {
     this.miningSpamReported = false;
   }
 
-  start({ modeId = 'quick', durationSeconds = null } = {}) {
+  start({ modeId = 'quick', durationSeconds = null, inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID } = {}) {
     if (this.status === 'running') {
       return {
         ok: false,
@@ -67,6 +72,7 @@ export class AutonomousPlaytestSimulation {
     }
 
     this.mode = resolvePlaytestMode(modeId, { durationSeconds });
+    this.startingInventoryProfileId = normalizeAutonomousInventoryProfileId(inventoryProfileId);
     this.elapsedSeconds = 0;
     this.lastReport = null;
     this.lastResult = null;
@@ -92,14 +98,16 @@ export class AutonomousPlaytestSimulation {
     this.telemetrySystem.recordGameplayEvent('auto-test-start', {
       mode: this.mode.id,
       duration: this.mode.durationSeconds,
+      startingInventoryProfile: this.startingInventoryProfileId,
     });
     this.adapter.begin?.({
       mode: this.mode,
+      inventoryProfileId: this.startingInventoryProfileId,
     });
 
     return {
       ok: true,
-      message: `${this.mode.label} started.`,
+      message: `${this.mode.label} started with ${this.startingInventoryProfileId} inventory.`,
       snapshot: this.getSnapshot(),
     };
   }
@@ -151,8 +159,13 @@ export class AutonomousPlaytestSimulation {
     };
   }
 
-  runToCompletion({ modeId = 'quick', durationSeconds = null, deltaTime = DEFAULT_STEP_SECONDS } = {}) {
-    const startResult = this.start({ modeId, durationSeconds });
+  runToCompletion({
+    modeId = 'quick',
+    durationSeconds = null,
+    deltaTime = DEFAULT_STEP_SECONDS,
+    inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
+  } = {}) {
+    const startResult = this.start({ modeId, durationSeconds, inventoryProfileId });
 
     if (!startResult.ok) {
       return {
@@ -378,7 +391,10 @@ export class AutonomousPlaytestSimulation {
 
     const checks = {
       craftPlanks: () => Number(inventoryDelta.wood ?? 0) < 0 && Number(inventoryDelta.planks ?? 0) > 0,
-      craftTools: () => Number(inventoryDelta.sticks ?? 0) > 0 && Number(afterContext.inventory?.basicTools ?? 0) >= 1,
+      craftTools: () => Number(inventoryDelta.sticks ?? 0) > 0 && (
+        Number(afterContext.inventory?.basicTools ?? 0) >= 1 ||
+        Boolean(afterContext.world?.canHandMineStone)
+      ),
       buildShelter: () => Number(worldDelta.validShelterBlocksPlaced ?? worldDelta.shelterBlocks ?? 0) > 0 &&
         Boolean(afterContext.world?.shelterIsValid || result.shelterValidation?.validShelterBlocksPlaced > beforeContext.world?.validShelterBlocksPlaced),
       surviveNight: () => Number(worldDelta.nightSurvivedSeconds ?? 0) > 0 &&
@@ -796,11 +812,15 @@ export class AutonomousPlaytestSimulation {
       elapsedSeconds: round(this.elapsedSeconds, 2),
       remainingSeconds: round(Math.max(0, this.mode.durationSeconds - this.elapsedSeconds), 2),
       progress,
+      startingInventoryProfile: this.startingInventoryProfileId,
       actionCounts: { ...this.actionCounts },
       failureCounts: { ...this.failureCounts },
       failures: this.failures.map((failure) => ({ ...failure })),
       inventory: inventorySnapshot,
       inventorySnapshot,
+      initialInventory: { ...(inventorySnapshot.initial ?? {}) },
+      currentInventory: { ...(inventorySnapshot.current ?? {}) },
+      inventoryDelta: { ...(inventorySnapshot.delta ?? {}) },
       resourceDeltas: { ...(inventorySnapshot.delta ?? {}) },
       crafting: {
         craftedItems: this.craftedItems.map((craftedItem) => ({ ...craftedItem })),

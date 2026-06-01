@@ -219,7 +219,7 @@ export class Engine {
       reportSystem: this.autoQaReportSystem,
       getRuntimeSnapshot: () => this.createAutoQaRuntimeSnapshot(),
       getAutoTestSnapshot: () => this.autonomousPlaytest.getSnapshot(),
-      onRunAutoTest: ({ modeId }) => this.startAutonomousPlaytest({ modeId }),
+      onRunAutoTest: ({ modeId, inventoryProfileId }) => this.startAutonomousPlaytest({ modeId, inventoryProfileId }),
       runtimeConfig: this.runtimeConfig,
       onUiAction: (action) => {
         this.telemetrySystem.recordGameplayEvent('feedback', { action });
@@ -396,8 +396,8 @@ export class Engine {
     this.applySettings(this.settingsSystem.getSnapshot());
   }
 
-  startAutonomousPlaytest({ modeId = 'quick' } = {}) {
-    const result = this.autonomousPlaytest.start({ modeId });
+  startAutonomousPlaytest({ modeId = 'quick', inventoryProfileId = undefined } = {}) {
+    const result = this.autonomousPlaytest.start({ modeId, inventoryProfileId });
 
     if (result.ok) {
       this.setGameplayInputEnabled(true);

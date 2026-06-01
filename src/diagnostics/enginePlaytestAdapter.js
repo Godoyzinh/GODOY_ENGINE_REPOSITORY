@@ -12,6 +12,11 @@ import {
   isValidShelterBlockId,
   validateShelter,
 } from './shelterValidator.js';
+import {
+  DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
+  createEngineInventoryStacksForProfile,
+  normalizeAutonomousInventoryProfileId,
+} from './autonomousInventoryProfiles.js';
 
 const MOVEMENT_CODES = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'Space'];
 const MINE_RADIUS = 4;
@@ -36,9 +41,11 @@ const SHELTER_PATTERN = [
 ];
 
 export class EnginePlaytestAdapter {
-  constructor({ engine }) {
+  constructor({ engine, inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID }) {
     this.engine = engine;
+    this.inventoryProfileId = normalizeAutonomousInventoryProfileId(inventoryProfileId);
     this.originalInputEnabled = true;
+    this.originalInventoryContents = null;
     this.lastSavedStateSize = 0;
     this.shelterBlocksPlaced = 0;
     this.nightSurvivedSeconds = 0;
@@ -54,8 +61,11 @@ export class EnginePlaytestAdapter {
     this.lastResourceScan = createEmptyResourceScanSnapshot();
   }
 
-  begin() {
+  begin({ inventoryProfileId = this.inventoryProfileId } = {}) {
+    this.inventoryProfileId = normalizeAutonomousInventoryProfileId(inventoryProfileId);
     this.originalInputEnabled = this.engine.playerController.movementSystem.isInputEnabled;
+    this.originalInventoryContents = this.captureInventoryContents();
+    this.applyInventoryProfile(this.inventoryProfileId);
     this.engine.mainMenuUI?.closeMenu();
     this.engine.setGameplayInputEnabled(true);
     this.engine.playerController.movementSystem.clearInput();
@@ -72,6 +82,12 @@ export class EnginePlaytestAdapter {
   end() {
     this.engine.playerController.movementSystem.clearInput();
     this.engine.setGameplayInputEnabled(this.originalInputEnabled);
+
+    if (this.originalInventoryContents) {
+      this.engine.playerState.setSelectedSlot(this.originalInventoryContents.selectedSlot ?? 0);
+      this.engine.inventorySystem.replaceContents(this.originalInventoryContents);
+      this.originalInventoryContents = null;
+    }
   }
 
   explore({ elapsedSeconds }) {
@@ -370,6 +386,7 @@ export class EnginePlaytestAdapter {
         shelterIsValid: this.lastShelterValidation.isValid,
         shelterIsSafeForNight: this.lastShelterValidation.isSafeForNight,
         safeDistanceNoAggro: this.lastShelterValidation.safeDistanceNoAggro,
+        canHandMineStone: true,
         nightSurvivedSeconds: this.nightSurvivedSeconds,
         nightSurvived: this.nightSurvivedSeconds >= 6 && this.lastShelterValidation.isSafeForNight,
         isNight: dayNightSnapshot.isNight,
@@ -455,9 +472,26 @@ export class EnginePlaytestAdapter {
       ...this.engine.createAutoQaRuntimeSnapshot(),
       simulationAdapter: {
         type: 'engine',
+        startingInventoryProfile: this.inventoryProfileId,
         lastSavedStateSize: this.lastSavedStateSize,
       },
     };
+  }
+
+  captureInventoryContents() {
+    return {
+      selectedSlot: this.engine.playerState.selectedSlot,
+      hotbar: this.engine.inventorySystem.hotbar.map((stack) => (stack ? { ...stack } : null)),
+      backpack: this.engine.inventorySystem.backpack.map((stack) => ({ ...stack })),
+    };
+  }
+
+  applyInventoryProfile(profileId) {
+    this.engine.playerState.setSelectedSlot(0);
+    this.engine.inventorySystem.replaceContents({
+      hotbar: createEngineInventoryStacksForProfile(profileId),
+      backpack: [],
+    });
   }
 
   getResourceScanSnapshot() {
