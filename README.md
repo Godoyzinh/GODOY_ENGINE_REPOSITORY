@@ -102,7 +102,7 @@ The build separates Three.js into its own output chunk for cleaner Alpha packagi
 npm run verify:alpha
 ```
 
-This runs the production build plus release config, WebGL fallback, AI Director, settings, camera/collision, visual/game-feel, inventory/crafting, save migration, and dedicated server smoke checks.
+This runs the production build plus release config, WebGL fallback, AI Director, settings, camera/collision, visual/game-feel, inventory initialization, inventory/crafting, save migration, and dedicated server smoke checks.
 
 ## AI Director Feedback Loop
 

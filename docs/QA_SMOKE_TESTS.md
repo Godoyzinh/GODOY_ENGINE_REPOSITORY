@@ -14,6 +14,7 @@ Run these before tagging an Alpha build.
 - `npm run smoke:settings` validates settings normalization and persistence.
 - `npm run smoke:camera` validates camera-relative movement, paused input, and vertical snap protection.
 - `npm run smoke:visual` validates sky, ambient particles, feedback particles, and procedural audio hooks.
+- `npm run smoke:inventory-init` validates fresh survival, multiplayer, save-restore, and debug inventory initialization profiles.
 - `npm run smoke:inventory` validates hotbar/backpack stacking, crafting output, and selected consumable use.
 - `npm run smoke:save` validates save migration and persisted simulation state.
 - Open `http://127.0.0.1:5173/`.
@@ -21,6 +22,7 @@ Run these before tagging an Alpha build.
 - Public Alpha banner and version display are visible.
 - Loading screen is replaced after runtime boot.
 - Play Solo hides the menu and the world renders.
+- Fresh survival sessions start with the `survival-start` inventory profile, not the debug-rich hotbar.
 - Settings change graphics quality, render distance, audio volume, controls help, and debug visibility.
 - First-launch onboarding can be dismissed and stays dismissed after reload.
 - `Esc` opens the menu after play starts.

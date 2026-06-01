@@ -17,6 +17,7 @@
     "smoke:settings": "node scripts/smokeSettings.mjs",
     "smoke:camera": "node scripts/smokeCameraCollision.mjs",
     "smoke:visual": "node scripts/smokeVisualFeel.mjs",
+    "smoke:inventory-init": "node scripts/smokeInventoryInitialization.mjs",
     "smoke:inventory": "node scripts/smokeInventoryCrafting.mjs",
     "smoke:save": "node scripts/smokeSaveMigration.mjs",
     "smoke:multiplayer": "node scripts/smokeMultiplayerServer.mjs",

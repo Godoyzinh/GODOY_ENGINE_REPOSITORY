@@ -17,6 +17,7 @@ import {
   createEngineInventoryStacksForProfile,
   normalizeAutonomousInventoryProfileId,
 } from './autonomousInventoryProfiles.js';
+import { INVENTORY_INITIALIZATION_SOURCES } from '../player/inventoryProfiles.js';
 
 const MOVEMENT_CODES = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'Space'];
 const MINE_RADIUS = 4;
@@ -481,6 +482,8 @@ export class EnginePlaytestAdapter {
   captureInventoryContents() {
     return {
       selectedSlot: this.engine.playerState.selectedSlot,
+      startingInventoryProfile: this.engine.inventorySystem.startingInventoryProfile,
+      inventoryInitializationSource: this.engine.inventorySystem.inventoryInitializationSource,
       hotbar: this.engine.inventorySystem.hotbar.map((stack) => (stack ? { ...stack } : null)),
       backpack: this.engine.inventorySystem.backpack.map((stack) => ({ ...stack })),
     };
@@ -491,6 +494,8 @@ export class EnginePlaytestAdapter {
     this.engine.inventorySystem.replaceContents({
       hotbar: createEngineInventoryStacksForProfile(profileId),
       backpack: [],
+      inventoryProfileId: profileId,
+      initializationSource: INVENTORY_INITIALIZATION_SOURCES.autonomousPlaytest,
     });
   }
 
