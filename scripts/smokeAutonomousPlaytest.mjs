@@ -182,7 +182,7 @@ assert.ok(report.runtimeStats.simulation.currentInventory.wood >= 0, 'report sho
 assert.ok(report.runtimeStats.simulation.currentInventory.pickaxes >= 1, 'report should include a real pickaxe after progression');
 assert.ok(report.runtimeStats.simulation.inventoryDelta.wood >= 0, 'report should include inventoryDelta');
 assert.ok(report.runtimeStats.simulation.inventoryDelta.pickaxes >= 1, 'pickaxe progress should be based on real inventory deltas');
-assert.notEqual(report.runtimeStats.simulation.actualEquippedTool, 'hand', 'report should include the actual equipped mining tool');
+assert.ok(report.runtimeStats.simulation.actualEquippedTool && report.runtimeStats.simulation.actualEquippedTool !== 'hand', 'report should include the actual equipped mining tool');
 assert.ok(report.runtimeStats.simulation.inventory.delta.wood >= 0, 'inventory snapshot should include resource deltas');
 assert.ok(report.runtimeStats.simulation.resourceDeltas.wood >= 0, 'report should include explicit resourceDeltas field');
 assert.ok(report.runtimeStats.simulation.crafting.craftedItems.length > 0, 'report should include crafted items');
