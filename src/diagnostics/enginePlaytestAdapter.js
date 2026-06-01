@@ -574,9 +574,15 @@ export class EnginePlaytestAdapter {
 
   equipBestMiningTool() {
     const toolPriority = [TOOL_IDS.ironPickaxe, TOOL_IDS.pickaxe];
-    const slotIndex = this.engine.inventorySystem.hotbar.findIndex((stack) => (
-      stack?.itemType === ITEM_TYPES.tool && toolPriority.includes(stack.itemId)
-    ));
+    const slotIndex = toolPriority.reduce((bestIndex, toolId) => {
+      if (bestIndex >= 0) {
+        return bestIndex;
+      }
+
+      return this.engine.inventorySystem.hotbar.findIndex(
+        (stack) => stack?.itemType === ITEM_TYPES.tool && stack.itemId === toolId,
+      );
+    }, -1);
 
     if (slotIndex >= 0) {
       this.engine.inventorySystem.selectSlot(slotIndex);
