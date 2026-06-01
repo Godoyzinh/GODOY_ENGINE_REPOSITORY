@@ -164,7 +164,7 @@ assert.ok(Object.keys(snapshot.planner.timeSpentByGoal).length >= 10, 'bot shoul
 const completedGoalIds = snapshot.planner.goalsCompleted.map((goal) => goal.id);
 assert.ok(completedGoalIds.includes('craftWoodenPickaxe'), 'bot should craft a real wooden pickaxe before mining stone');
 assert.ok(
-  completedGoalIds.indexOf('craftWoodenPickaxe') > completedGoalIds.indexOf('craftTools'),
+  completedGoalIds.includes('craftTools') && completedGoalIds.indexOf('craftWoodenPickaxe') > completedGoalIds.indexOf('craftTools'),
   'Craft Wooden Pickaxe should happen after Craft Tools prepares sticks',
 );
 assert.ok(
