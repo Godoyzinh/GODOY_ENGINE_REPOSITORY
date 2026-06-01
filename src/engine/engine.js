@@ -815,7 +815,7 @@ function resolveInventoryInitializationSource() {
 
   const url = new URL(window.location.href);
 
-  if (url.searchParams.has('multiplayer') || url.searchParams.has('network')) {
+  if (url.searchParams.get('multiplayer') === '1' || url.searchParams.get('network') === '1') {
     return INVENTORY_INITIALIZATION_SOURCES.multiplayerJoin;
   }
 
