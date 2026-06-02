@@ -70,7 +70,9 @@ Goal route:
 - Build Base Tier 1.
 - Validate storage store/retrieve.
 - Build Base Tier 2.
+- Create resource reserves.
 - Build a permanent base.
+- Continue exploration after the current progression ceiling instead of idling in Maintain Survival.
 
 The CLI writes JSON reports into `reports/`. Generated report files are ignored by Git.
 
@@ -106,6 +108,7 @@ Memory is advisory only. It can influence goal reasons and target selection, but
 - Actual equipped tool, including missing-pickaxe evidence if Gather Stone starts without a valid mining tool.
 - Furnace crafting diagnostics: recipe presence, valid stone-material options, attempted counts, and block reason.
 - AI memory: `memorySnapshot`, learned knowledge, new knowledge, learned lessons, strategy changes, optimization suggestions, biome ratings, strategy hints, biome statistics, progression times, resource discovery metrics, discovered structures, storage reserves, and base tier state.
+- Storage persistence: reports include placed storage chests, reserve contents, and persisted chest counts for engine-backed auto tests.
 - Starting inventory profile plus explicit `initialInventory`, `currentInventory`, and `inventoryDelta` aliases.
 - Goal transition history, failed action evidence, and crafted item/failed craft attempt lists, including no-delta craft failures.
 - Resource scan results for wood progression, including nearest trunk target, scan radius, scanned wood blocks, rejected leaves, target counts, and blocked reasons.

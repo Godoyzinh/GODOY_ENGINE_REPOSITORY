@@ -784,6 +784,7 @@ export class Engine {
   createAutoQaRuntimeSnapshot() {
     const settingsSnapshot = this.settingsSystem.getSnapshot();
     const rendererCapabilities = this.rendererSystem.renderer.capabilities;
+    this.persistenceSnapshot = this.saveSystem.getPersistenceStats();
 
     return {
       renderer: {

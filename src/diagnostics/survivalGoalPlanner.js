@@ -18,6 +18,7 @@ export const SURVIVAL_GOAL_IDS = {
   buildBaseTier1: 'buildBaseTier1',
   buildStorage: 'buildStorage',
   buildBaseTier2: 'buildBaseTier2',
+  createResourceReserve: 'createResourceReserve',
   buildPermanentBase: 'buildPermanentBase',
 };
 
@@ -466,15 +467,35 @@ export const SURVIVAL_GOALS = [
     },
   },
   {
+    id: SURVIVAL_GOAL_IDS.createResourceReserve,
+    label: 'Create Resource Reserve',
+    priority: 12,
+    requirements: ['Tier 2 base and working storage are available.'],
+    successCriteria: [`Storage reserves reach ${STORAGE_RESERVE_TARGETS.wood} wood, ${STORAGE_RESERVE_TARGETS.stone} stone, and ${STORAGE_RESERVE_TARGETS.food} food.`],
+    failureCriteria: ['No storage reserve progress for 360 seconds.'],
+    target: `${STORAGE_RESERVE_TARGETS.wood}/${STORAGE_RESERVE_TARGETS.stone}/${STORAGE_RESERVE_TARGETS.food} stored reserves`,
+    maxSeconds: 360,
+    requirementsMet: (context) => hasIronTier(context) &&
+      getCount(context, 'baseTier') >= 2 &&
+      getCount(context, 'storageCreated') >= 1,
+    isSuccessful: (context) => getReserveScore(context) >= 3,
+    getProgress: (context) => (
+      Math.min(getStoredReserve(context, 'wood') / STORAGE_RESERVE_TARGETS.wood, 1) +
+      Math.min(getStoredReserve(context, 'stone') / STORAGE_RESERVE_TARGETS.stone, 1) +
+      Math.min(getStoredReserve(context, 'food') / STORAGE_RESERVE_TARGETS.food, 1)
+    ) / 3,
+    createPlan: (context) => createReservePlan(context, 'Resource reserves need real gathered materials before the permanent base can validate.'),
+  },
+  {
     id: SURVIVAL_GOAL_IDS.buildPermanentBase,
     label: 'Build Permanent Base',
-    priority: 12,
-    requirements: ['Tier 2 base and storage reserve preparation.'],
+    priority: 11,
+    requirements: ['Tier 2 base and storage reserves are ready.'],
     successCriteria: [`Permanent base reaches Tier 3 with ${PERMANENT_BASE_BLOCK_TARGET} blocks and reserve targets.`],
     failureCriteria: ['No base construction or reserve progress for 600 seconds.'],
     target: `tier 3 base with ${STORAGE_RESERVE_TARGETS.wood}/${STORAGE_RESERVE_TARGETS.stone}/${STORAGE_RESERVE_TARGETS.food} reserves`,
     maxSeconds: 600,
-    requirementsMet: (context) => hasIronTier(context) && getCount(context, 'baseTier') >= 2,
+    requirementsMet: (context) => hasIronTier(context) && getCount(context, 'baseTier') >= 2 && getReserveScore(context) >= 3,
     isSuccessful: (context) => hasIronTier(context) &&
       getCount(context, 'baseTier') >= 3 &&
       getDelta(context, 'permanentBaseBlocksPlaced') >= PERMANENT_BASE_BLOCK_TARGET &&
@@ -831,14 +852,14 @@ export class SurvivalGoalPlanner {
 
     if (!blockedGoal) {
       return {
-        goalId: 'maintainSurvival',
-        goalName: 'Maintain Survival',
+        goalId: 'continueExploration',
+        goalName: 'Continue Exploration',
         priority: 0,
-        action: 'surviveNight',
-        subgoal: 'Patrol shelter, conserve resources, and keep survival stats stable.',
-        reason: 'The survival route reached the current Alpha progression ceiling.',
+        action: 'exploreWorld',
+        subgoal: 'Keep exploring beyond the current Alpha progression ceiling.',
+        reason: 'All current progression goals are complete, so the bot keeps seeking new knowledge instead of idling in maintain survival.',
         progress: 1,
-        target: 'Progression complete',
+        target: 'Find more world knowledge',
       };
     }
 
@@ -1065,6 +1086,53 @@ function createStructureReason(context) {
   }
 
   return `Structure search should avoid repeating only known sites: ${knownStructures.slice(0, 3).map((structure) => structure.type ?? structure.id ?? 'structure').join(', ')}.`;
+}
+
+function createReservePlan(context, reason) {
+  const missingReserve = getMissingReserve(context);
+
+  if (!missingReserve) {
+    return {
+      action: 'maintainStorageReserves',
+      subgoal: 'Verify storage reserve state.',
+      reason,
+      target: 'reserve targets complete',
+    };
+  }
+
+  if (missingReserve === 'food' && getCount(context, 'food') < 4) {
+    return {
+      action: 'gatherFood',
+      subgoal: 'Gather food before stocking permanent base reserves.',
+      reason,
+      target: `${Math.min(getStoredReserve(context, 'food'), STORAGE_RESERVE_TARGETS.food)}/${STORAGE_RESERVE_TARGETS.food} food reserve`,
+    };
+  }
+
+  if (missingReserve === 'wood' && getCount(context, 'wood') < 4) {
+    return {
+      action: 'gatherWood',
+      subgoal: 'Gather wood before stocking permanent base reserves.',
+      reason,
+      target: `${Math.min(getStoredReserve(context, 'wood'), STORAGE_RESERVE_TARGETS.wood)}/${STORAGE_RESERVE_TARGETS.wood} wood reserve`,
+    };
+  }
+
+  if (missingReserve === 'stone' && getCount(context, 'stone') < 4) {
+    return {
+      action: 'gatherStone',
+      subgoal: 'Gather stone before stocking permanent base reserves.',
+      reason,
+      target: `${Math.min(getStoredReserve(context, 'stone'), STORAGE_RESERVE_TARGETS.stone)}/${STORAGE_RESERVE_TARGETS.stone} stone reserve`,
+    };
+  }
+
+  return {
+    action: 'maintainStorageReserves',
+    subgoal: `Store ${missingReserve} in permanent base reserves.`,
+    reason,
+    target: `${missingReserve} reserve`,
+  };
 }
 
 function getReserveScore(context) {
