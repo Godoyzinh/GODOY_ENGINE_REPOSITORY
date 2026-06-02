@@ -1076,6 +1076,7 @@ export class HeadlessPlaytestAdapter {
       reserves: { ...this.storage.reserves },
       extraToolsStored: this.storage.extraToolsStored,
       storageCreated: this.progression.storageCreated,
+      persistedChests: this.progression.storageCreated,
     };
   }
 

@@ -477,7 +477,7 @@ export class AutonomousPlaytestSimulation {
   detectActionLoop(plan) {
     const actionKey = `${plan.goalId}:${plan.action}`;
 
-    if (plan.goalId === 'maintainSurvival') {
+    if (plan.goalId === 'maintainSurvival' || plan.goalId === 'continueExploration') {
       this.actionLoop = createActionLoopState(actionKey, plan.progress);
       return;
     }
@@ -892,6 +892,9 @@ export class AutonomousPlaytestSimulation {
       simulationResult.learnedLessons = updatedMemorySnapshot.learnedLessons ?? [];
       simulationResult.strategyChanges = updatedMemorySnapshot.strategyChanges ?? [];
       simulationResult.biomeRatings = updatedMemorySnapshot.biomeRatings ?? {};
+      if (report.runtimeStats) {
+        report.runtimeStats.aiMemory = updatedMemorySnapshot;
+      }
       if (report.runtimeStats?.simulation) {
         report.runtimeStats.simulation.aiMemory = updatedMemorySnapshot;
         report.runtimeStats.simulation.memorySnapshot = updatedMemorySnapshot;

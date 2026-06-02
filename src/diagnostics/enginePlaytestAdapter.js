@@ -76,6 +76,8 @@ export class EnginePlaytestAdapter {
         food: 0,
       },
       extraToolsStored: 0,
+      chestId: null,
+      chestPosition: null,
     };
     this.discoveredStructures = new Map();
     this.aiMemorySnapshot = null;
@@ -113,6 +115,8 @@ export class EnginePlaytestAdapter {
         food: 0,
       },
       extraToolsStored: 0,
+      chestId: null,
+      chestPosition: null,
     };
     this.discoveredStructures = new Map();
     this.recordBiomeVisit(this.engine.terrainGenerator.stats.activeBiome, 0);
@@ -625,6 +629,8 @@ export class EnginePlaytestAdapter {
       reserves: { ...this.storage.reserves },
       extraToolsStored: this.storage.extraToolsStored,
       storageCreated: this.storageCreated,
+      chestId: this.storage.chestId,
+      persistedChests: this.engine.saveSystem.getPersistenceStats().persistedChests,
     };
   }
 
@@ -848,25 +854,39 @@ export class EnginePlaytestAdapter {
   }
 
   createStorageGoal(elapsedSeconds) {
-    const craftResult = this.craftRecipe(RECIPE_IDS.storageChest);
+    let craftResult = {
+      ok: true,
+      event: 'existing Storage Chest',
+    };
+    let chestStack = this.findStorageChestStack();
 
-    if (!craftResult.ok) {
-      return craftResult;
+    if (!chestStack) {
+      craftResult = this.craftRecipe(RECIPE_IDS.storageChest);
+
+      if (!craftResult.ok) {
+        return craftResult;
+      }
+
+      chestStack = this.findStorageChestStack();
     }
 
-    const chestStack = this.engine.inventorySystem.getAllStacks()
-      .find((stack) => stack?.itemType === ITEM_TYPES.block && stack.itemId === BLOCK_IDS.lootChest && stack.count > 0);
-    const placement = chestStack
-      ? this.findPlacementTarget(elapsedSeconds, BLOCK_IDS.lootChest)
-      : null;
+    if (!chestStack) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'storage chest missing after craft',
+        reason: 'Storage Chest craft succeeded but no chest stack was found for placement.',
+      };
+    }
+
+    const placement = this.findPlacementTarget(elapsedSeconds, BLOCK_IDS.lootChest);
 
     if (!placement) {
-      this.storageCreated += 1;
-      this.storage.placements += 1;
-
       return {
-        ...craftResult,
-        event: 'Storage Chest',
+        ok: false,
+        skipped: true,
+        event: 'storage placement blocked',
+        reason: 'No reachable empty placement slot found for the crafted Storage Chest.',
       };
     }
 
@@ -878,12 +898,13 @@ export class EnginePlaytestAdapter {
     );
 
     if (!wasPlaced) {
-      this.storageCreated += 1;
-      this.storage.placements += 1;
-
       return {
-        ...craftResult,
-        event: 'Storage Chest',
+        ok: false,
+        failures: [{
+          code: 'storage-chest-placement-failed',
+          summary: 'Bot crafted a Storage Chest but could not place it in the loaded world.',
+          severity: 'medium',
+        }],
       };
     }
 
@@ -897,6 +918,10 @@ export class EnginePlaytestAdapter {
 
     this.storageCreated += 1;
     this.storage.placements += 1;
+    this.persistStorageChest({
+      placement,
+      reason: 'created',
+    });
     this.engine.handleBlocksPlaced([{
       ...placement,
       blockId: BLOCK_IDS.lootChest,
@@ -977,6 +1002,9 @@ export class EnginePlaytestAdapter {
 
     if (this.storage.extraToolsStored < 1) {
       this.storage.extraToolsStored += 1;
+      this.persistStorageChest({
+        reason: 'store-extra-tool',
+      });
     }
 
     this.baseTier = Math.max(this.baseTier, 2);
@@ -1477,6 +1505,43 @@ export class EnginePlaytestAdapter {
     });
   }
 
+  findStorageChestStack() {
+    return this.engine.inventorySystem.getAllStacks()
+      .find((stack) => stack?.itemType === ITEM_TYPES.block && stack.itemId === BLOCK_IDS.lootChest && stack.count > 0);
+  }
+
+  persistStorageChest({ placement = null, reason = 'storage-update' } = {}) {
+    const position = placement ?? this.storage.chestPosition ?? {
+      worldX: Math.floor(this.engine.playerController.position.x),
+      y: Math.floor(this.engine.playerController.position.y),
+      worldZ: Math.floor(this.engine.playerController.position.z),
+    };
+    const chestId = this.storage.chestId ?? this.engine.saveSystem.getChestId(position);
+
+    this.storage.chestId = chestId;
+    this.storage.chestPosition = {
+      worldX: position.worldX,
+      y: position.y,
+      worldZ: position.worldZ,
+    };
+    this.engine.saveSystem.saveChestState(chestId, {
+      type: 'storage',
+      source: 'autonomous-playtest',
+      contents: {
+        reserves: { ...this.storage.reserves },
+        extraToolsStored: this.storage.extraToolsStored,
+      },
+      operations: {
+        placements: this.storage.placements,
+        stores: this.storage.stores,
+        retrieves: this.storage.retrieves,
+      },
+      position: { ...this.storage.chestPosition },
+      lastReason: reason,
+    });
+    this.engine.persistenceSnapshot = this.engine.saveSystem.getPersistenceStats();
+  }
+
   storeAnyResource() {
     return this.storeReserveResource('wood') ||
       this.storeReserveResource('stone') ||
@@ -1491,6 +1556,9 @@ export class EnginePlaytestAdapter {
 
       this.storage.reserves[reserveKey] -= 1;
       this.storage.retrieves += 1;
+      this.persistStorageChest({
+        reason: `retrieve-${reserveKey}`,
+      });
       return true;
     }
 
@@ -1522,6 +1590,9 @@ export class EnginePlaytestAdapter {
 
     this.storage.reserves[reserveKey] += count;
     this.storage.stores += 1;
+    this.persistStorageChest({
+      reason: `store-${reserveKey}`,
+    });
     return true;
   }
 

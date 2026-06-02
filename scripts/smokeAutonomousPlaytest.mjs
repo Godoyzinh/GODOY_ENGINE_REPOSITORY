@@ -2,9 +2,15 @@ import assert from 'node:assert/strict';
 import { runHeadlessAiSimulation } from './simulateAiPlaytest.mjs';
 import { AutoQaReportSystem } from '../src/diagnostics/autoQaReportSystem.js';
 import { AiMemorySystem } from '../src/ai/memory/aiMemorySystem.js';
+import { EnginePlaytestAdapter } from '../src/diagnostics/enginePlaytestAdapter.js';
 import { HeadlessPlaytestAdapter } from '../src/diagnostics/headlessPlaytestAdapter.js';
 import { ResourceScanner } from '../src/diagnostics/resourceScanner.js';
 import { TelemetrySystem } from '../src/diagnostics/telemetrySystem.js';
+import { CraftingSystem } from '../src/crafting/craftingSystem.js';
+import { ITEM_IDS, ITEM_TYPES } from '../src/items/itemRegistry.js';
+import { InventorySystem } from '../src/player/inventorySystem.js';
+import { PlayerState } from '../src/player/playerState.js';
+import { SaveSystem } from '../src/save/saveSystem.js';
 import { BLOCK_IDS } from '../src/world/blockTypes.js';
 import { getBlockKey } from '../src/world/chunkMath.js';
 import { SHELTER_BLOCK_TARGET } from '../src/diagnostics/shelterValidator.js';
@@ -275,8 +281,10 @@ assert.ok(memoryGoalIds.includes('createStorage'), 'post-iron route should creat
 assert.ok(memoryGoalIds.includes('buildBaseTier1'), 'post-iron route should build base tier 1');
 assert.ok(memoryGoalIds.includes('buildStorage'), 'post-iron route should validate working storage');
 assert.ok(memoryGoalIds.includes('buildBaseTier2'), 'post-iron route should build base tier 2');
+assert.ok(memoryGoalIds.includes('createResourceReserve'), 'post-iron route should create resource reserves');
 assert.ok(memoryGoalIds.includes('buildPermanentBase'), 'post-iron route should build a permanent base');
 assert.equal(memoryResult.snapshot.aiMemory.runs, 1, 'AI memory should record completed autonomous runs');
+assert.equal(memoryResult.report.runtimeStats.aiMemory.runs, 1, 'top-level report runtime stats should include updated AI memory');
 assert.equal(memoryResult.report.runtimeStats.simulation.aiMemory.runs, 1, 'report should include persisted AI memory');
 assert.equal(memoryResult.report.runtimeStats.simulation.memorySnapshot.runs, 1, 'report should include memorySnapshot alias');
 assert.ok(memoryResult.report.runtimeStats.simulation.learnedKnowledge.length > 0, 'report should include learned knowledge');
@@ -294,7 +302,20 @@ assert.ok(memoryResult.report.runtimeStats.simulation.aiMemory.shelterStats.succ
 assert.ok(memoryResult.report.runtimeStats.simulation.storage.reserves.wood >= 64, 'storage system should maintain wood reserves');
 assert.ok(memoryResult.report.runtimeStats.simulation.storage.reserves.stone >= 64, 'storage system should maintain stone reserves');
 assert.ok(memoryResult.report.runtimeStats.simulation.storage.reserves.food >= 32, 'storage system should maintain food reserves');
+assert.ok(memoryResult.report.runtimeStats.simulation.storage.persistedChests >= 1, 'storage system should expose persisted chests');
 assert.equal(memoryResult.report.runtimeStats.simulation.base.tier, 3, 'permanent base should reach tier 3');
+assert.notEqual(memoryResult.snapshot.planner.currentGoalId, 'maintainSurvival', 'completed progression should continue exploration instead of idling in maintain survival');
+
+const engineStorageHarness = createEngineStorageHarness();
+const engineStorageAdapter = new EnginePlaytestAdapter({ engine: engineStorageHarness.engine });
+const engineStorageResult = engineStorageAdapter.createStorageGoal(1);
+const persistedChestStats = engineStorageHarness.saveSystem.getPersistenceStats();
+const persistedChest = engineStorageHarness.saveSystem.loadChestState(engineStorageAdapter.storage.chestId);
+
+assert.equal(engineStorageResult.ok, true, 'engine storage goal should place the crafted chest');
+assert.equal(persistedChestStats.persistedChests, 1, 'engine storage goal should persist the placed chest');
+assert.equal(engineStorageAdapter.getStorageSnapshot().persistedChests, 1, 'engine storage snapshot should expose persisted chest count');
+assert.equal(persistedChest?.type, 'storage', 'persisted chest should be marked as storage');
 
 const memoryFollowupResult = runHeadlessAiSimulation({
   mode: 'quick',
@@ -551,6 +572,58 @@ assert.equal(scannerResult.nearestWoodTarget.blockId, BLOCK_IDS.wood, 'nearest w
 assert.equal(scannerResult.nearestWoodTarget.nearGround, true, 'scanner should prefer near-ground trunk targets');
 
 console.log('smoke:autonomous-playtest ok');
+
+function createEngineStorageHarness() {
+  const playerState = new PlayerState();
+  const inventorySystem = new InventorySystem({ playerState });
+  const saveSystem = new SaveSystem({ storage: createSmokeMemoryStorage() });
+  const placedBlocks = [];
+
+  playerState.mode = 'survival';
+  inventorySystem.replaceContents({
+    hotbar: [
+      {
+        itemType: ITEM_TYPES.resource,
+        itemId: ITEM_IDS.woodPlank,
+        count: 4,
+        maxStack: 64,
+        name: 'Wood Plank',
+      },
+    ],
+    backpack: [],
+    inventoryProfileId: 'smoke-storage',
+    initializationSource: 'smoke-storage',
+  });
+
+  const engine = {
+    playerState,
+    inventorySystem,
+    craftingSystem: new CraftingSystem({ inventorySystem }),
+    saveSystem,
+    persistenceSnapshot: saveSystem.getPersistenceStats(),
+    playerController: {
+      position: { x: 0, y: 2, z: 0 },
+    },
+    terrainGenerator: {
+      getHeightAt: () => 1,
+      isWorldPositionLoaded: () => true,
+      getBlockAtWorldPosition: () => BLOCK_IDS.air,
+      setBlockAtWorldPosition(worldX, y, worldZ, blockId) {
+        placedBlocks.push({ worldX, y, worldZ, blockId });
+        return true;
+      },
+    },
+    handleBlocksPlaced(blocks) {
+      placedBlocks.push(...blocks);
+    },
+  };
+
+  return {
+    engine,
+    saveSystem,
+    placedBlocks,
+  };
+}
 
 function createScannerSmokeResult() {
   const fakeChunk = {

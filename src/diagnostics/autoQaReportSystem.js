@@ -736,6 +736,8 @@ function sanitizeStorageSnapshot(storageSnapshot = null) {
     },
     extraToolsStored: Number(storageSnapshot.extraToolsStored ?? 0),
     storageCreated: Number(storageSnapshot.storageCreated ?? 0),
+    persistedChests: Number(storageSnapshot.persistedChests ?? 0),
+    chestId: storageSnapshot.chestId ?? null,
   };
 }
 
