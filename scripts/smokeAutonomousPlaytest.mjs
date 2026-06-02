@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { runHeadlessAiSimulation } from './simulateAiPlaytest.mjs';
 import { AutoQaReportSystem } from '../src/diagnostics/autoQaReportSystem.js';
+import { AiMemorySystem } from '../src/ai/memory/aiMemorySystem.js';
 import { HeadlessPlaytestAdapter } from '../src/diagnostics/headlessPlaytestAdapter.js';
 import { ResourceScanner } from '../src/diagnostics/resourceScanner.js';
 import { TelemetrySystem } from '../src/diagnostics/telemetrySystem.js';
@@ -253,6 +254,61 @@ const exportedReport = JSON.parse(JSON.stringify(report));
 assert.equal(exportedReport.issues.length, report.issues.length, 'exported JSON should preserve issues');
 assert.equal(exportedReport.aiTasks.length, report.aiTasks.length, 'exported JSON should preserve aiTasks');
 assert.equal(JSON.stringify(report).includes(['C:', 'Users'].join('\\\\')), false, 'report should avoid local machine paths');
+
+const memorySystem = new AiMemorySystem({
+  storage: createSmokeMemoryStorage(),
+  now: () => '2026-06-02T00:00:00.000Z',
+});
+const memoryResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 300,
+  deltaTime: 0.25,
+  seed: 20260602,
+  aiMemorySystem: memorySystem,
+});
+const memoryGoalIds = memoryResult.snapshot.planner.goalsCompleted.map((goal) => goal.id);
+
+assert.ok(memoryGoalIds.includes('exploreWorld'), 'post-iron route should explore the world');
+assert.ok(memoryGoalIds.includes('discoverNewBiome'), 'post-iron route should discover a new biome');
+assert.ok(memoryGoalIds.includes('discoverStructure'), 'post-iron route should discover a structure');
+assert.ok(memoryGoalIds.includes('createStorage'), 'post-iron route should create storage');
+assert.ok(memoryGoalIds.includes('buildBaseTier1'), 'post-iron route should build base tier 1');
+assert.ok(memoryGoalIds.includes('buildStorage'), 'post-iron route should validate working storage');
+assert.ok(memoryGoalIds.includes('buildBaseTier2'), 'post-iron route should build base tier 2');
+assert.ok(memoryGoalIds.includes('buildPermanentBase'), 'post-iron route should build a permanent base');
+assert.equal(memoryResult.snapshot.aiMemory.runs, 1, 'AI memory should record completed autonomous runs');
+assert.equal(memoryResult.report.runtimeStats.simulation.aiMemory.runs, 1, 'report should include persisted AI memory');
+assert.equal(memoryResult.report.runtimeStats.simulation.memorySnapshot.runs, 1, 'report should include memorySnapshot alias');
+assert.ok(memoryResult.report.runtimeStats.simulation.learnedKnowledge.length > 0, 'report should include learned knowledge');
+assert.ok(Array.isArray(memoryResult.report.runtimeStats.simulation.newKnowledge), 'report should include newKnowledge');
+assert.ok(Array.isArray(memoryResult.report.runtimeStats.simulation.learnedLessons), 'report should include learnedLessons');
+assert.ok(Array.isArray(memoryResult.report.runtimeStats.simulation.strategyChanges), 'report should include strategyChanges');
+assert.ok(Object.keys(memoryResult.report.runtimeStats.simulation.aiMemory.biomeStatistics).length > 0, 'AI memory should store biome statistics');
+assert.ok(Object.keys(memoryResult.report.runtimeStats.simulation.aiMemory.biomeRatings).length > 0, 'AI memory should store biome ratings');
+assert.ok(memoryResult.report.runtimeStats.simulation.aiMemory.progressionTimes.gatherWood, 'AI memory should store progression times');
+assert.ok(memoryResult.report.runtimeStats.simulation.aiMemory.resourceDiscoveryMetrics.wood, 'AI memory should store resource discovery metrics');
+assert.ok(memoryResult.report.runtimeStats.simulation.aiMemory.resourceEfficiency.wood, 'AI memory should store resource efficiency');
+assert.ok(memoryResult.report.runtimeStats.simulation.aiMemory.knownStructures.length > 0, 'AI memory should store known structures');
+assert.ok(memoryResult.report.runtimeStats.simulation.aiMemory.craftingStats.successRate >= 0, 'AI memory should store crafting rates');
+assert.ok(memoryResult.report.runtimeStats.simulation.aiMemory.shelterStats.successRate >= 0, 'AI memory should store shelter rates');
+assert.ok(memoryResult.report.runtimeStats.simulation.storage.reserves.wood >= 64, 'storage system should maintain wood reserves');
+assert.ok(memoryResult.report.runtimeStats.simulation.storage.reserves.stone >= 64, 'storage system should maintain stone reserves');
+assert.ok(memoryResult.report.runtimeStats.simulation.storage.reserves.food >= 32, 'storage system should maintain food reserves');
+assert.equal(memoryResult.report.runtimeStats.simulation.base.tier, 3, 'permanent base should reach tier 3');
+
+const memoryFollowupResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 60,
+  deltaTime: 0.25,
+  seed: 20260603,
+  aiMemorySystem: memorySystem,
+});
+
+assert.equal(memoryFollowupResult.snapshot.aiMemory.runs, 2, 'future runs should keep improving the same AI memory');
+assert.ok(
+  memoryFollowupResult.snapshot.aiMemory.strategyHints.preferredWoodBiome,
+  'future runs should expose learned strategy hints from previous memory',
+);
 
 const emptyInventoryResult = runHeadlessAiSimulation({
   mode: 'quick',
@@ -538,4 +594,20 @@ function createScannerSmokeResult() {
     },
     radius: 16,
   });
+}
+
+function createSmokeMemoryStorage() {
+  const entries = new Map();
+
+  return {
+    setItem(key, value) {
+      entries.set(key, String(value));
+    },
+    getItem(key) {
+      return entries.get(key) ?? null;
+    },
+    removeItem(key) {
+      entries.delete(key);
+    },
+  };
 }

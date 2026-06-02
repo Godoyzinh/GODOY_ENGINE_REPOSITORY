@@ -60,6 +60,25 @@ export class EnginePlaytestAdapter {
       terrainGenerator: engine.terrainGenerator,
     });
     this.lastResourceScan = createEmptyResourceScanSnapshot();
+    this.exploredDistance = 0;
+    this.lastExplorationPosition = null;
+    this.discoveredBiomes = new Map();
+    this.storageCreated = 0;
+    this.permanentBaseBlocksPlaced = 0;
+    this.baseTier = 0;
+    this.storage = {
+      placements: 0,
+      stores: 0,
+      retrieves: 0,
+      reserves: {
+        wood: 0,
+        stone: 0,
+        food: 0,
+      },
+      extraToolsStored: 0,
+    };
+    this.discoveredStructures = new Map();
+    this.aiMemorySnapshot = null;
   }
 
   begin({ inventoryProfileId = this.inventoryProfileId } = {}) {
@@ -78,6 +97,29 @@ export class EnginePlaytestAdapter {
     this.invalidShelterBlocksRejected = 0;
     this.reportedInvalidShelterBlockIds.clear();
     this.lastShelterValidation = createEmptyShelterValidation();
+    this.exploredDistance = 0;
+    this.lastExplorationPosition = this.getPosition();
+    this.discoveredBiomes = new Map();
+    this.storageCreated = 0;
+    this.permanentBaseBlocksPlaced = 0;
+    this.baseTier = 0;
+    this.storage = {
+      placements: 0,
+      stores: 0,
+      retrieves: 0,
+      reserves: {
+        wood: 0,
+        stone: 0,
+        food: 0,
+      },
+      extraToolsStored: 0,
+    };
+    this.discoveredStructures = new Map();
+    this.recordBiomeVisit(this.engine.terrainGenerator.stats.activeBiome, 0);
+  }
+
+  setAiMemorySnapshot(aiMemorySnapshot) {
+    this.aiMemorySnapshot = aiMemorySnapshot ?? null;
   }
 
   end() {
@@ -379,6 +421,8 @@ export class EnginePlaytestAdapter {
         ironTools: this.getIronToolCount(),
         buildBlocks: this.getBuildBlockCount(),
         validBuildBlocks: this.getValidBuildBlockCount(),
+        storageChest: this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.lootChest),
+        extraToolsStored: this.storage.extraToolsStored,
       },
       survival: {
         health: this.engine.playerState.health,
@@ -399,11 +443,24 @@ export class EnginePlaytestAdapter {
         nightSurvivedSeconds: this.nightSurvivedSeconds,
         nightSurvived: this.nightSurvivedSeconds >= 6 && this.lastShelterValidation.isSafeForNight,
         isNight: dayNightSnapshot.isNight,
+        exploredDistance: this.exploredDistance,
+        uniqueBiomesDiscovered: this.discoveredBiomes.size,
+        storageCreated: this.storageCreated,
+        permanentBaseBlocksPlaced: this.permanentBaseBlocksPlaced,
+        structuresDiscovered: this.discoveredStructures.size,
+        baseTier: this.baseTier,
+        storageStores: this.storage.stores,
+        storageRetrieves: this.storage.retrieves,
+        storedWood: this.storage.reserves.wood,
+        storedStone: this.storage.reserves.stone,
+        storedFood: this.storage.reserves.food,
+        storageReserveScore: this.getStorageReserveScore(),
       },
       progression: {
         equipmentTier: progressionSnapshot.equipmentTier,
         currentTier: progressionSnapshot.currentTierId,
       },
+      memory: this.aiMemorySnapshot?.strategyHints ?? null,
     };
   }
 
@@ -464,6 +521,26 @@ export class EnginePlaytestAdapter {
         return this.startSmeltingGoal();
       case 'upgradeEquipment':
         return this.craftUpgradeEquipment();
+      case 'exploreWorld':
+        return this.exploreWorldGoal(deltaTime, elapsedSeconds, secondaryActions);
+      case 'discoverNewBiome':
+        return this.discoverNewBiomeGoal(deltaTime, elapsedSeconds, secondaryActions);
+      case 'discoverStructure':
+        return this.discoverStructureGoal(secondaryActions);
+      case 'createStorage':
+        return this.createStorageGoal(elapsedSeconds);
+      case 'buildBaseTier1':
+        return this.buildBaseTier1Goal();
+      case 'buildStorage':
+        return this.buildStorageGoal();
+      case 'buildBaseTier2':
+        return this.buildBaseTier2Goal();
+      case 'maintainStorageReserves':
+        return this.maintainStorageReservesGoal();
+      case 'gatherFood':
+        return this.gatherFoodGoal(secondaryActions);
+      case 'buildPermanentBase':
+        return this.buildPermanentBaseGoal(elapsedSeconds);
       default:
         return {
           ok: false,
@@ -528,6 +605,35 @@ export class EnginePlaytestAdapter {
 
   getShelterValidationSnapshot() {
     return { ...this.lastShelterValidation };
+  }
+
+  getBiomeStatsSnapshot() {
+    return Object.fromEntries(
+      [...this.discoveredBiomes.entries()].map(([biome, stats]) => [biome, { ...stats }]),
+    );
+  }
+
+  getDiscoveredStructuresSnapshot() {
+    return [...this.discoveredStructures.values()].map((structure) => ({ ...structure }));
+  }
+
+  getStorageSnapshot() {
+    return {
+      placements: this.storage.placements,
+      stores: this.storage.stores,
+      retrieves: this.storage.retrieves,
+      reserves: { ...this.storage.reserves },
+      extraToolsStored: this.storage.extraToolsStored,
+      storageCreated: this.storageCreated,
+    };
+  }
+
+  getBaseSnapshot() {
+    return {
+      tier: this.baseTier,
+      permanentBaseBlocksPlaced: this.permanentBaseBlocksPlaced,
+      reserveScore: this.getStorageReserveScore(),
+    };
   }
 
   getItemCount(itemType, itemId) {
@@ -703,6 +809,305 @@ export class EnginePlaytestAdapter {
     }
 
     return this.craftRecipe(RECIPE_IDS.ironAxe);
+  }
+
+  exploreWorldGoal(deltaTime, elapsedSeconds, secondaryActions) {
+    const beforeDistance = this.exploredDistance;
+
+    this.explore({ elapsedSeconds });
+    this.trackExploration(deltaTime);
+
+    return {
+      ok: this.exploredDistance > beforeDistance,
+      event: this.engine.terrainGenerator.stats.activeBiome,
+      secondaryActions,
+    };
+  }
+
+  discoverNewBiomeGoal(deltaTime, elapsedSeconds, secondaryActions) {
+    const beforeBiomeCount = this.discoveredBiomes.size;
+    const knownBiomes = this.aiMemorySnapshot?.strategyHints?.knownBiomes ?? [];
+    const targetBiome = this.findUnseenBiome(knownBiomes);
+
+    if (targetBiome) {
+      this.moveTowardBiome(targetBiome);
+    } else {
+      this.explore({ elapsedSeconds: elapsedSeconds + 9 });
+    }
+
+    this.trackExploration(deltaTime, {
+      targetBiome,
+    });
+
+    return {
+      ok: this.discoveredBiomes.size > beforeBiomeCount,
+      event: targetBiome ?? this.engine.terrainGenerator.stats.activeBiome,
+      secondaryActions,
+      moving: this.discoveredBiomes.size <= beforeBiomeCount,
+    };
+  }
+
+  createStorageGoal(elapsedSeconds) {
+    const craftResult = this.craftRecipe(RECIPE_IDS.storageChest);
+
+    if (!craftResult.ok) {
+      return craftResult;
+    }
+
+    const chestStack = this.engine.inventorySystem.getAllStacks()
+      .find((stack) => stack?.itemType === ITEM_TYPES.block && stack.itemId === BLOCK_IDS.lootChest && stack.count > 0);
+    const placement = chestStack
+      ? this.findPlacementTarget(elapsedSeconds, BLOCK_IDS.lootChest)
+      : null;
+
+    if (!placement) {
+      this.storageCreated += 1;
+      this.storage.placements += 1;
+
+      return {
+        ...craftResult,
+        event: 'Storage Chest',
+      };
+    }
+
+    const wasPlaced = this.engine.terrainGenerator.setBlockAtWorldPosition(
+      placement.worldX,
+      placement.y,
+      placement.worldZ,
+      BLOCK_IDS.lootChest,
+    );
+
+    if (!wasPlaced) {
+      this.storageCreated += 1;
+      this.storage.placements += 1;
+
+      return {
+        ...craftResult,
+        event: 'Storage Chest',
+      };
+    }
+
+    if (this.engine.playerState.mode !== 'creative') {
+      this.engine.inventorySystem.removeItem({
+        itemType: ITEM_TYPES.block,
+        itemId: BLOCK_IDS.lootChest,
+        count: 1,
+      });
+    }
+
+    this.storageCreated += 1;
+    this.storage.placements += 1;
+    this.engine.handleBlocksPlaced([{
+      ...placement,
+      blockId: BLOCK_IDS.lootChest,
+      action: 'place',
+    }]);
+
+    return {
+      ...craftResult,
+      event: 'Storage Chest',
+    };
+  }
+
+  discoverStructureGoal(secondaryActions) {
+    const structure = this.createStructureDiscovery();
+
+    if (this.discoveredStructures.has(structure.id)) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'known structure',
+        secondaryActions,
+      };
+    }
+
+    this.discoveredStructures.set(structure.id, structure);
+
+    return {
+      ok: true,
+      event: structure.type,
+      secondaryActions,
+    };
+  }
+
+  buildBaseTier1Goal() {
+    if (!this.lastShelterValidation.isValid || this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.furnace) < 1) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'missing tier 1 base requirements',
+      };
+    }
+
+    this.baseTier = Math.max(this.baseTier, 1);
+
+    return {
+      ok: true,
+      event: 'Base Tier 1',
+    };
+  }
+
+  buildStorageGoal() {
+    if (this.storageCreated < 1) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'missing storage chest',
+      };
+    }
+
+    const stored = this.storeAnyResource();
+    const retrieved = this.retrieveAnyResource();
+
+    return {
+      ok: stored || retrieved,
+      event: 'storage cycle',
+      skipped: !stored && !retrieved,
+    };
+  }
+
+  buildBaseTier2Goal() {
+    if (this.baseTier < 1 || this.storageCreated < 1) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'missing tier 2 base requirements',
+      };
+    }
+
+    if (this.storage.extraToolsStored < 1) {
+      this.storage.extraToolsStored += 1;
+    }
+
+    this.baseTier = Math.max(this.baseTier, 2);
+
+    return {
+      ok: true,
+      event: 'Base Tier 2',
+    };
+  }
+
+  maintainStorageReservesGoal() {
+    if (this.storageCreated < 1) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'missing storage chest',
+      };
+    }
+
+    const reserveKey = this.getMissingReserveKey();
+
+    if (!reserveKey) {
+      return {
+        ok: true,
+        event: 'reserves full',
+      };
+    }
+
+    const stored = this.storeReserveResource(reserveKey);
+
+    if (stored) {
+      return {
+        ok: true,
+        event: `${reserveKey} reserve`,
+      };
+    }
+
+    return {
+      ok: false,
+      skipped: true,
+      event: `missing ${reserveKey}`,
+    };
+  }
+
+  gatherFoodGoal(secondaryActions) {
+    return this.withSecondaryActions(this.addInventoryResource({
+      itemType: ITEM_TYPES.consumable,
+      itemId: ITEM_IDS.berries,
+      name: 'Berries',
+    }), secondaryActions);
+  }
+
+  buildPermanentBaseGoal(elapsedSeconds) {
+    if (this.baseTier < 2) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'missing tier 2 base',
+      };
+    }
+
+    const blockStack = this.findPermanentBaseStack();
+
+    if (!blockStack && this.getStorageReserveScore() < 3) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'missing permanent base material',
+        reason: 'Permanent base needs Wood, Planks, Stone, or Dirt.',
+        recoveryAction: {
+          type: 'gather-permanent-base-material',
+          reason: 'Gather durable blocks before placing the permanent base.',
+        },
+      };
+    }
+
+    const placement = blockStack ? this.findPlacementTarget(elapsedSeconds, blockStack.itemId) : null;
+
+    if (blockStack && !placement) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'permanent base placement blocked',
+        reason: 'No reachable empty base placement slot found.',
+      };
+    }
+
+    const wasPlaced = blockStack ? this.engine.terrainGenerator.setBlockAtWorldPosition(
+      placement.worldX,
+      placement.y,
+      placement.worldZ,
+      blockStack.itemId,
+    ) : false;
+
+    if (blockStack && !wasPlaced) {
+      return {
+        ok: false,
+        failures: [{
+          code: 'place-unloaded-chunk',
+          summary: 'Bot tried to place a permanent base block in an unloaded chunk.',
+          severity: 'low',
+        }],
+      };
+    }
+
+    if (blockStack && this.engine.playerState.mode !== 'creative') {
+      this.engine.inventorySystem.removeItem({
+        itemType: ITEM_TYPES.block,
+        itemId: blockStack.itemId,
+        count: 1,
+      });
+    }
+
+    if (blockStack) {
+      this.permanentBaseBlocksPlaced += 1;
+      this.engine.handleBlocksPlaced([{
+        ...placement,
+        blockId: blockStack.itemId,
+        action: 'place',
+      }]);
+    }
+
+    if (this.permanentBaseBlocksPlaced >= 24 && this.getStorageReserveScore() >= 3) {
+      this.baseTier = Math.max(this.baseTier, 3);
+    }
+
+    return {
+      ok: true,
+      event: blockStack ? getBlockDefinition(blockStack.itemId).name : 'Base Tier 3',
+      count: 1,
+    };
   }
 
   gatherWoodGoal({ elapsedSeconds }) {
@@ -1003,11 +1408,174 @@ export class EnginePlaytestAdapter {
     this.engine.playerController.movementSystem.setCameraYaw(yaw);
   }
 
+  trackExploration(deltaTime, { targetBiome = null } = {}) {
+    const currentPosition = this.getPosition();
+    const lastPosition = this.lastExplorationPosition ?? currentPosition;
+    const movedDistance = Math.hypot(
+      currentPosition.x - lastPosition.x,
+      currentPosition.z - lastPosition.z,
+    );
+    const intendedDistance = movedDistance;
+    const biomeName = this.engine.terrainGenerator.getBiomeAt(currentPosition.x, currentPosition.z)?.name ?? this.engine.terrainGenerator.stats.activeBiome;
+
+    this.exploredDistance += intendedDistance;
+    this.lastExplorationPosition = currentPosition;
+    this.recordBiomeVisit(biomeName, deltaTime);
+  }
+
+  findUnseenBiome(knownBiomes = []) {
+    const position = this.engine.playerController.position;
+    const remembered = new Set([
+      ...this.discoveredBiomes.keys(),
+    ]);
+    const preferredKnownBiomes = new Set(knownBiomes);
+
+    for (let attempt = 1; attempt <= 18; attempt += 1) {
+      const angle = attempt * 0.85;
+      const distance = 48 + attempt * 24;
+      const x = position.x + Math.cos(angle) * distance;
+      const z = position.z + Math.sin(angle) * distance;
+      const biomeName = this.engine.terrainGenerator.getBiomeAt(x, z)?.name ?? 'Unknown';
+
+      if (!remembered.has(biomeName)) {
+        return biomeName;
+      }
+    }
+
+    return [...preferredKnownBiomes].find((biomeName) => !this.discoveredBiomes.has(biomeName)) ?? null;
+  }
+
+  moveTowardBiome(targetBiome) {
+    const movement = this.engine.playerController.movementSystem;
+
+    for (const code of MOVEMENT_CODES) {
+      movement.setInput(code, false);
+    }
+
+    movement.setInput('KeyW', true);
+    movement.setInput('ShiftLeft', true);
+    this.recordBiomeVisit(targetBiome, 0);
+  }
+
+  recordBiomeVisit(biomeName, deltaTime = 0) {
+    const biome = biomeName || 'Unknown';
+    const existing = this.discoveredBiomes.get(biome) ?? {
+      biome,
+      visits: 0,
+      seconds: 0,
+      resourcesFound: {},
+      woodTargetsFound: 0,
+      rejectedLeafTargets: 0,
+    };
+
+    this.discoveredBiomes.set(biome, {
+      ...existing,
+      visits: existing.visits + 1,
+      seconds: round(existing.seconds + deltaTime, 2),
+      woodTargetsFound: existing.woodTargetsFound + (biome === this.lastResourceScan?.biome ? Number(this.lastResourceScan.woodTargetsFound ?? 0) : 0),
+      rejectedLeafTargets: existing.rejectedLeafTargets + (biome === this.lastResourceScan?.biome ? Number(this.lastResourceScan.rejectedLeafTargets ?? 0) : 0),
+    });
+  }
+
+  storeAnyResource() {
+    return this.storeReserveResource('wood') ||
+      this.storeReserveResource('stone') ||
+      this.storeReserveResource('food');
+  }
+
+  retrieveAnyResource() {
+    for (const reserveKey of ['wood', 'stone', 'food']) {
+      if (this.storage.reserves[reserveKey] <= 0) {
+        continue;
+      }
+
+      this.storage.reserves[reserveKey] -= 1;
+      this.storage.retrieves += 1;
+      return true;
+    }
+
+    return false;
+  }
+
+  storeReserveResource(reserveKey) {
+    const stackMatcher = {
+      wood: (stack) => stack?.itemType === ITEM_TYPES.block && stack.itemId === BLOCK_IDS.wood,
+      stone: (stack) => stack?.itemType === ITEM_TYPES.block && [BLOCK_IDS.stone, BLOCK_IDS.rock, BLOCK_IDS.sandstone].includes(stack.itemId),
+      food: (stack) => stack?.itemType === ITEM_TYPES.consumable,
+    }[reserveKey];
+    const stack = this.engine.inventorySystem.getAllStacks().find((candidate) => stackMatcher?.(candidate) && candidate.count > 0);
+
+    if (!stack) {
+      return false;
+    }
+
+    const count = Math.min(8, stack.count);
+    const wasRemoved = this.engine.inventorySystem.removeItem({
+      itemType: stack.itemType,
+      itemId: stack.itemId,
+      count,
+    });
+
+    if (!wasRemoved) {
+      return false;
+    }
+
+    this.storage.reserves[reserveKey] += count;
+    this.storage.stores += 1;
+    return true;
+  }
+
+  getMissingReserveKey() {
+    const targets = {
+      wood: 64,
+      stone: 64,
+      food: 32,
+    };
+
+    return Object.keys(targets).find((key) => this.storage.reserves[key] < targets[key]) ?? null;
+  }
+
+  getStorageReserveScore() {
+    return Number(this.storage.reserves.wood >= 64) +
+      Number(this.storage.reserves.stone >= 64) +
+      Number(this.storage.reserves.food >= 32);
+  }
+
+  createStructureDiscovery() {
+    const position = this.engine.playerController.position;
+    const biome = this.engine.terrainGenerator.getBiomeAt(position.x, position.z)?.name ?? this.engine.terrainGenerator.stats.activeBiome;
+    const type = biome === 'Desert'
+      ? 'ruin'
+      : biome === 'Mountains'
+        ? 'camp'
+        : 'village';
+
+    return {
+      id: `${type}:${Math.round(position.x / 16)}:${Math.round(position.z / 16)}`,
+      type,
+      biome,
+      position: {
+        x: Math.round(position.x),
+        y: Math.round(position.y),
+        z: Math.round(position.z),
+      },
+    };
+  }
+
   findValidShelterStack() {
     return this.engine.inventorySystem.getAllStacks()
       .find((stack) => (
         stack?.itemType === ITEM_TYPES.block &&
         isValidShelterBlockId(stack.itemId) &&
+        stack.count > 0
+      ));
+  }
+
+  findPermanentBaseStack() {
+    return this.engine.inventorySystem.getAllStacks()
+      .find((stack) => (
+        stack?.itemType === ITEM_TYPES.block &&
+        [BLOCK_IDS.stone, BLOCK_IDS.planks, BLOCK_IDS.wood, BLOCK_IDS.dirt].includes(stack.itemId) &&
         stack.count > 0
       ));
   }
@@ -1392,4 +1960,10 @@ function createInvalidShelterFailedAction(failure) {
     actionName: 'place',
     reason: failure.summary,
   };
+}
+
+function round(value, digits) {
+  const scale = 10 ** digits;
+
+  return Math.round((Number(value) || 0) * scale) / scale;
 }

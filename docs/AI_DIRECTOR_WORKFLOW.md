@@ -33,6 +33,9 @@ npm run simulate:ai -- --mode=stress
 npm run simulate:ai -- --inventory=empty
 npm run simulate:ai -- --inventory=survival-start
 npm run simulate:ai -- --inventory=debug-rich
+npm run simulate:ai -- --duration=300
+npm run simulate:ai -- --mode=evolution
+npm run simulate:ai -- --duration=1800
 ```
 
 Simulation modes:
@@ -40,6 +43,7 @@ Simulation modes:
 - Quick Smoke: 60 seconds.
 - Standard Test: 5 minutes.
 - Stress Test: 15 minutes.
+- Evolution Test: 30 minutes by default. The CLI splits this into multiple runs that reuse the same AI memory. A `--duration` of 1800 seconds or more automatically uses evolution mode when `--mode` is left as the default (`quick`).
 
 Starting inventory profiles:
 
@@ -59,8 +63,37 @@ Goal route:
 - Obtain a furnace.
 - Smelt ore.
 - Upgrade equipment.
+- Explore the world after iron tier.
+- Discover a new biome.
+- Discover a structure.
+- Create storage.
+- Build Base Tier 1.
+- Validate storage store/retrieve.
+- Build Base Tier 2.
+- Build a permanent base.
 
 The CLI writes JSON reports into `reports/`. Generated report files are ignored by Git.
+
+## Persistent AI Memory
+
+Autonomous playtests maintain local AI memory so future runs can use evidence from prior sessions. The CLI writes `data/AI_MEMORY.json`, and the browser stores the same schema in localStorage. This file is generated runtime data and is ignored by Git.
+
+AI memory stores:
+
+- successful and failed strategies
+- biome statistics
+- progression times per goal
+- resource discovery metrics
+- discovered structures
+- resource efficiency
+- death causes
+- blocked action statistics
+- crafting success and failure rates
+- shelter success rates
+- storage reserves and base tier progress
+- learned knowledge shown inside the Feedback panel
+
+Memory is advisory only. It can influence goal reasons and target selection, but it must not skip validation, simulate success, edit source code, commit, push, or upload data.
 
 ## What The Report Contains
 
@@ -72,6 +105,7 @@ The CLI writes JSON reports into `reports/`. Generated report files are ignored 
 - Inventory initial/current/delta snapshots for autonomous playtests, also exported as `inventorySnapshot` and `resourceDeltas`.
 - Actual equipped tool, including missing-pickaxe evidence if Gather Stone starts without a valid mining tool.
 - Furnace crafting diagnostics: recipe presence, valid stone-material options, attempted counts, and block reason.
+- AI memory: `memorySnapshot`, learned knowledge, new knowledge, learned lessons, strategy changes, optimization suggestions, biome ratings, strategy hints, biome statistics, progression times, resource discovery metrics, discovered structures, storage reserves, and base tier state.
 - Starting inventory profile plus explicit `initialInventory`, `currentInventory`, and `inventoryDelta` aliases.
 - Goal transition history, failed action evidence, and crafted item/failed craft attempt lists, including no-delta craft failures.
 - Resource scan results for wood progression, including nearest trunk target, scan radius, scanned wood blocks, rejected leaves, target counts, and blocked reasons.

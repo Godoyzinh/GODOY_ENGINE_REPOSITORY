@@ -8,6 +8,7 @@ export const RECIPE_IDS = {
   woodenPickaxe: 'woodenPickaxe',
   berrySnack: 'berrySnack',
   furnace: 'furnace',
+  storageChest: 'storageChest',
   campfire: 'campfire',
   ironPickaxe: 'ironPickaxe',
   ironAxe: 'ironAxe',
@@ -70,6 +71,15 @@ export const RECIPE_REGISTRY = {
       },
     ],
     output: { itemType: ITEM_TYPES.block, itemId: BLOCK_IDS.furnace, count: 1 },
+  },
+  [RECIPE_IDS.storageChest]: {
+    id: RECIPE_IDS.storageChest,
+    name: 'Storage Chest',
+    category: 'station',
+    inputs: [
+      { itemType: ITEM_TYPES.resource, itemId: ITEM_IDS.woodPlank, count: 4 },
+    ],
+    output: { itemType: ITEM_TYPES.block, itemId: BLOCK_IDS.lootChest, count: 1 },
   },
   [RECIPE_IDS.campfire]: {
     id: RECIPE_IDS.campfire,

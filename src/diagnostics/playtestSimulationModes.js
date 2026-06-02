@@ -14,6 +14,12 @@ export const PLAYTEST_SIMULATION_MODES = {
     label: 'Stress Test',
     durationSeconds: 15 * 60,
   },
+  evolution: {
+    id: 'evolution',
+    label: 'Evolution Test',
+    durationSeconds: 30 * 60,
+    multiRun: true,
+  },
 };
 
 export function resolvePlaytestMode(modeId = 'quick', overrides = {}) {

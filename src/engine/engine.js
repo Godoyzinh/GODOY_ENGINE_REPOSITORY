@@ -6,6 +6,7 @@ import { CombatSystem } from '../combat/combatSystem.js';
 import { DamageSystem } from '../combat/damageSystem.js';
 import { CraftingSystem } from '../crafting/craftingSystem.js';
 import { AutoQaReportSystem } from '../diagnostics/autoQaReportSystem.js';
+import { createLocalAiMemorySystem } from '../ai/memory/aiMemorySystem.js';
 import { AutonomousPlaytestSimulation } from '../diagnostics/autonomousPlaytestSimulation.js';
 import { EnginePlaytestAdapter } from '../diagnostics/enginePlaytestAdapter.js';
 import { TelemetrySystem } from '../diagnostics/telemetrySystem.js';
@@ -64,6 +65,7 @@ export class Engine {
       runtimeConfig: this.runtimeConfig,
     });
     this.telemetrySystem.installGlobalCapture();
+    this.aiMemorySystem = createLocalAiMemorySystem();
     this.autoQaReportSystem = new AutoQaReportSystem({
       telemetrySystem: this.telemetrySystem,
       runtimeConfig: this.runtimeConfig,
@@ -215,6 +217,7 @@ export class Engine {
       adapter: new EnginePlaytestAdapter({ engine: this }),
       telemetrySystem: this.telemetrySystem,
       reportSystem: this.autoQaReportSystem,
+      aiMemorySystem: this.aiMemorySystem,
       recordFrames: false,
     });
     this.lastAutoTestReport = null;
@@ -224,6 +227,7 @@ export class Engine {
       reportSystem: this.autoQaReportSystem,
       getRuntimeSnapshot: () => this.createAutoQaRuntimeSnapshot(),
       getAutoTestSnapshot: () => this.autonomousPlaytest.getSnapshot(),
+      getAiMemorySnapshot: () => this.aiMemorySystem.getSnapshot(),
       onRunAutoTest: ({ modeId, inventoryProfileId }) => this.startAutonomousPlaytest({ modeId, inventoryProfileId }),
       runtimeConfig: this.runtimeConfig,
       onUiAction: (action) => {
@@ -804,6 +808,7 @@ export class Engine {
       entities: this.entitySystem.stats,
       network: this.networkSession.getSnapshot(),
       persistence: this.persistenceSnapshot,
+      aiMemory: this.aiMemorySystem.getSnapshot(),
     };
   }
 }
