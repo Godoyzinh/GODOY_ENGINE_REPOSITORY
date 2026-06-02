@@ -479,7 +479,11 @@ export const SURVIVAL_GOALS = [
       getCount(context, 'baseTier') >= 2 &&
       getCount(context, 'storageCreated') >= 1,
     isSuccessful: (context) => getReserveScore(context) >= 3,
-    getProgress: (context) => getReserveScore(context) / 3,
+    getProgress: (context) => (
+      Math.min(getStoredReserve(context, 'wood') / STORAGE_RESERVE_TARGETS.wood, 1) +
+      Math.min(getStoredReserve(context, 'stone') / STORAGE_RESERVE_TARGETS.stone, 1) +
+      Math.min(getStoredReserve(context, 'food') / STORAGE_RESERVE_TARGETS.food, 1)
+    ) / 3,
     createPlan: (context) => createReservePlan(context, 'Resource reserves need real gathered materials before the permanent base can validate.'),
   },
   {
