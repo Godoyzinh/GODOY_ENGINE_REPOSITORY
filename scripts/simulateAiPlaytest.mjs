@@ -1,6 +1,8 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { AiMemorySystem, AI_MEMORY_STORAGE_KEY } from '../src/ai/memory/aiMemorySystem.js';
 import { AutoQaReportSystem } from '../src/diagnostics/autoQaReportSystem.js';
 import { AutonomousPlaytestSimulation } from '../src/diagnostics/autonomousPlaytestSimulation.js';
 import { HeadlessPlaytestAdapter } from '../src/diagnostics/headlessPlaytestAdapter.js';
@@ -11,10 +13,25 @@ import {
 } from '../src/diagnostics/autonomousInventoryProfiles.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
+const DEFAULT_AI_MEMORY_PATH = join(PROJECT_ROOT, 'data', 'AI_MEMORY.json');
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const options = parseArgs(process.argv.slice(2));
-  const result = runHeadlessAiSimulation(options);
+  const options = normalizeSimulationOptions(parseArgs(process.argv.slice(2)));
+  const aiMemorySystem = options.useMemory === false
+    ? null
+    : new AiMemorySystem({
+      storage: createFileStorage(options.memoryPath ?? DEFAULT_AI_MEMORY_PATH),
+      storageKey: AI_MEMORY_STORAGE_KEY,
+    });
+  const result = options.mode === 'evolution'
+    ? runEvolutionAiSimulation({
+      ...options,
+      aiMemorySystem,
+    })
+    : runHeadlessAiSimulation({
+    ...options,
+    aiMemorySystem,
+  });
 
   if (options.writeReport !== false) {
     const reportPath = await writeReport(result.report, options.outputDir ?? 'reports');
@@ -25,7 +42,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   console.log(JSON.stringify({
     ok: true,
     reportId: result.report.id,
-    mode: result.snapshot.mode.id,
+    mode: result.snapshot.evolution?.mode ?? result.snapshot.mode.id,
     startingInventoryProfile: result.snapshot.startingInventoryProfile,
     durationSeconds: result.snapshot.elapsedSeconds,
     actions: result.snapshot.actionCounts,
@@ -38,10 +55,58 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       craftedItems: result.snapshot.crafting?.craftedItems?.length ?? 0,
       failedCrafts: result.snapshot.crafting?.failedCrafts?.length ?? 0,
     },
+    aiMemory: {
+      runs: result.snapshot.aiMemory?.runs ?? 0,
+      preferredWoodBiome: result.snapshot.aiMemory?.strategyHints?.preferredWoodBiome ?? null,
+      learnedKnowledge: result.snapshot.aiMemory?.learnedKnowledge?.slice(-3) ?? [],
+    },
+    evolution: result.snapshot.evolution ?? null,
     failures: result.snapshot.failureCounts,
     issues: result.report.issues.length,
     tasks: result.report.aiTasks.length,
   }, null, 2));
+}
+
+export function runEvolutionAiSimulation({
+  durationSeconds = 30 * 60,
+  runs = 3,
+  deltaTime = 0.25,
+  seed = 1337,
+  inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
+  aiMemorySystem = null,
+} = {}) {
+  const safeRunCount = Math.max(1, Number(runs) || 3);
+  const segmentDuration = Math.max(60, Math.floor(Number(durationSeconds ?? 30 * 60) / safeRunCount));
+  const results = [];
+
+  for (let runIndex = 0; runIndex < safeRunCount; runIndex += 1) {
+    results.push(runHeadlessAiSimulation({
+      mode: 'quick',
+      durationSeconds: segmentDuration,
+      deltaTime,
+      seed: seed + runIndex,
+      inventoryProfileId,
+      aiMemorySystem,
+    }));
+  }
+
+  const finalResult = results.at(-1);
+  const evolution = {
+    mode: 'evolution',
+    runs: safeRunCount,
+    segmentDurationSeconds: segmentDuration,
+    totalDurationSeconds: segmentDuration * safeRunCount,
+    reportIds: results.map((result) => result.report.id),
+    progressionTiers: results.map((result) => result.snapshot.planner?.progressionTierReached ?? 'unknown'),
+    goalsCompletedByRun: results.map((result) => result.snapshot.planner?.goalsCompleted?.length ?? 0),
+    memoryRuns: finalResult.snapshot.aiMemory?.runs ?? 0,
+  };
+
+  finalResult.snapshot.evolution = evolution;
+  finalResult.report.evolution = evolution;
+  finalResult.report.runtimeStats.simulation.evolution = evolution;
+
+  return finalResult;
 }
 
 export function runHeadlessAiSimulation({
@@ -51,6 +116,7 @@ export function runHeadlessAiSimulation({
   seed = 1337,
   inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
   adapter = null,
+  aiMemorySystem = null,
 } = {}) {
   const normalizedInventoryProfileId = normalizeAutonomousInventoryProfileId(inventoryProfileId);
   let simulatedNow = 0;
@@ -71,6 +137,7 @@ export function runHeadlessAiSimulation({
     adapter: adapter ?? new HeadlessPlaytestAdapter({ seed, inventoryProfileId: normalizedInventoryProfileId }),
     telemetrySystem,
     reportSystem,
+    aiMemorySystem,
     recordFrames: true,
     advanceClock: (stepSeconds) => {
       simulatedNow += stepSeconds * 1000;
@@ -108,16 +175,52 @@ function parseArgs(args) {
       options.deltaTime = Number(arg.slice('--delta='.length));
     } else if (arg.startsWith('--seed=')) {
       options.seed = Number(arg.slice('--seed='.length));
+    } else if (arg.startsWith('--runs=')) {
+      options.runs = Number(arg.slice('--runs='.length));
     } else if (arg.startsWith('--inventory=')) {
       options.inventoryProfileId = arg.slice('--inventory='.length);
     } else if (arg.startsWith('--output=')) {
       options.outputDir = arg.slice('--output='.length);
+    } else if (arg.startsWith('--memory=')) {
+      options.memoryPath = arg.slice('--memory='.length);
+    } else if (arg === '--no-memory') {
+      options.useMemory = false;
     } else if (arg === '--no-write') {
       options.writeReport = false;
     }
   }
 
   return options;
+}
+
+function normalizeSimulationOptions(options) {
+  const durationSeconds = Number(options.durationSeconds ?? 0);
+  const mode = options.mode ?? 'quick';
+  const shouldUseEvolutionMode = durationSeconds >= 30 * 60 && mode === 'quick';
+
+  return {
+    ...options,
+    mode: shouldUseEvolutionMode ? 'evolution' : mode,
+  };
+}
+
+function createFileStorage(filePath) {
+  return {
+    setItem(_key, value) {
+      mkdirSync(dirname(filePath), { recursive: true });
+      writeFileSync(filePath, String(value), 'utf8');
+    },
+    getItem() {
+      try {
+        return readFileSync(filePath, 'utf8');
+      } catch {
+        return null;
+      }
+    },
+    removeItem() {
+      writeFileSync(filePath, '', 'utf8');
+    },
+  };
 }
 
 function createMemoryStorage() {

@@ -447,6 +447,7 @@ function sanitizeRuntimeSnapshot(runtimeSnapshot) {
       'persistedChests',
       'compressedChunkCandidates',
     ]),
+    aiMemory: sanitizeAiMemorySnapshot(runtimeSnapshot.aiMemory),
     simulation: sanitizeSimulationSnapshot(runtimeSnapshot.simulation),
     simulationAdapter: pick(runtimeSnapshot.simulationAdapter, [
       'type',
@@ -501,6 +502,7 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
   ]));
   const resourceScanResults = sanitizeResourceScanSnapshot(simulationSnapshot.resourceScanResults);
   const shelterValidation = sanitizeShelterValidationSnapshot(simulationSnapshot.shelterValidation);
+  const aiMemory = sanitizeAiMemorySnapshot(simulationSnapshot.memorySnapshot ?? simulationSnapshot.aiMemory);
   const recoveryActions = (simulationSnapshot.recoveryActions ?? []).slice(0, 48).map(sanitizeRecoveryAction);
   const blockedGoals = (simulationSnapshot.blockedGoals ?? []).slice(0, 24).map((blockedGoal) => pick(blockedGoal, [
     'goalId',
@@ -536,6 +538,25 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     failedActions,
     recoveryActions,
     resourceScanResults,
+    biomeStats: sanitizeBiomeStats(simulationSnapshot.biomeStats),
+    discoveredStructures: sanitizeDiscoveredStructures(simulationSnapshot.discoveredStructures),
+    storage: sanitizeStorageSnapshot(simulationSnapshot.storage),
+    base: sanitizeBaseSnapshot(simulationSnapshot.base),
+    aiMemory,
+    memorySnapshot: aiMemory,
+    learnedKnowledge: Array.isArray(simulationSnapshot.learnedKnowledge)
+      ? simulationSnapshot.learnedKnowledge.slice(-24).map((knowledge) => String(knowledge))
+      : aiMemory?.learnedKnowledge ?? [],
+    newKnowledge: Array.isArray(simulationSnapshot.newKnowledge)
+      ? simulationSnapshot.newKnowledge.slice(-24).map((knowledge) => String(knowledge))
+      : aiMemory?.newKnowledge ?? [],
+    learnedLessons: Array.isArray(simulationSnapshot.learnedLessons)
+      ? simulationSnapshot.learnedLessons.slice(-24).map((lesson) => String(lesson))
+      : aiMemory?.learnedLessons ?? [],
+    strategyChanges: Array.isArray(simulationSnapshot.strategyChanges)
+      ? simulationSnapshot.strategyChanges.slice(-24).map((change) => String(change))
+      : aiMemory?.strategyChanges ?? [],
+    biomeRatings: sanitizeBiomeRatings(simulationSnapshot.biomeRatings ?? aiMemory?.biomeRatings),
     woodTargetsFound: Number(simulationSnapshot.woodTargetsFound ?? resourceScanResults?.woodTargetsFound ?? 0),
     woodTargetsRejected: Number(simulationSnapshot.woodTargetsRejected ?? resourceScanResults?.woodTargetsRejected ?? 0),
     rejectedLeafTargets: Number(simulationSnapshot.rejectedLeafTargets ?? resourceScanResults?.rejectedLeafTargets ?? 0),
@@ -554,6 +575,277 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     ])),
     planner: sanitizeGoalPlannerSnapshot(simulationSnapshot.planner),
   };
+}
+
+function sanitizeAiMemorySnapshot(aiMemory = null) {
+  if (!aiMemory) {
+    return null;
+  }
+
+  return {
+    schemaVersion: Number(aiMemory.schemaVersion ?? 0),
+    runs: Number(aiMemory.runs ?? 0),
+    createdAt: aiMemory.createdAt ?? null,
+    lastUpdatedAt: aiMemory.lastUpdatedAt ?? null,
+    lastRun: aiMemory.lastRun ? { ...aiMemory.lastRun } : null,
+    bestWoodBiome: aiMemory.bestWoodBiome ?? null,
+    bestStoneBiome: aiMemory.bestStoneBiome ?? null,
+    averageIronTime: Number(aiMemory.averageIronTime ?? 0),
+    strategies: {
+      successful: (aiMemory.strategies?.successful ?? []).slice(-16).map((strategy) => pick(strategy, [
+        'goalId',
+        'goalName',
+        'strategy',
+        'reason',
+        'timeSpentSeconds',
+        'bestTimeSeconds',
+        'progressionTierReached',
+        'count',
+        'at',
+      ])),
+      failed: (aiMemory.strategies?.failed ?? []).slice(-16).map((strategy) => pick(strategy, [
+        'goalId',
+        'goalName',
+        'strategy',
+        'reason',
+        'timeSpentSeconds',
+        'bestTimeSeconds',
+        'count',
+        'at',
+      ])),
+    },
+    successfulStrategies: (aiMemory.successfulStrategies ?? []).slice(-16).map((strategy) => pick(strategy, [
+      'goalId',
+      'goalName',
+      'strategy',
+      'reason',
+      'timeSpentSeconds',
+      'bestTimeSeconds',
+      'progressionTierReached',
+      'count',
+      'at',
+    ])),
+    failedStrategies: (aiMemory.failedStrategies ?? []).slice(-16).map((strategy) => pick(strategy, [
+      'goalId',
+      'goalName',
+      'strategy',
+      'reason',
+      'timeSpentSeconds',
+      'bestTimeSeconds',
+      'count',
+      'at',
+    ])),
+    biomeStatistics: sanitizeBiomeStats(aiMemory.biomeStatistics),
+    biomeRatings: sanitizeBiomeRatings(aiMemory.biomeRatings),
+    progressionTimes: sanitizeProgressionTimes(aiMemory.progressionTimes),
+    resourceDiscoveryMetrics: sanitizeResourceDiscovery(aiMemory.resourceDiscoveryMetrics),
+    resourceEfficiency: sanitizeResourceEfficiency(aiMemory.resourceEfficiency),
+    discoveredStructures: sanitizeDiscoveredStructures(aiMemory.discoveredStructures),
+    knownStructures: sanitizeDiscoveredStructures(aiMemory.knownStructures),
+    dangerousBiomes: (aiMemory.dangerousBiomes ?? []).slice(0, 16).map((biome) => String(biome)),
+    deathCauses: sanitizeCountRecord(aiMemory.deathCauses),
+    blockedActionStatistics: sanitizeCountRecord(aiMemory.blockedActionStatistics),
+    craftingStats: sanitizeCraftingStatsSummary(aiMemory.craftingStats),
+    shelterStats: sanitizeShelterStatsSummary(aiMemory.shelterStats),
+    storageStats: sanitizeStorageSnapshot(aiMemory.storageStats),
+    learnedKnowledge: (aiMemory.learnedKnowledge ?? []).slice(-24).map((knowledge) => String(knowledge)),
+    newKnowledge: (aiMemory.newKnowledge ?? []).slice(-24).map((knowledge) => String(knowledge)),
+    learnedLessons: (aiMemory.learnedLessons ?? []).slice(-24).map((lesson) => String(lesson)),
+    strategyChanges: (aiMemory.strategyChanges ?? []).slice(-24).map((change) => String(change)),
+    optimizationSuggestions: (aiMemory.optimizationSuggestions ?? []).slice(-24).map((suggestion) => String(suggestion)),
+    strategyHints: aiMemory.strategyHints ? {
+      preferredWoodBiome: aiMemory.strategyHints.preferredWoodBiome ?? null,
+      preferredStoneBiome: aiMemory.strategyHints.preferredStoneBiome ?? null,
+      fastestGoal: aiMemory.strategyHints.fastestGoal ? { ...aiMemory.strategyHints.fastestGoal } : null,
+      commonBottleneck: aiMemory.strategyHints.commonBottleneck ? { ...aiMemory.strategyHints.commonBottleneck } : null,
+      knownBiomes: (aiMemory.strategyHints.knownBiomes ?? []).slice(0, 16),
+      knownStructures: (aiMemory.strategyHints.knownStructures ?? []).slice(0, 16),
+    } : null,
+  };
+}
+
+function sanitizeBiomeStats(biomeStats = null) {
+  if (!biomeStats) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(biomeStats).slice(0, 16).map(([biome, stats]) => [biome, {
+      biome: stats.biome ?? biome,
+      visits: Number(stats.visits ?? 0),
+      seconds: Number(stats.seconds ?? stats.totalSeconds ?? 0),
+      totalSeconds: Number(stats.totalSeconds ?? stats.seconds ?? 0),
+      resourcesFound: sanitizeNumberRecord(stats.resourcesFound),
+      woodTargetsFound: Number(stats.woodTargetsFound ?? 0),
+      rejectedLeafTargets: Number(stats.rejectedLeafTargets ?? 0),
+      lastSeenAt: stats.lastSeenAt ?? null,
+    }]),
+  );
+}
+
+function sanitizeBiomeRatings(biomeRatings = null) {
+  if (!biomeRatings) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(biomeRatings).slice(0, 16).map(([biome, rating]) => [biome, {
+      biome: rating.biome ?? biome,
+      resourceYield: Number(rating.resourceYield ?? 0),
+      survivalRate: Number(rating.survivalRate ?? 0),
+      travelCost: Number(rating.travelCost ?? 0),
+      dangerLevel: Number(rating.dangerLevel ?? 0),
+      score: Number(rating.score ?? 0),
+    }]),
+  );
+}
+
+function sanitizeDiscoveredStructures(discoveredStructures = null) {
+  if (!discoveredStructures) {
+    return [];
+  }
+
+  const structures = Array.isArray(discoveredStructures)
+    ? discoveredStructures
+    : Object.values(discoveredStructures);
+
+  return structures.slice(0, 32).map((structure) => ({
+    id: structure.id ?? null,
+    type: structure.type ?? 'unknown',
+    biome: structure.biome ?? 'Unknown',
+    discoveries: Number(structure.discoveries ?? 1),
+    firstSeenAt: structure.firstSeenAt ?? null,
+    lastSeenAt: structure.lastSeenAt ?? null,
+    position: structure.position ? pick(structure.position, ['x', 'y', 'z']) : null,
+  }));
+}
+
+function sanitizeStorageSnapshot(storageSnapshot = null) {
+  if (!storageSnapshot) {
+    return null;
+  }
+
+  return {
+    placements: Number(storageSnapshot.placements ?? storageSnapshot.storageCreated ?? 0),
+    stores: Number(storageSnapshot.stores ?? 0),
+    retrieves: Number(storageSnapshot.retrieves ?? 0),
+    reserves: {
+      wood: Number(storageSnapshot.reserves?.wood ?? 0),
+      stone: Number(storageSnapshot.reserves?.stone ?? 0),
+      food: Number(storageSnapshot.reserves?.food ?? 0),
+    },
+    extraToolsStored: Number(storageSnapshot.extraToolsStored ?? 0),
+    storageCreated: Number(storageSnapshot.storageCreated ?? 0),
+  };
+}
+
+function sanitizeBaseSnapshot(baseSnapshot = null) {
+  if (!baseSnapshot) {
+    return null;
+  }
+
+  return {
+    tier: Number(baseSnapshot.tier ?? 0),
+    permanentBaseBlocksPlaced: Number(baseSnapshot.permanentBaseBlocksPlaced ?? 0),
+    reserveScore: Number(baseSnapshot.reserveScore ?? 0),
+  };
+}
+
+function sanitizeResourceEfficiency(resourceEfficiency = null) {
+  if (!resourceEfficiency) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(resourceEfficiency).slice(0, 32).map(([resourceId, stats]) => [resourceId, {
+      resourceId: stats.resourceId ?? resourceId,
+      totalGained: Number(stats.totalGained ?? 0),
+      totalActions: Number(stats.totalActions ?? 0),
+      yieldPerAction: Number(stats.yieldPerAction ?? 0),
+      bestBiome: stats.bestBiome ?? null,
+    }]),
+  );
+}
+
+function sanitizeCountRecord(record = null) {
+  if (!record) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(record).slice(0, 32).map(([key, value]) => [key, {
+      ...pick(value, ['summary', 'severity', 'reason', 'goalId', 'goalName']),
+      count: Number(value.count ?? 0),
+    }]),
+  );
+}
+
+function sanitizeCraftingStatsSummary(craftingStats = null) {
+  if (!craftingStats) {
+    return null;
+  }
+
+  return {
+    successes: Number(craftingStats.successes ?? 0),
+    failures: Number(craftingStats.failures ?? 0),
+    successRate: Number(craftingStats.successRate ?? 0),
+    byAction: Object.fromEntries(
+      Object.entries(craftingStats.byAction ?? {}).slice(0, 24).map(([action, stats]) => [action, {
+        successes: Number(stats.successes ?? 0),
+        failures: Number(stats.failures ?? 0),
+        successRate: Number(stats.successRate ?? 0),
+        lastFailureReason: stats.lastFailureReason ?? null,
+      }]),
+    ),
+  };
+}
+
+function sanitizeShelterStatsSummary(shelterStats = null) {
+  if (!shelterStats) {
+    return null;
+  }
+
+  return {
+    attempts: Number(shelterStats.attempts ?? 0),
+    successes: Number(shelterStats.successes ?? 0),
+    failures: Number(shelterStats.failures ?? 0),
+    successRate: Number(shelterStats.successRate ?? 0),
+    lastFailureReason: shelterStats.lastFailureReason ?? null,
+  };
+}
+
+function sanitizeProgressionTimes(progressionTimes = null) {
+  if (!progressionTimes) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(progressionTimes).slice(0, 32).map(([goalId, stats]) => [goalId, {
+      goalId: stats.goalId ?? goalId,
+      goalName: stats.goalName ?? goalId,
+      samples: Number(stats.samples ?? 0),
+      totalSeconds: Number(stats.totalSeconds ?? 0),
+      bestSeconds: stats.bestSeconds === null || stats.bestSeconds === undefined ? null : Number(stats.bestSeconds),
+      averageSeconds: stats.averageSeconds === null || stats.averageSeconds === undefined ? null : Number(stats.averageSeconds),
+      lastSeconds: stats.lastSeconds === null || stats.lastSeconds === undefined ? null : Number(stats.lastSeconds),
+    }]),
+  );
+}
+
+function sanitizeResourceDiscovery(resourceDiscoveryMetrics = null) {
+  if (!resourceDiscoveryMetrics) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(resourceDiscoveryMetrics).slice(0, 32).map(([resourceId, stats]) => [resourceId, {
+      resourceId: stats.resourceId ?? resourceId,
+      found: Number(stats.found ?? 0),
+      attempts: Number(stats.attempts ?? 0),
+      bestBiome: stats.bestBiome ?? null,
+      lastFoundAt: stats.lastFoundAt ?? null,
+    }]),
+  );
 }
 
 function sanitizeResourceScanSnapshot(resourceScanSnapshot = null) {

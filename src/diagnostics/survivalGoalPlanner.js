@@ -11,11 +11,27 @@ export const SURVIVAL_GOAL_IDS = {
   obtainFurnace: 'obtainFurnace',
   smeltOre: 'smeltOre',
   upgradeEquipment: 'upgradeEquipment',
+  exploreWorld: 'exploreWorld',
+  discoverNewBiome: 'discoverNewBiome',
+  discoverStructure: 'discoverStructure',
+  createStorage: 'createStorage',
+  buildBaseTier1: 'buildBaseTier1',
+  buildStorage: 'buildStorage',
+  buildBaseTier2: 'buildBaseTier2',
+  buildPermanentBase: 'buildPermanentBase',
 };
 
 const NIGHT_SURVIVAL_TARGET_SECONDS = 6;
 const NO_PROGRESS_BOTTLENECK_SECONDS = 30;
-const STONE_TARGET_COUNT = 20;
+const STONE_TARGET_COUNT = 24;
+const EXPLORE_WORLD_TARGET_DISTANCE = 180;
+const DISCOVER_BIOME_TARGET_COUNT = 2;
+const PERMANENT_BASE_BLOCK_TARGET = 24;
+const STORAGE_RESERVE_TARGETS = {
+  wood: 64,
+  stone: 64,
+  food: 32,
+};
 
 export const SURVIVAL_GOALS = [
   {
@@ -33,7 +49,7 @@ export const SURVIVAL_GOALS = [
     createPlan: (context) => ({
       action: 'gatherWood',
       subgoal: 'Find a nearby tree and mine wood.',
-      reason: 'Wood unlocks planks, sticks, shelter blocks, fuel, and early crafting.',
+      reason: createWoodReason(context),
       target: `${Math.min(getDelta(context, 'wood'), 3)}/3 wood`,
     }),
   },
@@ -264,11 +280,271 @@ export const SURVIVAL_GOALS = [
       };
     },
   },
+  {
+    id: SURVIVAL_GOAL_IDS.exploreWorld,
+    label: 'Explore World',
+    priority: 20,
+    requirements: ['Iron tier has been reached.'],
+    successCriteria: [`Bot travels at least ${EXPLORE_WORLD_TARGET_DISTANCE} blocks after iron tier progression.`],
+    failureCriteria: ['No exploration distance progress for 180 seconds.'],
+    target: `${EXPLORE_WORLD_TARGET_DISTANCE} explored blocks`,
+    maxSeconds: 180,
+    requirementsMet: (context) => hasIronTier(context),
+    isSuccessful: (context) => hasIronTier(context) && getDelta(context, 'exploredDistance') >= EXPLORE_WORLD_TARGET_DISTANCE,
+    getProgress: (context) => getDelta(context, 'exploredDistance') / EXPLORE_WORLD_TARGET_DISTANCE,
+    createPlan: (context) => ({
+      action: 'exploreWorld',
+      subgoal: 'Travel outward from the starter area and sample world conditions.',
+      reason: createExploreReason(context),
+      target: `${Math.min(Math.round(getDelta(context, 'exploredDistance')), EXPLORE_WORLD_TARGET_DISTANCE)}/${EXPLORE_WORLD_TARGET_DISTANCE} explored blocks`,
+    }),
+  },
+  {
+    id: SURVIVAL_GOAL_IDS.discoverNewBiome,
+    label: 'Discover New Biome',
+    priority: 18,
+    requirements: ['Iron tier has been reached and world exploration has started.'],
+    successCriteria: [`At least ${DISCOVER_BIOME_TARGET_COUNT} distinct biomes are discovered during the run.`],
+    failureCriteria: ['No new biome is discovered for 180 seconds.'],
+    target: `${DISCOVER_BIOME_TARGET_COUNT} discovered biomes`,
+    maxSeconds: 180,
+    requirementsMet: (context) => hasIronTier(context) && (
+      getCount(context, 'exploredDistance') > 0 ||
+      getCount(context, 'uniqueBiomesDiscovered') >= DISCOVER_BIOME_TARGET_COUNT
+    ),
+    isSuccessful: (context) => hasIronTier(context) &&
+      getDelta(context, 'exploredDistance') >= EXPLORE_WORLD_TARGET_DISTANCE &&
+      getCount(context, 'uniqueBiomesDiscovered') >= DISCOVER_BIOME_TARGET_COUNT,
+    getProgress: (context) => getCount(context, 'uniqueBiomesDiscovered') / DISCOVER_BIOME_TARGET_COUNT,
+    createPlan: (context) => ({
+      action: 'discoverNewBiome',
+      subgoal: 'Leave the known biome and confirm a new biome in the world state.',
+      reason: createBiomeReason(context),
+      target: `${Math.min(getCount(context, 'uniqueBiomesDiscovered'), DISCOVER_BIOME_TARGET_COUNT)}/${DISCOVER_BIOME_TARGET_COUNT} biomes`,
+    }),
+  },
+  {
+    id: SURVIVAL_GOAL_IDS.discoverStructure,
+    label: 'Discover Structure',
+    priority: 17,
+    requirements: ['Iron tier has been reached and world exploration has started.'],
+    successCriteria: ['At least one structure is discovered after the bot starts.'],
+    failureCriteria: ['No structure is discovered for 240 seconds.'],
+    target: '1 discovered structure',
+    maxSeconds: 240,
+    requirementsMet: (context) => hasIronTier(context) && getCount(context, 'exploredDistance') > 0,
+    isSuccessful: (context) => hasIronTier(context) && getDelta(context, 'structuresDiscovered') >= 1,
+    getProgress: (context) => getDelta(context, 'structuresDiscovered'),
+    createPlan: (context) => ({
+      action: 'discoverStructure',
+      subgoal: 'Search beyond the starter route for a village, ruin, camp, or loot point.',
+      reason: createStructureReason(context),
+      target: `${Math.min(getDelta(context, 'structuresDiscovered'), 1)}/1 structure`,
+    }),
+  },
+  {
+    id: SURVIVAL_GOAL_IDS.createStorage,
+    label: 'Create Storage',
+    priority: 16,
+    requirements: ['Iron tier has been reached.'],
+    successCriteria: ['A storage chest is crafted or placed after the run starts.'],
+    failureCriteria: ['No storage output for 120 seconds.'],
+    target: '1 storage chest',
+    maxSeconds: 120,
+    requirementsMet: (context) => hasIronTier(context),
+    isSuccessful: (context) => hasIronTier(context) && (getDelta(context, 'storageCreated') >= 1 || getDelta(context, 'storageChest') >= 1),
+    getProgress: (context) => Math.max(getDelta(context, 'storageCreated'), getDelta(context, 'storageChest')),
+    createPlan: (context) => {
+      if (getCount(context, 'planks') < 4 && getCount(context, 'wood') >= 1) {
+        return {
+          action: 'craftPlanks',
+          subgoal: 'Craft planks for a storage chest.',
+          reason: 'Storage needs a real wood-to-planks resource chain before it can count.',
+          target: `${Math.min(getCount(context, 'planks'), 4)}/4 planks`,
+        };
+      }
+
+      if (getCount(context, 'planks') < 4) {
+        return {
+          action: 'gatherWood',
+          subgoal: 'Gather wood for storage construction.',
+          reason: 'The storage goal is missing planks and must return to real resource gathering.',
+          target: `${Math.min(getCount(context, 'wood'), 1)}/1 wood source`,
+        };
+      }
+
+      return {
+        action: 'createStorage',
+        subgoal: 'Craft or place a storage chest from planks.',
+        reason: 'Storage creates the first durable base organization milestone.',
+        target: `${Math.min(Math.max(getDelta(context, 'storageCreated'), getDelta(context, 'storageChest')), 1)}/1 storage`,
+      };
+    },
+  },
+  {
+    id: SURVIVAL_GOAL_IDS.buildBaseTier1,
+    label: 'Build Base Tier 1',
+    priority: 15,
+    requirements: ['A safe shelter and furnace are available.'],
+    successCriteria: ['The base reaches Tier 1 with shelter and furnace access.'],
+    failureCriteria: ['Base Tier 1 does not validate for 120 seconds.'],
+    target: 'base tier 1',
+    maxSeconds: 120,
+    requirementsMet: (context) => hasIronTier(context) && getCount(context, 'furnace') >= 1 && Boolean(context.world?.shelterIsValid),
+    isSuccessful: (context) => getCount(context, 'baseTier') >= 1,
+    getProgress: (context) => Math.min(getCount(context, 'baseTier'), 1),
+    createPlan: () => ({
+      action: 'buildBaseTier1',
+      subgoal: 'Anchor the shelter and furnace into a Tier 1 base.',
+      reason: 'Tier 1 proves the temporary shelter can become a persistent base.',
+      target: 'tier 1 base',
+    }),
+  },
+  {
+    id: SURVIVAL_GOAL_IDS.buildStorage,
+    label: 'Build Storage',
+    priority: 14,
+    requirements: ['Storage exists and can accept resources.'],
+    successCriteria: ['The bot stores and retrieves resources from storage.'],
+    failureCriteria: ['No storage operation succeeds for 120 seconds.'],
+    target: 'working storage',
+    maxSeconds: 120,
+    requirementsMet: (context) => hasIronTier(context) && (
+      getCount(context, 'storageCreated') >= 1 ||
+      getCount(context, 'storageChest') >= 1
+    ),
+    isSuccessful: (context) => getDelta(context, 'storageStores') >= 1 && getDelta(context, 'storageRetrieves') >= 1,
+    getProgress: (context) => (getDelta(context, 'storageStores') + getDelta(context, 'storageRetrieves')) / 2,
+    createPlan: (context) => {
+      if (getCount(context, 'wood') + getCount(context, 'stone') + getCount(context, 'food') < 1) {
+        return {
+          action: hasMiningPickaxe(context) ? 'gatherStone' : 'gatherWood',
+          subgoal: 'Gather a resource before testing storage.',
+          reason: 'Storage cannot be validated without a real resource to store.',
+          target: '1 storable resource',
+        };
+      }
+
+      return {
+        action: 'buildStorage',
+        subgoal: 'Store and retrieve resources through the placed chest.',
+        reason: 'A base needs working storage, not just a decorative chest.',
+        target: `${Math.min(getDelta(context, 'storageStores'), 1)}/1 store, ${Math.min(getDelta(context, 'storageRetrieves'), 1)}/1 retrieve`,
+      };
+    },
+  },
+  {
+    id: SURVIVAL_GOAL_IDS.buildBaseTier2,
+    label: 'Build Base Tier 2',
+    priority: 13,
+    requirements: ['Tier 1 base, working storage, and extra tools are available.'],
+    successCriteria: ['The base reaches Tier 2 with storage and tool reserve.'],
+    failureCriteria: ['Base Tier 2 does not validate for 180 seconds.'],
+    target: 'base tier 2',
+    maxSeconds: 180,
+    requirementsMet: (context) => hasIronTier(context) &&
+      getCount(context, 'baseTier') >= 1 &&
+      getCount(context, 'storageCreated') >= 1,
+    isSuccessful: (context) => getCount(context, 'baseTier') >= 2,
+    getProgress: (context) => Math.min(getCount(context, 'baseTier') / 2, 1),
+    createPlan: (context) => {
+      if (getCount(context, 'extraToolsStored') < 1 && getCount(context, 'ironTools') < 1 && getCount(context, 'pickaxes') < 1) {
+        return {
+          action: 'craftWoodenPickaxe',
+          subgoal: 'Prepare an extra tool for base storage.',
+          reason: 'Tier 2 needs a verified tool reserve.',
+          target: '1 extra tool',
+        };
+      }
+
+      return {
+        action: 'buildBaseTier2',
+        subgoal: 'Upgrade the base with storage and an extra tool reserve.',
+        reason: 'Tier 2 makes the base useful after respawns or long expeditions.',
+        target: 'tier 2 base',
+      };
+    },
+  },
+  {
+    id: SURVIVAL_GOAL_IDS.buildPermanentBase,
+    label: 'Build Permanent Base',
+    priority: 12,
+    requirements: ['Tier 2 base and storage reserve preparation.'],
+    successCriteria: [`Permanent base reaches Tier 3 with ${PERMANENT_BASE_BLOCK_TARGET} blocks and reserve targets.`],
+    failureCriteria: ['No base construction or reserve progress for 600 seconds.'],
+    target: `tier 3 base with ${STORAGE_RESERVE_TARGETS.wood}/${STORAGE_RESERVE_TARGETS.stone}/${STORAGE_RESERVE_TARGETS.food} reserves`,
+    maxSeconds: 600,
+    requirementsMet: (context) => hasIronTier(context) && getCount(context, 'baseTier') >= 2,
+    isSuccessful: (context) => hasIronTier(context) &&
+      getCount(context, 'baseTier') >= 3 &&
+      getDelta(context, 'permanentBaseBlocksPlaced') >= PERMANENT_BASE_BLOCK_TARGET &&
+      getReserveScore(context) >= 3,
+    getProgress: (context) => Math.min(1, (
+      getDelta(context, 'permanentBaseBlocksPlaced') / PERMANENT_BASE_BLOCK_TARGET +
+      getReserveScore(context) / 3
+    ) / 2),
+    createPlan: (context) => {
+      const missingReserve = getMissingReserve(context);
+
+      if (missingReserve) {
+        if (missingReserve === 'food' && getCount(context, 'food') < 4) {
+          return {
+            action: 'gatherFood',
+            subgoal: 'Gather food before stocking permanent base reserves.',
+            reason: 'Tier 3 requires food reserves, not just blocks.',
+            target: `${Math.min(getStoredReserve(context, 'food'), STORAGE_RESERVE_TARGETS.food)}/${STORAGE_RESERVE_TARGETS.food} food reserve`,
+          };
+        }
+
+        if (missingReserve === 'wood' && getCount(context, 'wood') < 4) {
+          return {
+            action: 'gatherWood',
+            subgoal: 'Gather wood before stocking permanent base reserves.',
+            reason: 'Tier 3 requires a real wood reserve.',
+            target: `${Math.min(getStoredReserve(context, 'wood'), STORAGE_RESERVE_TARGETS.wood)}/${STORAGE_RESERVE_TARGETS.wood} wood reserve`,
+          };
+        }
+
+        if (missingReserve === 'stone' && getCount(context, 'stone') < 4) {
+          return {
+            action: 'gatherStone',
+            subgoal: 'Gather stone before stocking permanent base reserves.',
+            reason: 'Tier 3 requires a real stone reserve.',
+            target: `${Math.min(getStoredReserve(context, 'stone'), STORAGE_RESERVE_TARGETS.stone)}/${STORAGE_RESERVE_TARGETS.stone} stone reserve`,
+          };
+        }
+
+        return {
+          action: 'maintainStorageReserves',
+          subgoal: `Store ${missingReserve} in permanent base reserves.`,
+          reason: 'Permanent base validation needs stored reserves, not loose inventory.',
+          target: `${missingReserve} reserve`,
+        };
+      }
+
+      if (getCount(context, 'validBuildBlocks') < 1) {
+        return {
+          action: hasMiningPickaxe(context) ? 'gatherStone' : 'gatherWood',
+          subgoal: 'Gather valid permanent base material.',
+          reason: 'Permanent base progress must come from real building resources.',
+          target: `${Math.min(getCount(context, 'validBuildBlocks'), 1)}/1 valid block`,
+        };
+      }
+
+      return {
+        action: 'buildPermanentBase',
+        subgoal: 'Finalize the Tier 3 permanent base footprint.',
+        reason: 'A permanent base turns survival progression into a reusable world anchor with reserves.',
+        target: `${Math.min(getDelta(context, 'permanentBaseBlocksPlaced'), PERMANENT_BASE_BLOCK_TARGET)}/${PERMANENT_BASE_BLOCK_TARGET} base blocks`,
+      };
+    },
+  },
 ];
 
 export class SurvivalGoalPlanner {
   constructor({ goals = SURVIVAL_GOALS } = {}) {
     this.goals = [...goals].sort((left, right) => right.priority - left.priority);
+    this.aiMemorySnapshot = null;
     this.reset();
   }
 
@@ -291,10 +567,15 @@ export class SurvivalGoalPlanner {
     this.progressionTierReached = 'starter';
   }
 
+  setAiMemorySnapshot(aiMemorySnapshot) {
+    this.aiMemorySnapshot = aiMemorySnapshot ?? null;
+  }
+
   update({ deltaTime, elapsedSeconds, context = {} }) {
     this.captureBaseline(context);
 
     const progressContext = this.createProgressContext(context);
+    progressContext.memory = context.memory ?? this.aiMemorySnapshot?.strategyHints ?? null;
 
     this.lastContext = progressContext;
     this.completeSatisfiedGoals(progressContext, elapsedSeconds);
@@ -688,6 +969,14 @@ function createSmeltingPlan(context, { subgoal, reason, target }) {
 }
 
 function resolveProgressionTier(context, completedGoalIds) {
+  if (
+    getCount(context, 'baseTier') >= 3 ||
+    getDelta(context, 'permanentBaseBlocksPlaced') >= PERMANENT_BASE_BLOCK_TARGET ||
+    completedGoalIds.has(SURVIVAL_GOAL_IDS.buildPermanentBase)
+  ) {
+    return 'settled';
+  }
+
   if (getDelta(context, 'ironTools') >= 1 || completedGoalIds.has(SURVIVAL_GOAL_IDS.upgradeEquipment)) {
     return 'iron';
   }
@@ -729,6 +1018,69 @@ function getEquippedTool(context) {
 
 function getStat(context, key, fallback) {
   return Number(context.survival?.[key] ?? fallback);
+}
+
+function hasIronTier(context) {
+  return getDelta(context, 'ironTools') >= 1 ||
+    getCount(context, 'ironTools') >= 1 ||
+    context.progression?.equipmentTier === 'iron' ||
+    context.progression?.currentTier === 'iron';
+}
+
+function createWoodReason(context) {
+  const preferredWoodBiome = context.memory?.preferredWoodBiome;
+
+  if (!preferredWoodBiome) {
+    return 'Wood unlocks planks, sticks, shelter blocks, fuel, and early crafting.';
+  }
+
+  return `Wood unlocks planks, sticks, shelter blocks, fuel, and early crafting. Memory says ${preferredWoodBiome} has proven wood targets.`;
+}
+
+function createExploreReason(context) {
+  const knownBiomes = context.memory?.knownBiomes ?? [];
+
+  if (knownBiomes.length === 0) {
+    return 'Iron tier is secure; the bot should map the wider world for future routes.';
+  }
+
+  return `Iron tier is secure; known memory biomes are ${knownBiomes.join(', ')}, so exploration should search beyond them.`;
+}
+
+function createBiomeReason(context) {
+  const knownBiomes = context.memory?.knownBiomes ?? [];
+
+  if (knownBiomes.length === 0) {
+    return 'Biome discovery teaches the AI where future resources are likely to be found.';
+  }
+
+  return `Biome discovery should expand beyond remembered biomes: ${knownBiomes.join(', ')}.`;
+}
+
+function createStructureReason(context) {
+  const knownStructures = context.memory?.knownStructures ?? [];
+
+  if (knownStructures.length === 0) {
+    return 'Structures can reveal loot, storage candidates, and safer expansion routes.';
+  }
+
+  return `Structure search should avoid repeating only known sites: ${knownStructures.slice(0, 3).map((structure) => structure.type ?? structure.id ?? 'structure').join(', ')}.`;
+}
+
+function getReserveScore(context) {
+  return ['wood', 'stone', 'food'].reduce((score, key) => (
+    score + (getStoredReserve(context, key) >= STORAGE_RESERVE_TARGETS[key] ? 1 : 0)
+  ), 0);
+}
+
+function getMissingReserve(context) {
+  return ['wood', 'stone', 'food'].find((key) => getStoredReserve(context, key) < STORAGE_RESERVE_TARGETS[key]) ?? null;
+}
+
+function getStoredReserve(context, key) {
+  const storageKey = `stored${key.slice(0, 1).toUpperCase()}${key.slice(1)}`;
+
+  return getCount(context, storageKey);
 }
 
 function clamp01(value) {

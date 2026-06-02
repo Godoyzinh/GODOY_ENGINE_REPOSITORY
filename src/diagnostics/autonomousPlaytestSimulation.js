@@ -28,12 +28,14 @@ export class AutonomousPlaytestSimulation {
     adapter,
     telemetrySystem,
     reportSystem,
+    aiMemorySystem = null,
     recordFrames = true,
     advanceClock = null,
   }) {
     this.adapter = adapter;
     this.telemetrySystem = telemetrySystem;
     this.reportSystem = reportSystem;
+    this.aiMemorySystem = aiMemorySystem;
     this.recordFrames = recordFrames;
     this.advanceClock = advanceClock;
     this.status = 'idle';
@@ -62,6 +64,7 @@ export class AutonomousPlaytestSimulation {
     this.furnaceCraftDiagnostics = createEmptyFurnaceCraftDiagnostics();
     this.obtainFurnaceBlockedAttempts = 0;
     this.miningSpamReported = false;
+    this.aiMemorySnapshot = aiMemorySystem?.getSnapshot?.() ?? null;
   }
 
   start({ modeId = 'quick', durationSeconds = null, inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID } = {}) {
@@ -98,6 +101,7 @@ export class AutonomousPlaytestSimulation {
     this.furnaceCraftDiagnostics = createEmptyFurnaceCraftDiagnostics();
     this.obtainFurnaceBlockedAttempts = 0;
     this.miningSpamReported = false;
+    this.aiMemorySnapshot = this.aiMemorySystem?.getSnapshot?.() ?? this.aiMemorySnapshot;
     this.status = 'running';
     this.telemetrySystem.recordGameplayEvent('auto-test-start', {
       mode: this.mode.id,
@@ -107,7 +111,10 @@ export class AutonomousPlaytestSimulation {
     this.adapter.begin?.({
       mode: this.mode,
       inventoryProfileId: this.startingInventoryProfileId,
+      aiMemorySnapshot: this.aiMemorySnapshot,
     });
+    this.adapter.setAiMemorySnapshot?.(this.aiMemorySnapshot);
+    this.goalPlanner.setAiMemorySnapshot?.(this.aiMemorySnapshot);
 
     return {
       ok: true,
@@ -197,10 +204,14 @@ export class AutonomousPlaytestSimulation {
   updateActions(deltaTime) {
     this.tickActionCooldowns(deltaTime);
 
-    const context = this.adapter.getPlanningState?.({
+    const rawContext = this.adapter.getPlanningState?.({
       elapsedSeconds: this.elapsedSeconds,
       mode: this.mode,
     }) ?? {};
+    const context = {
+      ...rawContext,
+      memory: this.aiMemorySnapshot?.strategyHints ?? null,
+    };
     const plan = this.goalPlanner.update({
       deltaTime,
       elapsedSeconds: this.elapsedSeconds,
@@ -228,10 +239,14 @@ export class AutonomousPlaytestSimulation {
       elapsedSeconds: this.elapsedSeconds,
       mode: this.mode,
     }) ?? { ok: false, skipped: true };
-    const nextContext = this.adapter.getPlanningState?.({
+    const rawNextContext = this.adapter.getPlanningState?.({
       elapsedSeconds: this.elapsedSeconds,
       mode: this.mode,
     }) ?? context;
+    const nextContext = {
+      ...rawNextContext,
+      memory: this.aiMemorySnapshot?.strategyHints ?? null,
+    };
     const result = this.validatePlannedResult({
       plan,
       actionName,
@@ -431,6 +446,20 @@ export class AutonomousPlaytestSimulation {
       obtainFurnace: () => Number(inventoryDelta.furnace ?? 0) > 0 || Number(afterContext.world?.placedFurnaces ?? 0) > Number(beforeContext.world?.placedFurnaces ?? 0),
       smeltOre: () => Number(inventoryDelta.ironIngot ?? 0) > 0,
       upgradeEquipment: () => Number(inventoryDelta.ironTools ?? 0) > 0,
+      exploreWorld: () => Number(worldDelta.exploredDistance ?? 0) > 0,
+      discoverNewBiome: () => Number(worldDelta.uniqueBiomesDiscovered ?? 0) > 0,
+      discoverStructure: () => Number(worldDelta.structuresDiscovered ?? 0) > 0,
+      createStorage: () => Number(worldDelta.storageCreated ?? 0) > 0 || Number(inventoryDelta.storageChest ?? 0) > 0,
+      buildBaseTier1: () => Number(afterContext.world?.baseTier ?? 0) > Number(beforeContext.world?.baseTier ?? 0),
+      buildStorage: () => Number(worldDelta.storageStores ?? 0) > 0 || Number(worldDelta.storageRetrieves ?? 0) > 0,
+      buildBaseTier2: () => Number(afterContext.world?.baseTier ?? 0) > Number(beforeContext.world?.baseTier ?? 0),
+      maintainStorageReserves: () => Number(worldDelta.storageReserveScore ?? 0) > 0 ||
+        Number(worldDelta.storedWood ?? 0) > 0 ||
+        Number(worldDelta.storedStone ?? 0) > 0 ||
+        Number(worldDelta.storedFood ?? 0) > 0,
+      gatherFood: () => Number(inventoryDelta.food ?? 0) + Number(inventoryDelta.berries ?? 0) > 0,
+      buildPermanentBase: () => Number(worldDelta.permanentBaseBlocksPlaced ?? 0) > 0 ||
+        Number(afterContext.world?.baseTier ?? 0) > Number(beforeContext.world?.baseTier ?? 0),
     };
     const check = checks[plan.action];
 
@@ -848,6 +877,32 @@ export class AutonomousPlaytestSimulation {
     });
 
     const simulationResult = this.getSnapshot();
+    const updatedMemorySnapshot = this.aiMemorySystem?.recordSimulation?.({
+      simulationSnapshot: simulationResult,
+      report,
+    }) ?? this.aiMemorySnapshot;
+
+    if (updatedMemorySnapshot) {
+      this.aiMemorySnapshot = updatedMemorySnapshot;
+      this.adapter.setAiMemorySnapshot?.(updatedMemorySnapshot);
+      this.goalPlanner.setAiMemorySnapshot?.(updatedMemorySnapshot);
+      simulationResult.aiMemory = updatedMemorySnapshot;
+      simulationResult.memorySnapshot = updatedMemorySnapshot;
+      simulationResult.newKnowledge = updatedMemorySnapshot.newKnowledge ?? [];
+      simulationResult.learnedLessons = updatedMemorySnapshot.learnedLessons ?? [];
+      simulationResult.strategyChanges = updatedMemorySnapshot.strategyChanges ?? [];
+      simulationResult.biomeRatings = updatedMemorySnapshot.biomeRatings ?? {};
+      if (report.runtimeStats?.simulation) {
+        report.runtimeStats.simulation.aiMemory = updatedMemorySnapshot;
+        report.runtimeStats.simulation.memorySnapshot = updatedMemorySnapshot;
+        report.runtimeStats.simulation.learnedKnowledge = updatedMemorySnapshot.learnedKnowledge ?? [];
+        report.runtimeStats.simulation.newKnowledge = updatedMemorySnapshot.newKnowledge ?? [];
+        report.runtimeStats.simulation.learnedLessons = updatedMemorySnapshot.learnedLessons ?? [];
+        report.runtimeStats.simulation.strategyChanges = updatedMemorySnapshot.strategyChanges ?? [];
+        report.runtimeStats.simulation.biomeRatings = updatedMemorySnapshot.biomeRatings ?? {};
+      }
+    }
+
     this.lastReport = {
       ...report,
       issues: report.issues.map((issue) => ({ ...issue })),
@@ -910,6 +965,17 @@ export class AutonomousPlaytestSimulation {
       failedActions: this.failedActions.map((failedAction) => ({ ...failedAction })),
       recoveryActions: this.recoveryActions.map((recoveryAction) => ({ ...recoveryAction })),
       resourceScanResults,
+      biomeStats: this.adapter.getBiomeStatsSnapshot?.() ?? null,
+      discoveredStructures: this.adapter.getDiscoveredStructuresSnapshot?.() ?? [],
+      storage: this.adapter.getStorageSnapshot?.() ?? null,
+      base: this.adapter.getBaseSnapshot?.() ?? null,
+      aiMemory: this.aiMemorySnapshot,
+      memorySnapshot: this.aiMemorySnapshot,
+      learnedKnowledge: this.aiMemorySnapshot?.learnedKnowledge ?? [],
+      newKnowledge: this.aiMemorySnapshot?.newKnowledge ?? [],
+      learnedLessons: this.aiMemorySnapshot?.learnedLessons ?? [],
+      strategyChanges: this.aiMemorySnapshot?.strategyChanges ?? [],
+      biomeRatings: this.aiMemorySnapshot?.biomeRatings ?? {},
       woodTargetsFound: resourceScanResults?.woodTargetsFound ?? 0,
       woodTargetsRejected: resourceScanResults?.woodTargetsRejected ?? 0,
       rejectedLeafTargets: resourceScanResults?.rejectedLeafTargets ?? 0,
@@ -976,13 +1042,23 @@ function mapPlanActionToAction(planAction) {
     planAction === 'craftWoodenPickaxe' ||
     planAction === 'obtainFurnace' ||
     planAction === 'smeltOre' ||
-    planAction === 'upgradeEquipment'
+    planAction === 'upgradeEquipment' ||
+    planAction === 'createStorage'
   ) {
     return 'craft';
   }
 
-  if (planAction === 'buildShelter') {
+  if (
+    planAction === 'buildShelter' ||
+    planAction === 'buildBaseTier1' ||
+    planAction === 'buildBaseTier2' ||
+    planAction === 'buildPermanentBase'
+  ) {
     return 'place';
+  }
+
+  if (planAction === 'gatherFood' || planAction === 'buildStorage' || planAction === 'maintainStorageReserves') {
+    return 'collect';
   }
 
   if (planAction === 'surviveNight') {
@@ -993,7 +1069,12 @@ function mapPlanActionToAction(planAction) {
     return 'combat';
   }
 
-  if (planAction === 'navigate') {
+  if (
+    planAction === 'navigate' ||
+    planAction === 'exploreWorld' ||
+    planAction === 'discoverNewBiome' ||
+    planAction === 'discoverStructure'
+  ) {
     return 'explore';
   }
 

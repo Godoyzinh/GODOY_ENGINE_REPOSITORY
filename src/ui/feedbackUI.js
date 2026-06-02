@@ -2,6 +2,7 @@ import {
   AUTONOMOUS_INVENTORY_PROFILE_OPTIONS,
   DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
 } from '../diagnostics/autonomousInventoryProfiles.js';
+import { getPlaytestModes } from '../diagnostics/playtestSimulationModes.js';
 
 export class FeedbackUI {
   constructor({
@@ -9,6 +10,7 @@ export class FeedbackUI {
     reportSystem,
     getRuntimeSnapshot,
     getAutoTestSnapshot = null,
+    getAiMemorySnapshot = null,
     onRunAutoTest = null,
     runtimeConfig = null,
     onUiAction = null,
@@ -16,6 +18,7 @@ export class FeedbackUI {
     this.reportSystem = reportSystem;
     this.getRuntimeSnapshot = getRuntimeSnapshot;
     this.getAutoTestSnapshot = getAutoTestSnapshot;
+    this.getAiMemorySnapshot = getAiMemorySnapshot;
     this.onRunAutoTest = onRunAutoTest;
     this.runtimeConfig = runtimeConfig;
     this.onUiAction = onUiAction;
@@ -50,6 +53,7 @@ export class FeedbackUI {
           ${this.renderReportStats()}
         </div>
         ${this.renderAutoTestControls()}
+        ${this.renderAiMemory()}
         <div class="feedback-ui__actions">
           <button type="button" data-action="generate-report">Generate</button>
           <button type="button" data-action="copy-report" ${this.lastReport ? '' : 'disabled'}>Copy JSON</button>
@@ -93,9 +97,11 @@ export class FeedbackUI {
         <div class="feedback-ui__auto-test-row">
           <span>${escapeHtml(statusLabel)}</span>
           <select data-action="auto-test-mode" ${isRunning ? 'disabled' : ''}>
-            <option value="quick" ${this.selectedAutoTestMode === 'quick' ? 'selected' : ''}>Quick 60s</option>
-            <option value="standard" ${this.selectedAutoTestMode === 'standard' ? 'selected' : ''}>Standard 5m</option>
-            <option value="stress" ${this.selectedAutoTestMode === 'stress' ? 'selected' : ''}>Stress 15m</option>
+            ${getPlaytestModes().map((mode) => `
+              <option value="${escapeAttribute(mode.id)}" ${this.selectedAutoTestMode === mode.id ? 'selected' : ''}>
+                ${escapeHtml(formatModeOption(mode))}
+              </option>
+            `).join('')}
           </select>
         </div>
         <div class="feedback-ui__auto-test-row">
@@ -144,6 +150,51 @@ export class FeedbackUI {
         <span>${escapeHtml(label)}</span>
         <strong>${escapeHtml(value ?? 'None')}</strong>
       </div>
+    `;
+  }
+
+  renderAiMemory() {
+    const memorySnapshot = this.getAiMemorySnapshot?.() ?? this.lastReport?.runtimeStats?.simulation?.aiMemory ?? null;
+
+    if (!memorySnapshot) {
+      return '';
+    }
+
+    const knowledge = (memorySnapshot.learnedKnowledge ?? []).slice(-4);
+    const successfulStrategies = (memorySnapshot.successfulStrategies ?? memorySnapshot.strategies?.successful ?? []).slice(-3);
+    const failedStrategies = (memorySnapshot.failedStrategies ?? memorySnapshot.strategies?.failed ?? []).slice(-3);
+    const suggestions = (memorySnapshot.optimizationSuggestions ?? []).slice(-3);
+    const knownStructures = (memorySnapshot.knownStructures ?? []).slice(0, 3);
+    const bestBiome = memorySnapshot.bestWoodBiome ?? memorySnapshot.strategyHints?.preferredWoodBiome ?? 'unknown';
+    const averageIronTime = Number(memorySnapshot.averageIronTime ?? 0);
+    const tier = memorySnapshot.lastRun?.progressionTierReached ?? 'none';
+
+    return `
+      <div class="feedback-ui__ai-memory" aria-label="AI learned knowledge">
+        <div class="feedback-ui__ai-plan-title">AI Memory</div>
+        ${this.renderAiPlanRow('Runs Learned', memorySnapshot.runs ?? 0)}
+        ${this.renderAiPlanRow('Best Biome', bestBiome)}
+        ${this.renderAiPlanRow('Avg Iron', averageIronTime > 0 ? `${averageIronTime}s` : 'unknown')}
+        ${this.renderAiPlanRow('Structures', knownStructures.length > 0 ? knownStructures.map((structure) => structure.type ?? structure.id).join(', ') : 'none')}
+        ${this.renderAiPlanRow('Last Tier', tier)}
+        ${knowledge.length > 0 ? `
+          <ul class="feedback-ui__knowledge-list">
+            ${knowledge.map((entry) => `<li>${escapeHtml(entry)}</li>`).join('')}
+          </ul>
+        ` : '<span class="feedback-ui__note">No learned knowledge yet. Run an auto test to train local memory.</span>'}
+        ${successfulStrategies.length > 0 ? this.renderMemoryList('Learned Strategies', successfulStrategies.map((strategy) => strategy.strategy ?? strategy.goalName)) : ''}
+        ${failedStrategies.length > 0 ? this.renderMemoryList('Failed Strategies', failedStrategies.map((strategy) => strategy.reason ?? strategy.strategy)) : ''}
+        ${suggestions.length > 0 ? this.renderMemoryList('Suggestions', suggestions) : ''}
+      </div>
+    `;
+  }
+
+  renderMemoryList(title, entries) {
+    return `
+      <div class="feedback-ui__ai-plan-title">${escapeHtml(title)}</div>
+      <ul class="feedback-ui__knowledge-list">
+        ${entries.map((entry) => `<li>${escapeHtml(entry ?? 'Unknown')}</li>`).join('')}
+      </ul>
     `;
   }
 
@@ -308,4 +359,14 @@ function escapeHtml(value) {
 
 function escapeAttribute(value) {
   return escapeHtml(value).replaceAll('"', '&quot;');
+}
+
+function formatModeOption(mode) {
+  const durationMinutes = Math.round((mode.durationSeconds ?? 60) / 60);
+
+  if (durationMinutes <= 1) {
+    return `${mode.label} 60s`;
+  }
+
+  return `${mode.label} ${durationMinutes}m`;
 }
