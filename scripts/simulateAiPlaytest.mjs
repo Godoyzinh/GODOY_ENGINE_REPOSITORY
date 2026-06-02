@@ -75,7 +75,10 @@ export function runEvolutionAiSimulation({
   inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
   aiMemorySystem = null,
 } = {}) {
-  const safeRunCount = Math.max(1, Number(runs) || 3);
+  const parsedRuns = Number(runs);
+  const safeRunCount = Number.isFinite(parsedRuns)
+    ? Math.max(1, Math.floor(parsedRuns))
+    : 3;
   const segmentDuration = Math.max(60, Math.floor(Number(durationSeconds ?? 30 * 60) / safeRunCount));
   const results = [];
 
