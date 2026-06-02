@@ -1443,8 +1443,8 @@ export class EnginePlaytestAdapter {
       currentPosition.x - lastPosition.x,
       currentPosition.z - lastPosition.z,
     );
-    const intendedDistance = movedDistance > 0.05 ? movedDistance : 8 * deltaTime;
-    const biomeName = targetBiome ?? this.engine.terrainGenerator.getBiomeAt(currentPosition.x, currentPosition.z)?.name ?? this.engine.terrainGenerator.stats.activeBiome;
+    const intendedDistance = movedDistance;
+    const biomeName = this.engine.terrainGenerator.getBiomeAt(currentPosition.x, currentPosition.z)?.name ?? this.engine.terrainGenerator.stats.activeBiome;
 
     this.exploredDistance += intendedDistance;
     this.lastExplorationPosition = currentPosition;

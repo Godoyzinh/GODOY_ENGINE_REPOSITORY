@@ -43,7 +43,7 @@ Simulation modes:
 - Quick Smoke: 60 seconds.
 - Standard Test: 5 minutes.
 - Stress Test: 15 minutes.
-- Evolution Test: 30 minutes by default. The CLI splits this into multiple runs that reuse the same AI memory. A `--duration` of 1800 seconds or more automatically uses evolution mode.
+- Evolution Test: 30 minutes by default. The CLI splits this into multiple runs that reuse the same AI memory. A `--duration` of 1800 seconds or more automatically uses evolution mode when `--mode` is left as the default (`quick`).
 
 Starting inventory profiles:
 

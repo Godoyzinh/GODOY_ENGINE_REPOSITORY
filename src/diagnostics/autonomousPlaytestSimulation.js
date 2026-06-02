@@ -888,6 +888,7 @@ export class AutonomousPlaytestSimulation {
       this.goalPlanner.setAiMemorySnapshot?.(updatedMemorySnapshot);
       simulationResult.aiMemory = updatedMemorySnapshot;
       simulationResult.memorySnapshot = updatedMemorySnapshot;
+      simulationResult.learnedKnowledge = updatedMemorySnapshot.learnedKnowledge ?? [];
       simulationResult.newKnowledge = updatedMemorySnapshot.newKnowledge ?? [];
       simulationResult.learnedLessons = updatedMemorySnapshot.learnedLessons ?? [];
       simulationResult.strategyChanges = updatedMemorySnapshot.strategyChanges ?? [];
