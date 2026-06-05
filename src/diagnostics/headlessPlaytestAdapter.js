@@ -69,6 +69,9 @@ export class HeadlessPlaytestAdapter {
     this.discoveredBiomes = new Map();
     this.discoveredStructures = new Map();
     this.aiMemorySnapshot = null;
+    this.unsafeTerrainBlacklist = [];
+    this.lastTerrainSafety = this.createTerrainSafetySnapshot();
+    this.blockedPlacementReasons = [];
   }
 
   begin({ inventoryProfileId = this.inventoryProfileId } = {}) {
@@ -102,6 +105,9 @@ export class HeadlessPlaytestAdapter {
     this.reportedInvalidShelterMaterials.clear();
     this.discoveredBiomes = new Map();
     this.discoveredStructures = new Map();
+    this.unsafeTerrainBlacklist = [];
+    this.lastTerrainSafety = this.createTerrainSafetySnapshot();
+    this.blockedPlacementReasons = [];
     this.recordBiomeVisit(this.stats.activeBiome, 0);
   }
 
@@ -407,6 +413,85 @@ export class HeadlessPlaytestAdapter {
     }
   }
 
+  executeSurvivalRecovery({ intent, deltaTime, elapsedSeconds }) {
+    switch (intent.type) {
+      case 'eat-food':
+        if (this.inventory.berries <= 0) {
+          return {
+            ok: false,
+            skipped: true,
+            event: 'no food',
+            reason: 'No berries available to eat during survival recovery.',
+          };
+        }
+
+        this.inventory.berries -= 1;
+        this.stats.hunger = Math.min(100, this.stats.hunger + 18);
+        this.stats.health = Math.min(100, this.stats.health + 4);
+
+        return {
+          ok: true,
+          event: 'ate berries',
+          count: 1,
+        };
+
+      case 'search-food':
+        return this.gatherFood([{
+          action: 'navigate',
+          event: 'food search',
+        }]);
+
+      case 'return-to-base':
+        this.position = { x: 0, y: 8, z: 0 };
+        this.velocity = { x: 0, y: 0, z: 0 };
+        this.stats.health = Math.min(100, this.stats.health + 8);
+        this.stats.stamina = Math.min(100, this.stats.stamina + 14);
+        this.stats.aggroHostiles = 0;
+
+        return {
+          ok: true,
+          event: 'returned to base',
+          count: 1,
+        };
+
+      case 'hold-low-health':
+        this.velocity = { x: 0, y: 0, z: 0 };
+        this.stats.health = Math.min(100, this.stats.health + 3);
+        this.stats.stamina = Math.min(100, this.stats.stamina + 8);
+        this.stats.hunger = Math.max(0, this.stats.hunger - 0.2);
+
+        return {
+          ok: true,
+          event: 'rested',
+          count: 1,
+        };
+
+      case 'avoid-risky-terrain':
+        this.blacklistCurrentTerrain(intent.reason);
+        this.position.x += 8;
+        this.position.z += 5;
+        this.position.y = 8;
+        this.stats.activeBiome = getBiomeName(this.position.x, this.position.z);
+        this.lastTerrainSafety = this.createTerrainSafetySnapshot({
+          reason: 'Moved away from blacklisted terrain.',
+          riskLevel: 'low',
+        });
+
+        return {
+          ok: true,
+          event: 'avoided terrain',
+          count: 1,
+        };
+
+      default:
+        return {
+          ok: false,
+          skipped: true,
+          reason: `Unknown survival recovery intent "${intent.type}".`,
+        };
+    }
+  }
+
   moveTowardGoal({ plan, deltaTime, elapsedSeconds }) {
     const goalHash = hashGoal(plan.goalId ?? 'idle');
     const angle = goalHash * 0.7 + elapsedSeconds * 0.18;
@@ -577,6 +662,10 @@ export class HeadlessPlaytestAdapter {
         reason: this.lastShelterValidation.lastBlockedReason,
         failures: invalidSelectionFailure ? [invalidSelectionFailure] : [],
         failedActions: invalidSelectionFailure ? [createInvalidShelterFailedAction(invalidSelectionFailure)] : [],
+        blockedPlacementReasons: [{
+          reason: this.lastShelterValidation.lastBlockedReason,
+          material: this.selectedShelterMaterial ?? null,
+        }],
         recoveryAction: {
           type: 'gather-valid-shelter-material',
           reason: 'Shelter placement needs wood, planks, stone, or dirt.',
@@ -1305,7 +1394,7 @@ export class HeadlessPlaytestAdapter {
       persistence: {
         saveSizeKb: this.stats.saveSizeKb,
         persistedEntities: this.stats.activeEntities,
-        persistedChests: 0,
+        persistedChests: this.progression.storageCreated,
         compressedChunkCandidates: 0,
       },
       simulationAdapter: {
@@ -1328,6 +1417,12 @@ export class HeadlessPlaytestAdapter {
         : null,
       targets: (this.lastResourceScan.targets ?? []).map((target) => ({ ...target })),
     };
+  }
+
+  getTerrainSafetySnapshot() {
+    this.lastTerrainSafety = this.createTerrainSafetySnapshot();
+
+    return { ...this.lastTerrainSafety };
   }
 
   getShelterValidationSnapshot() {
@@ -1354,6 +1449,61 @@ export class HeadlessPlaytestAdapter {
       lastBlockedReason: overrides.lastBlockedReason ?? null,
       recovery: overrides.recovery ?? null,
     };
+  }
+
+  createTerrainSafetySnapshot(overrides = {}) {
+    const position = overrides.position ?? this.position;
+    const key = createTerrainCellKey(position);
+    const biome = this.stats.activeBiome ?? 'Unknown';
+    const slopeScore = Math.abs(Math.sin(position.x * 0.12) - Math.sin(position.z * 0.12)) * 4;
+    const steepSlope = overrides.steepSlope ?? (biome === 'Mountains' && slopeScore > 3.35);
+    const fallRisk = overrides.fallRisk ?? (steepSlope && Math.abs(Math.round(position.x + position.z)) % 29 === 0);
+    const currentlyBlacklisted = this.unsafeTerrainBlacklist.some((entry) => entry.key === key);
+
+    return {
+      position: {
+        x: round(position.x, 2),
+        y: round(position.y, 2),
+        z: round(position.z, 2),
+      },
+      biome,
+      cellKey: key,
+      fallRisk,
+      steepSlope,
+      currentlyBlacklisted,
+      blacklistSize: this.unsafeTerrainBlacklist.length,
+      riskLevel: overrides.riskLevel ?? (fallRisk ? 'high' : steepSlope || currentlyBlacklisted ? 'medium' : 'low'),
+      reason: overrides.reason ?? (
+        fallRisk
+          ? 'Potential fall risk detected near steep simulated terrain.'
+          : steepSlope
+            ? 'Steep mountain slope detected near exploration path.'
+            : currentlyBlacklisted
+              ? 'Current terrain cell was previously blacklisted.'
+              : null
+      ),
+    };
+  }
+
+  blacklistCurrentTerrain(reason = 'Unsafe terrain was detected.') {
+    const position = this.getPosition();
+    const key = createTerrainCellKey(position);
+
+    if (this.unsafeTerrainBlacklist.some((entry) => entry.key === key)) {
+      return;
+    }
+
+    this.unsafeTerrainBlacklist.push({
+      key,
+      reason,
+      biome: this.stats.activeBiome,
+      position: {
+        x: round(position.x, 2),
+        y: round(position.y, 2),
+        z: round(position.z, 2),
+      },
+    });
+    this.unsafeTerrainBlacklist = this.unsafeTerrainBlacklist.slice(-24);
   }
 
   noise() {
@@ -1435,6 +1585,10 @@ function createHeadlessShelterPattern(index) {
   ];
 
   return pattern[index % pattern.length];
+}
+
+function createTerrainCellKey(position) {
+  return `${Math.floor(position.x / 8)},${Math.floor(position.z / 8)}`;
 }
 
 function createInvalidShelterFailedAction(failure) {

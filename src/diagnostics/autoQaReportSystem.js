@@ -153,6 +153,9 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
   const resourceScanResults = simulationSnapshot.resourceScanResults ?? {};
   const shelterValidation = simulationSnapshot.shelterValidation ?? {};
   const blockedGoals = simulationSnapshot.blockedGoals ?? [];
+  const blockedPlacementReasons = simulationSnapshot.blockedPlacementReasons ?? [];
+  const terrainDeathContext = simulationSnapshot.terrainDeathContext ?? null;
+  const isHeadlessSimulation = runtimeSnapshot.simulationAdapter?.type === 'headless';
   const miningRatePerMinute = calculateActionRatePerMinute({
     count: simulationSnapshot.actionCounts?.mine,
     elapsedSeconds: simulationSnapshot.elapsedSeconds,
@@ -173,7 +176,7 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
     });
   }
 
-  if ((telemetrySnapshot.frameCount ?? 0) > 120 && averageFps > 0 && averageFps < 30) {
+  if (!isHeadlessSimulation && (telemetrySnapshot.frameCount ?? 0) > 120 && averageFps > 0 && averageFps < 30) {
     issues.push({
       code: 'low-average-fps',
       category: AI_TASK_CATEGORIES.performance,
@@ -184,7 +187,7 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
     });
   }
 
-  if (minFps !== null && minFps < 15) {
+  if (!isHeadlessSimulation && minFps !== null && minFps < 15) {
     issues.push({
       code: 'low-min-fps',
       category: AI_TASK_CATEGORIES.performance,
@@ -203,6 +206,28 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
       title: 'Review early survival pressure',
       summary: `${deaths} player death event(s) occurred during the session.`,
       evidence: `Last survival event: ${runtimeSnapshot.survival?.lastEvent ?? 'unknown'}.`,
+    });
+  }
+
+  if (terrainDeathContext) {
+    issues.push({
+      code: 'terrain-death',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Avoid terrain deaths during autonomous exploration',
+      summary: terrainDeathContext.summary ?? 'Autonomous player died from terrain damage.',
+      evidence: `Biome: ${terrainDeathContext.biome ?? 'unknown'}; goal: ${terrainDeathContext.currentGoal ?? 'unknown'}; position: ${JSON.stringify(terrainDeathContext.position ?? null)}.`,
+    });
+  }
+
+  if (Number(runtimeSnapshot.survival?.health ?? 100) < 50 || Number(runtimeSnapshot.survival?.hunger ?? 100) < 25) {
+    issues.push({
+      code: 'survival-recovery-needed',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Improve autonomous survival recovery',
+      summary: 'The autonomous player finished with low health or hunger after the stress run.',
+      evidence: `Health: ${runtimeSnapshot.survival?.health ?? 'unknown'}; hunger: ${runtimeSnapshot.survival?.hunger ?? 'unknown'}.`,
     });
   }
 
@@ -297,6 +322,19 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
       title: 'Reject invalid AI shelter materials',
       summary: 'The autonomous player attempted to use invalid shelter material during buildShelter.',
       evidence: `Rejected invalid shelter blocks: ${shelterValidation.invalidShelterBlocksRejected ?? simulationSnapshot.invalidShelterBlocksRejected ?? 0}.`,
+    });
+  }
+
+  if (blockedPlacementReasons.length > 0) {
+    const recentReason = blockedPlacementReasons.at(-1);
+
+    issues.push({
+      code: 'blocked-shelter-placement',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Improve AI shelter placement recovery',
+      summary: `${blockedPlacementReasons.length} shelter placement block reason(s) were recorded.`,
+      evidence: `${recentReason.reason ?? 'unknown'} at ${JSON.stringify(recentReason.position ?? null)}.`,
     });
   }
 
@@ -504,6 +542,10 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
   const shelterValidation = sanitizeShelterValidationSnapshot(simulationSnapshot.shelterValidation);
   const aiMemory = sanitizeAiMemorySnapshot(simulationSnapshot.memorySnapshot ?? simulationSnapshot.aiMemory);
   const recoveryActions = (simulationSnapshot.recoveryActions ?? []).slice(0, 48).map(sanitizeRecoveryAction);
+  const survivalRecoveryActions = (simulationSnapshot.survivalRecoveryActions ?? []).slice(0, 48).map(sanitizeSurvivalRecoveryAction);
+  const foodSearchActions = (simulationSnapshot.foodSearchActions ?? []).slice(0, 48).map(sanitizeSurvivalRecoveryAction);
+  const blockedPlacementReasons = (simulationSnapshot.blockedPlacementReasons ?? []).slice(0, 48)
+    .map(sanitizeBlockedPlacementReason);
   const blockedGoals = (simulationSnapshot.blockedGoals ?? []).slice(0, 24).map((blockedGoal) => pick(blockedGoal, [
     'goalId',
     'goalName',
@@ -544,6 +586,9 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     base: sanitizeBaseSnapshot(simulationSnapshot.base),
     aiMemory,
     memorySnapshot: aiMemory,
+    memoryPersistenceSource: simulationSnapshot.memoryPersistenceSource ?? aiMemory?.memoryPersistenceSource ?? 'unknown',
+    memoryLoadRunCount: Number(simulationSnapshot.memoryLoadRunCount ?? aiMemory?.memoryLoadRunCount ?? 0),
+    memorySaveRunCount: Number(simulationSnapshot.memorySaveRunCount ?? aiMemory?.memorySaveRunCount ?? 0),
     learnedKnowledge: Array.isArray(simulationSnapshot.learnedKnowledge)
       ? simulationSnapshot.learnedKnowledge.slice(-24).map((knowledge) => String(knowledge))
       : aiMemory?.learnedKnowledge ?? [],
@@ -557,6 +602,12 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
       ? simulationSnapshot.strategyChanges.slice(-24).map((change) => String(change))
       : aiMemory?.strategyChanges ?? [],
     biomeRatings: sanitizeBiomeRatings(simulationSnapshot.biomeRatings ?? aiMemory?.biomeRatings),
+    deathPosition: sanitizePosition(simulationSnapshot.deathPosition),
+    terrainDeathContext: sanitizeTerrainDeathContext(simulationSnapshot.terrainDeathContext),
+    terrainSafety: sanitizeTerrainSafetySnapshot(simulationSnapshot.terrainSafety),
+    survivalRecoveryActions,
+    foodSearchActions,
+    blockedPlacementReasons,
     woodTargetsFound: Number(simulationSnapshot.woodTargetsFound ?? resourceScanResults?.woodTargetsFound ?? 0),
     woodTargetsRejected: Number(simulationSnapshot.woodTargetsRejected ?? resourceScanResults?.woodTargetsRejected ?? 0),
     rejectedLeafTargets: Number(simulationSnapshot.rejectedLeafTargets ?? resourceScanResults?.rejectedLeafTargets ?? 0),
@@ -585,6 +636,11 @@ function sanitizeAiMemorySnapshot(aiMemory = null) {
   return {
     schemaVersion: Number(aiMemory.schemaVersion ?? 0),
     runs: Number(aiMemory.runs ?? 0),
+    memoryPersistenceSource: aiMemory.memoryPersistenceSource ?? 'unknown',
+    memoryLoadRunCount: Number(aiMemory.memoryLoadRunCount ?? aiMemory.runs ?? 0),
+    memorySaveRunCount: Number(aiMemory.memorySaveRunCount ?? aiMemory.runs ?? 0),
+    memoryLastLoadStatus: aiMemory.memoryLastLoadStatus ?? null,
+    memoryLastSaveStatus: aiMemory.memoryLastSaveStatus ?? null,
     createdAt: aiMemory.createdAt ?? null,
     lastUpdatedAt: aiMemory.lastUpdatedAt ?? null,
     lastRun: aiMemory.lastRun ? { ...aiMemory.lastRun } : null,
@@ -776,7 +832,18 @@ function sanitizeCountRecord(record = null) {
 
   return Object.fromEntries(
     Object.entries(record).slice(0, 32).map(([key, value]) => [key, {
-      ...pick(value, ['summary', 'severity', 'reason', 'goalId', 'goalName']),
+      ...pick(value, [
+        'summary',
+        'severity',
+        'reason',
+        'goalId',
+        'goalName',
+        'biome',
+        'currentGoal',
+        'suggestedAvoidanceStrategy',
+        'lastSeenAt',
+      ]),
+      position: sanitizePosition(value.position),
       count: Number(value.count ?? 0),
     }]),
   );
@@ -921,6 +988,84 @@ function sanitizeRecoveryAction(recoveryAction = {}) {
     'reason',
     'atSeconds',
   ]);
+}
+
+function sanitizeSurvivalRecoveryAction(recoveryAction = {}) {
+  return {
+    ...pick(recoveryAction, [
+      'goalId',
+      'goalName',
+      'action',
+      'type',
+      'reason',
+      'ok',
+      'result',
+      'terrainRisk',
+      'atSeconds',
+    ]),
+    health: Number(recoveryAction.health ?? 0),
+    hunger: Number(recoveryAction.hunger ?? 0),
+    inventoryDelta: sanitizeNumberRecord(recoveryAction.inventoryDelta),
+  };
+}
+
+function sanitizeBlockedPlacementReason(blockedPlacementReason = {}) {
+  return {
+    reason: blockedPlacementReason.reason ?? 'Placement was blocked.',
+    material: blockedPlacementReason.material ?? null,
+    position: sanitizePosition(blockedPlacementReason.position),
+    goalId: blockedPlacementReason.goalId ?? null,
+    goalName: blockedPlacementReason.goalName ?? null,
+    action: blockedPlacementReason.action ?? null,
+    atSeconds: blockedPlacementReason.atSeconds ?? null,
+  };
+}
+
+function sanitizeTerrainDeathContext(terrainDeathContext = null) {
+  if (!terrainDeathContext) {
+    return null;
+  }
+
+  return {
+    source: terrainDeathContext.source ?? 'terrain-death',
+    summary: terrainDeathContext.summary ?? null,
+    biome: terrainDeathContext.biome ?? null,
+    position: sanitizePosition(terrainDeathContext.position),
+    currentGoal: terrainDeathContext.currentGoal ?? null,
+    suggestedAvoidanceStrategy: terrainDeathContext.suggestedAvoidanceStrategy ?? null,
+    atSeconds: terrainDeathContext.atSeconds ?? null,
+  };
+}
+
+function sanitizeTerrainSafetySnapshot(terrainSafety = null) {
+  if (!terrainSafety) {
+    return null;
+  }
+
+  return {
+    position: sanitizePosition(terrainSafety.position),
+    biome: terrainSafety.biome ?? null,
+    cellKey: terrainSafety.cellKey ?? null,
+    fallRisk: Boolean(terrainSafety.fallRisk),
+    steepSlope: Boolean(terrainSafety.steepSlope),
+    currentlyBlacklisted: Boolean(terrainSafety.currentlyBlacklisted),
+    blacklistSize: Number(terrainSafety.blacklistSize ?? 0),
+    heightDelta: Number(terrainSafety.heightDelta ?? 0),
+    riskLevel: terrainSafety.riskLevel ?? 'unknown',
+    reason: terrainSafety.reason ?? null,
+  };
+}
+
+function sanitizePosition(position = null) {
+  if (!position) {
+    return null;
+  }
+
+  return {
+    x: Number(position.x ?? 0),
+    y: Number(position.y ?? 0),
+    z: Number(position.z ?? 0),
+  };
 }
 
 function sanitizeInventorySnapshot(inventorySnapshot = null) {

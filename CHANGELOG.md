@@ -1,5 +1,19 @@
 # Changelog
 
+## AI Survival Recovery And Memory Consistency
+
+### Fixed
+
+- AI memory diagnostics now expose persistence source plus load/save run counts, making run-count mismatches traceable across browser and file-backed simulations.
+- Terrain death learning now preserves dangerous-biome context instead of being overwritten by biome rating recalculation.
+- Headless autonomous reports no longer treat fixed-step simulation cadence as real render FPS drops.
+
+### Added
+
+- Survival recovery behavior for low hunger, low health, food search/eating, return-to-base, and risky-terrain avoidance.
+- Report fields for `deathPosition`, `terrainDeathContext`, `survivalRecoveryActions`, `foodSearchActions`, and `blockedPlacementReasons`.
+- Smoke coverage for low-survival recovery, terrain-death memory learning, memory persistence counters, and exact shelter block reasons.
+
 ## AI Furnace Progression Diagnostics
 
 ### Fixed
