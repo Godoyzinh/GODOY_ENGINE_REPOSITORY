@@ -11,6 +11,8 @@ import {
 } from './autonomousInventoryProfiles.js';
 
 const VALID_HEADLESS_SHELTER_KEYS = new Set(['wood', 'planks', 'stone', 'dirt']);
+const HEADLESS_TERRAIN_HEIGHT = 8;
+const HEADLESS_SAFE_DISTANCE_THRESHOLD = 220;
 
 export class HeadlessPlaytestAdapter {
   constructor({ seed = 1337, inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID } = {}) {
@@ -72,6 +74,9 @@ export class HeadlessPlaytestAdapter {
     this.unsafeTerrainBlacklist = [];
     this.lastTerrainSafety = this.createTerrainSafetySnapshot();
     this.blockedPlacementReasons = [];
+    this.lastSafeGroundedPosition = { x: 0, y: HEADLESS_TERRAIN_HEIGHT, z: 0 };
+    this.recoveryTeleportUsed = false;
+    this.recoverySuccess = false;
   }
 
   begin({ inventoryProfileId = this.inventoryProfileId } = {}) {
@@ -108,6 +113,9 @@ export class HeadlessPlaytestAdapter {
     this.unsafeTerrainBlacklist = [];
     this.lastTerrainSafety = this.createTerrainSafetySnapshot();
     this.blockedPlacementReasons = [];
+    this.lastSafeGroundedPosition = { x: 0, y: HEADLESS_TERRAIN_HEIGHT, z: 0 };
+    this.recoveryTeleportUsed = false;
+    this.recoverySuccess = false;
     this.recordBiomeVisit(this.stats.activeBiome, 0);
   }
 
@@ -442,17 +450,25 @@ export class HeadlessPlaytestAdapter {
         }]);
 
       case 'return-to-base':
-        this.position = { x: 0, y: 8, z: 0 };
-        this.velocity = { x: 0, y: 0, z: 0 };
+      {
+        const recoveryResult = this.executeHardRecovery({
+          reason: 'Returning to safe base because survival recovery requested it.',
+          preferBase: true,
+        });
+
+        if (!recoveryResult.ok) {
+          return recoveryResult;
+        }
         this.stats.health = Math.min(100, this.stats.health + 8);
         this.stats.stamina = Math.min(100, this.stats.stamina + 14);
         this.stats.aggroHostiles = 0;
 
         return {
-          ok: true,
+          ...recoveryResult,
           event: 'returned to base',
           count: 1,
         };
+      }
 
       case 'hold-low-health':
         this.velocity = { x: 0, y: 0, z: 0 };
@@ -470,7 +486,7 @@ export class HeadlessPlaytestAdapter {
         this.blacklistCurrentTerrain(intent.reason);
         this.position.x += 8;
         this.position.z += 5;
-        this.position.y = 8;
+        this.position.y = HEADLESS_TERRAIN_HEIGHT;
         this.stats.activeBiome = getBiomeName(this.position.x, this.position.z);
         this.lastTerrainSafety = this.createTerrainSafetySnapshot({
           reason: 'Moved away from blacklisted terrain.',
@@ -490,6 +506,39 @@ export class HeadlessPlaytestAdapter {
           reason: `Unknown survival recovery intent "${intent.type}".`,
         };
     }
+  }
+
+  executeHardRecovery({
+    reason = 'Autonomous playtest hard recovery requested.',
+    preferBase = false,
+    lastSafePosition = null,
+  } = {}) {
+    const target = preferBase
+      ? { x: 0, y: HEADLESS_TERRAIN_HEIGHT, z: 0 }
+      : lastSafePosition ?? this.lastSafeGroundedPosition ?? { x: 0, y: HEADLESS_TERRAIN_HEIGHT, z: 0 };
+
+    this.position = {
+      x: Number(target.x ?? 0),
+      y: HEADLESS_TERRAIN_HEIGHT,
+      z: Number(target.z ?? 0),
+    };
+    this.velocity = { x: 0, y: 0, z: 0 };
+    this.lastSafeGroundedPosition = { ...this.position };
+    this.recoveryTeleportUsed = true;
+
+    const safety = this.getPlayerSafetySnapshot();
+
+    this.recoverySuccess = Boolean(safety.isGrounded && safety.visibleTerrainExists && !safety.cameraSkyOnly);
+
+    return {
+      ok: this.recoverySuccess,
+      event: this.recoverySuccess ? 'hard recovered to ground' : 'hard recovery failed safety validation',
+      reason,
+      teleportUsed: true,
+      recoverySuccess: this.recoverySuccess,
+      lastSafePosition: { ...this.lastSafeGroundedPosition },
+      playerSafety: safety,
+    };
   }
 
   moveTowardGoal({ plan, deltaTime, elapsedSeconds }) {
@@ -1425,6 +1474,45 @@ export class HeadlessPlaytestAdapter {
     return { ...this.lastTerrainSafety };
   }
 
+  getPlayerSafetySnapshot() {
+    const position = this.getPosition();
+    const safeBasePosition = { x: 0, y: HEADLESS_TERRAIN_HEIGHT, z: 0 };
+    const lastSafePosition = this.lastSafeGroundedPosition ?? safeBasePosition;
+    const isBelowTerrain = position.y < HEADLESS_TERRAIN_HEIGHT - 0.75;
+    const distanceFromSafePoint = getHorizontalDistance(position, lastSafePosition);
+    const distanceFromSafePointAbnormal = distanceFromSafePoint > HEADLESS_SAFE_DISTANCE_THRESHOLD;
+    const visibleTerrainExists = !distanceFromSafePointAbnormal;
+    const cameraSkyOnly = isBelowTerrain || !visibleTerrainExists;
+    const isGrounded = !isBelowTerrain && Math.abs(position.y - HEADLESS_TERRAIN_HEIGHT) <= 0.25;
+    const isUngroundedAbnormally = !isGrounded && !isBelowTerrain && Math.abs(this.velocity.y ?? 0) < 1;
+
+    if (isGrounded && visibleTerrainExists && !cameraSkyOnly) {
+      this.lastSafeGroundedPosition = { ...position };
+    }
+
+    return {
+      position,
+      terrainHeight: HEADLESS_TERRAIN_HEIGHT,
+      isGrounded,
+      isFlying: false,
+      isBelowTerrain,
+      isUngroundedAbnormally,
+      visibleTerrainExists,
+      cameraSkyOnly,
+      distanceFromSafePoint: round(distanceFromSafePoint, 2),
+      distanceFromSafePointAbnormal,
+      lastSafePosition: this.lastSafeGroundedPosition ? { ...this.lastSafeGroundedPosition } : null,
+      safeBasePosition,
+      reason: isBelowTerrain
+        ? 'Player Y is below terrain surface.'
+        : !visibleTerrainExists
+          ? 'No visible terrain exists near the headless player position.'
+          : isUngroundedAbnormally
+            ? 'Headless player is ungrounded without normal falling movement.'
+            : null,
+    };
+  }
+
   getShelterValidationSnapshot() {
     return { ...this.lastShelterValidation };
   }
@@ -1589,6 +1677,13 @@ function createHeadlessShelterPattern(index) {
 
 function createTerrainCellKey(position) {
   return `${Math.floor(position.x / 8)},${Math.floor(position.z / 8)}`;
+}
+
+function getHorizontalDistance(leftPosition, rightPosition) {
+  return Math.hypot(
+    Number(leftPosition.x ?? 0) - Number(rightPosition.x ?? 0),
+    Number(leftPosition.z ?? 0) - Number(rightPosition.z ?? 0),
+  );
 }
 
 function createInvalidShelterFailedAction(failure) {

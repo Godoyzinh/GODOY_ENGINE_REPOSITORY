@@ -220,6 +220,17 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
     });
   }
 
+  if (simulationSnapshot.cameraVoidDetected || Number(simulationSnapshot.playerLostRecoveryCount ?? 0) > 0) {
+    issues.push({
+      code: 'camera-void-player-lost',
+      category: AI_TASK_CATEGORIES.ux,
+      severity: simulationSnapshot.recoverySuccess ? 'low' : 'medium',
+      title: 'Recover autonomous camera/player from void state',
+      summary: 'The autonomous playtest detected a sky-only or lost-player state and used hard recovery.',
+      evidence: `recoveries: ${simulationSnapshot.playerLostRecoveryCount ?? 0}; success: ${Boolean(simulationSnapshot.recoverySuccess)}; last safe: ${JSON.stringify(simulationSnapshot.lastSafePosition ?? null)}.`,
+    });
+  }
+
   if (Number(runtimeSnapshot.survival?.health ?? 100) < 50 || Number(runtimeSnapshot.survival?.hunger ?? 100) < 25) {
     issues.push({
       code: 'survival-recovery-needed',
@@ -605,6 +616,14 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     deathPosition: sanitizePosition(simulationSnapshot.deathPosition),
     terrainDeathContext: sanitizeTerrainDeathContext(simulationSnapshot.terrainDeathContext),
     terrainSafety: sanitizeTerrainSafetySnapshot(simulationSnapshot.terrainSafety),
+    playerSafety: sanitizePlayerSafetySnapshot(simulationSnapshot.playerSafety),
+    cameraVoidDetected: Boolean(simulationSnapshot.cameraVoidDetected),
+    playerLostRecoveryCount: Number(simulationSnapshot.playerLostRecoveryCount ?? 0),
+    lastSafePosition: sanitizePosition(simulationSnapshot.lastSafePosition),
+    recoveryTeleportUsed: Boolean(simulationSnapshot.recoveryTeleportUsed),
+    recoverySuccess: Boolean(simulationSnapshot.recoverySuccess),
+    skyOnlyFrames: Number(simulationSnapshot.skyOnlyFrames ?? 0),
+    gatherWoodBlockedReason: simulationSnapshot.gatherWoodBlockedReason ?? null,
     survivalRecoveryActions,
     foodSearchActions,
     blockedPlacementReasons,
@@ -1056,6 +1075,28 @@ function sanitizeTerrainSafetySnapshot(terrainSafety = null) {
   };
 }
 
+function sanitizePlayerSafetySnapshot(playerSafety = null) {
+  if (!playerSafety) {
+    return null;
+  }
+
+  return {
+    position: sanitizePosition(playerSafety.position),
+    terrainHeight: Number(playerSafety.terrainHeight ?? 0),
+    isGrounded: Boolean(playerSafety.isGrounded),
+    isFlying: Boolean(playerSafety.isFlying),
+    isBelowTerrain: Boolean(playerSafety.isBelowTerrain),
+    isUngroundedAbnormally: Boolean(playerSafety.isUngroundedAbnormally),
+    visibleTerrainExists: Boolean(playerSafety.visibleTerrainExists),
+    cameraSkyOnly: Boolean(playerSafety.cameraSkyOnly),
+    distanceFromSafePoint: Number(playerSafety.distanceFromSafePoint ?? 0),
+    distanceFromSafePointAbnormal: Boolean(playerSafety.distanceFromSafePointAbnormal),
+    lastSafePosition: sanitizePosition(playerSafety.lastSafePosition),
+    safeBasePosition: sanitizePosition(playerSafety.safeBasePosition),
+    reason: playerSafety.reason ?? null,
+  };
+}
+
 function sanitizePosition(position = null) {
   if (!position) {
     return null;
@@ -1220,7 +1261,7 @@ function classifySimulationFailure(code) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
-  if (code.includes('stuck') || code.includes('collision')) {
+  if (code.includes('stuck') || code.includes('collision') || code.includes('camera-void')) {
     return AI_TASK_CATEGORIES.ux;
   }
 

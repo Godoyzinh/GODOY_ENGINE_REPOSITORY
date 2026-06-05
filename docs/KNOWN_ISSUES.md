@@ -27,6 +27,7 @@
 - Autonomous shelter progression now rejects invalid materials and requires real shelter safety before Survive Night can advance.
 - AI memory now reports persistence source/load/save counts consistently and preserves terrain death learning.
 - Autonomous survival recovery now searches/eats food at low hunger, pauses risky exploration at low health, and records terrain avoidance evidence.
+- Autonomous void/camera recovery now detects sky-only or below-terrain states, teleports to safe ground, resets grounded/camera state, and reports recovery evidence.
 
 ## WebGL Fallback
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## Autonomous Void Recovery And Camera Reset
+
+### Fixed
+
+- Autonomous playtests now detect sky-only/void camera states, below-terrain player positions, abnormal ungrounded states, and excessive distance from the last safe terrain/base point.
+- Hard recovery teleports the bot to a safe grounded position, resets vertical velocity, refreshes grounded state, and recenters the third-person camera before progression resumes.
+- Resource reserve wood recovery now avoids repeating unreachable trunk targets and can retrieve stored wood before exploring for a new target.
+
+### Added
+
+- Autonomous reports now include `cameraVoidDetected`, `playerLostRecoveryCount`, `lastSafePosition`, `recoveryTeleportUsed`, `recoverySuccess`, `skyOnlyFrames`, and `gatherWoodBlockedReason`.
+- Smoke coverage now simulates a void/fall state and verifies that the bot returns to visible terrain, grounds correctly, and resumes survival progression.
+
 ## AI Survival Recovery And Memory Consistency
 
 ### Fixed

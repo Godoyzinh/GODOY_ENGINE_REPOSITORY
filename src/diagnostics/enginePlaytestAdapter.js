@@ -25,6 +25,8 @@ const PLACE_RADIUS = 3;
 const WOOD_SCAN_RADIUS = 24;
 const WOOD_EXPANDED_SCAN_RADIUS = 48;
 const WOOD_MINE_DISTANCE = 5.5;
+const PLAYER_GROUND_CLEARANCE = 0.08;
+const SAFE_DISTANCE_THRESHOLD = 220;
 const SHELTER_PATTERN = [
   { dx: -1, dy: 0, dz: -1, role: 'wall', side: 'north' },
   { dx: 0, dy: 0, dz: -1, role: 'wall', side: 'north' },
@@ -84,6 +86,10 @@ export class EnginePlaytestAdapter {
     this.unsafeTerrainBlacklist = [];
     this.blockedPlacementReasons = [];
     this.shelterPlacementBlockedKeys = new Set();
+    this.lastSafeGroundedPosition = null;
+    this.recoveryTeleportUsed = false;
+    this.recoverySuccess = false;
+    this.blockedWoodTargetKeys = new Set();
   }
 
   begin({ inventoryProfileId = this.inventoryProfileId } = {}) {
@@ -125,6 +131,13 @@ export class EnginePlaytestAdapter {
     this.unsafeTerrainBlacklist = [];
     this.blockedPlacementReasons = [];
     this.shelterPlacementBlockedKeys.clear();
+    this.recoveryTeleportUsed = false;
+    this.recoverySuccess = false;
+    this.blockedWoodTargetKeys.clear();
+    this.lastSafeGroundedPosition = this.createSurfacePosition(
+      this.engine.playerController.position.x,
+      this.engine.playerController.position.z,
+    );
     this.recordBiomeVisit(this.engine.terrainGenerator.stats.activeBiome, 0);
   }
 
@@ -490,6 +503,7 @@ export class EnginePlaytestAdapter {
         return this.gatherWoodGoal({
           elapsedSeconds,
           deltaTime,
+          plan,
         });
       case 'craftPlanks':
         return this.craftRecipe(RECIPE_IDS.woodPlanks);
@@ -712,6 +726,61 @@ export class EnginePlaytestAdapter {
     };
   }
 
+  getPlayerSafetySnapshot() {
+    const position = this.getPosition();
+    const terrainHeight = Number(this.engine.terrainGenerator.getHeightAt?.(position.x, position.z) ?? position.y);
+    const visibleTerrainExists = this.isTerrainVisibleAt(position);
+    const isBelowTerrain = position.y < terrainHeight - 0.75;
+    const isGrounded = Boolean(this.engine.playerState.isGrounded || this.engine.playerController.movementSystem.isGrounded);
+    const isFlying = Boolean(this.engine.playerState.isFlying);
+    const isJumping = Boolean(this.engine.playerController.movementSystem.input.jump);
+    const verticalVelocity = Number(this.engine.playerController.velocity?.y ?? 0);
+    const safeBasePosition = this.getSafeBasePosition();
+    const lastSafePosition = this.lastSafeGroundedPosition ?? safeBasePosition;
+    const distanceFromSafePoint = lastSafePosition
+      ? getHorizontalDistance(position, lastSafePosition)
+      : 0;
+    const distanceFromSafePointAbnormal = distanceFromSafePoint > SAFE_DISTANCE_THRESHOLD;
+    const cameraDistance = getHorizontalDistance(this.engine.cameraSystem.camera.position, position);
+    const cameraSkyOnly = isBelowTerrain ||
+      !visibleTerrainExists ||
+      distanceFromSafePointAbnormal ||
+      cameraDistance > SAFE_DISTANCE_THRESHOLD;
+    const isNormalFallOrJump = isJumping || verticalVelocity < -2;
+    const isUngroundedAbnormally = !isFlying && !isGrounded && !isNormalFallOrJump;
+    const reason = isBelowTerrain
+      ? 'Player Y is below terrain surface.'
+      : !visibleTerrainExists
+        ? 'No loaded visible terrain exists at the player position.'
+        : distanceFromSafePointAbnormal
+          ? 'Player is abnormally far from the last safe/base position.'
+          : cameraSkyOnly
+            ? 'Camera/player relationship suggests sky-only view.'
+            : isUngroundedAbnormally
+              ? 'Player is ungrounded without normal jump/fall movement.'
+              : null;
+
+    if (!cameraSkyOnly && visibleTerrainExists && isGrounded && !isBelowTerrain) {
+      this.lastSafeGroundedPosition = this.createSurfacePosition(position.x, position.z);
+    }
+
+    return {
+      position,
+      terrainHeight,
+      isGrounded,
+      isFlying,
+      isBelowTerrain,
+      isUngroundedAbnormally,
+      visibleTerrainExists,
+      cameraSkyOnly,
+      distanceFromSafePoint: round(distanceFromSafePoint, 2),
+      distanceFromSafePointAbnormal,
+      lastSafePosition: this.lastSafeGroundedPosition ? { ...this.lastSafeGroundedPosition } : null,
+      safeBasePosition,
+      reason,
+    };
+  }
+
   getBaseSnapshot() {
     return {
       tier: this.baseTier,
@@ -781,20 +850,21 @@ export class EnginePlaytestAdapter {
   }
 
   returnToSafeBase() {
-    const target = this.storage.chestPosition ?? this.shelterOrigin ?? {
-      x: 0,
-      y: this.engine.terrainGenerator.getHeightAt?.(0, 0) ?? 2,
-      z: 0,
-    };
-    const y = Number(target.y ?? this.engine.terrainGenerator.getHeightAt?.(target.x, target.z) ?? 2) + 2;
+    const recoveryResult = this.executeHardRecovery({
+      reason: 'Returning to safe base because survival recovery requested it.',
+      preferBase: true,
+    });
 
-    this.engine.playerController.movementSystem.clearInput();
-    this.engine.playerController.movementSystem.position.set(target.x, y, target.z);
+    if (!recoveryResult.ok) {
+      return recoveryResult;
+    }
+
     this.engine.playerState.restoreHealth(8);
     this.engine.playerState.restoreStamina(14);
+    this.consumeFoodForRecovery();
 
     return {
-      ok: true,
+      ...recoveryResult,
       event: 'returned to base',
       count: 1,
     };
@@ -815,11 +885,7 @@ export class EnginePlaytestAdapter {
     }
 
     this.engine.playerController.movementSystem.clearInput();
-    this.engine.playerController.movementSystem.position.set(
-      position.x + 6,
-      Number(this.engine.terrainGenerator.getHeightAt?.(position.x + 6, position.z + 4) ?? position.y) + 2,
-      position.z + 4,
-    );
+    this.applyPlayerGroundedPosition(this.createSurfacePosition(position.x + 6, position.z + 4));
     this.explore({ elapsedSeconds });
 
     return {
@@ -827,6 +893,148 @@ export class EnginePlaytestAdapter {
       event: 'avoided terrain',
       count: 1,
     };
+  }
+
+  executeHardRecovery({
+    reason = 'Autonomous playtest hard recovery requested.',
+    preferBase = false,
+    lastSafePosition = null,
+  } = {}) {
+    const target = this.resolveHardRecoveryTarget({
+      preferBase,
+      lastSafePosition,
+    });
+
+    if (!target) {
+      return {
+        ok: false,
+        reason: 'No valid terrain surface was available for hard recovery.',
+        teleportUsed: false,
+      };
+    }
+
+    this.ensureTerrainLoadedNear(target);
+    this.applyPlayerGroundedPosition(target);
+    this.recenterCameraBehindPlayer(target);
+    this.recoveryTeleportUsed = true;
+
+    const safety = this.getPlayerSafetySnapshot();
+
+    this.recoverySuccess = Boolean(safety.isGrounded && safety.visibleTerrainExists && !safety.cameraSkyOnly);
+
+    return {
+      ok: this.recoverySuccess,
+      event: this.recoverySuccess ? 'hard recovered to ground' : 'hard recovery failed safety validation',
+      reason: this.recoverySuccess ? reason : safety.reason ?? reason,
+      teleportUsed: true,
+      recoverySuccess: this.recoverySuccess,
+      lastSafePosition: this.lastSafeGroundedPosition ? { ...this.lastSafeGroundedPosition } : null,
+      playerSafety: safety,
+    };
+  }
+
+  resolveHardRecoveryTarget({ preferBase = false, lastSafePosition = null } = {}) {
+    const safeBasePosition = this.getSafeBasePosition();
+    const candidates = preferBase
+      ? [safeBasePosition, lastSafePosition, this.lastSafeGroundedPosition]
+      : [lastSafePosition, this.lastSafeGroundedPosition, safeBasePosition];
+
+    for (const candidate of candidates) {
+      if (!candidate) {
+        continue;
+      }
+
+      const normalizedCandidate = normalizePositionCandidate(candidate);
+
+      if (!normalizedCandidate) {
+        continue;
+      }
+
+      return this.createSurfacePosition(normalizedCandidate.x, normalizedCandidate.z);
+    }
+
+    const position = this.getPosition();
+
+    return this.createSurfacePosition(position.x, position.z) ?? this.createSurfacePosition(0, 0);
+  }
+
+  getSafeBasePosition() {
+    const baseCandidate = this.storage.chestPosition ?? this.shelterOrigin;
+
+    if (baseCandidate) {
+      const normalizedCandidate = normalizePositionCandidate(baseCandidate);
+
+      if (normalizedCandidate) {
+        return this.createSurfacePosition(normalizedCandidate.x, normalizedCandidate.z);
+      }
+    }
+
+    return this.createSurfacePosition(0, 0);
+  }
+
+  createSurfacePosition(x, z) {
+    const terrainHeight = this.engine.terrainGenerator.getHeightAt?.(x, z);
+
+    if (terrainHeight === null || terrainHeight === undefined || Number.isNaN(Number(terrainHeight))) {
+      return null;
+    }
+
+    return {
+      x,
+      y: Number(terrainHeight) + PLAYER_GROUND_CLEARANCE,
+      z,
+    };
+  }
+
+  applyPlayerGroundedPosition(position) {
+    const movement = this.engine.playerController.movementSystem;
+    const vectorPosition = new Vector3(position.x, position.y, position.z);
+
+    movement.clearInput();
+    movement.position.copy(vectorPosition);
+    movement.velocity.set(0, 0, 0);
+    movement.horizontalVelocity.set(0, 0, 0);
+    movement.isGrounded = true;
+    movement.lastLandingImpact = 0;
+    this.engine.playerState.setMovementFlags({
+      isFlying: false,
+      isSprinting: false,
+      isCrouching: false,
+      isGrounded: true,
+    });
+    this.engine.playerController.object.position.copy(movement.position);
+    this.engine.playerController.cameraTarget.copy(movement.position)
+      .add(this.engine.playerController.cameraTargetOffset);
+    this.lastSafeGroundedPosition = { ...position };
+  }
+
+  recenterCameraBehindPlayer(position) {
+    const target = new Vector3(position.x, position.y, position.z)
+      .add(this.engine.playerController.cameraTargetOffset);
+    const yaw = this.engine.cameraSystem.getMovementYaw?.() ?? 0;
+
+    this.engine.cameraSystem.resetBehindTarget?.({
+      targetPosition: target,
+      yaw,
+    });
+  }
+
+  ensureTerrainLoadedNear(position) {
+    this.engine.terrainGenerator.update?.({
+      focusPosition: new Vector3(position.x, position.y, position.z),
+      camera: this.engine.cameraSystem.camera,
+      elapsedTime: 0,
+      weatherSnapshot: this.engine.weatherSystem?.getSnapshot?.() ?? null,
+    });
+  }
+
+  isTerrainVisibleAt(position) {
+    if (this.engine.terrainGenerator.isWorldPositionLoaded?.(position.x, position.z)) {
+      return true;
+    }
+
+    this.ensureTerrainLoadedNear(position);
+    return Boolean(this.engine.terrainGenerator.isWorldPositionLoaded?.(position.x, position.z));
   }
 
   getBasicToolCount() {
@@ -1308,7 +1516,19 @@ export class EnginePlaytestAdapter {
     };
   }
 
-  gatherWoodGoal({ elapsedSeconds }) {
+  gatherWoodGoal({ elapsedSeconds, plan = null }) {
+    if (plan?.goalId === 'createResourceReserve' && this.retrieveStoredReserveResource('wood')) {
+      return {
+        ok: true,
+        event: 'retrieved stored wood',
+        resourceYield: 1,
+        recoveryAction: {
+          type: 'use-stored-wood',
+          reason: 'Create Resource Reserve used stored wood instead of repeating a blocked gatherWood target.',
+        },
+      };
+    }
+
     const beforeWoodCount = this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.wood);
     const scanResult = this.scanWoodTargets();
     const target = scanResult.nearestWoodTarget;
@@ -1321,6 +1541,34 @@ export class EnginePlaytestAdapter {
 
       return {
         ...fallbackResult,
+        recoveryAction: {
+          type: 'explore-for-wood',
+          reason: fallbackResult.reason ?? 'No reachable wood target found; exploring for a new trunk.',
+        },
+        resourceScanResults: this.getResourceScanSnapshot(),
+      };
+    }
+
+    const targetKey = createWoodTargetKey(target);
+
+    if (this.blockedWoodTargetKeys.has(targetKey)) {
+      this.explore({ elapsedSeconds });
+      this.lastResourceScan = {
+        ...scanResult,
+        lastBlockedReason: 'Nearest trunk target was already blocked; exploring for a different wood target.',
+        recovery: 'explore-for-wood',
+      };
+
+      return {
+        ok: false,
+        skipped: true,
+        moving: true,
+        event: 'exploring for alternate wood',
+        reason: this.lastResourceScan.lastBlockedReason,
+        recoveryAction: {
+          type: 'explore-for-wood',
+          reason: this.lastResourceScan.lastBlockedReason,
+        },
         resourceScanResults: this.getResourceScanSnapshot(),
       };
     }
@@ -1341,6 +1589,10 @@ export class EnginePlaytestAdapter {
         moving: true,
         event: 'moving to wood target',
         reason: this.lastResourceScan.lastBlockedReason,
+        recoveryAction: {
+          type: 'move-to-wood-target',
+          reason: this.lastResourceScan.lastBlockedReason,
+        },
         resourceScanResults: this.getResourceScanSnapshot(),
       };
     }
@@ -1364,6 +1616,7 @@ export class EnginePlaytestAdapter {
       };
     }
 
+    this.blockedWoodTargetKeys.add(targetKey);
     this.lastResourceScan = {
       ...scanResult,
       lastBlockedReason: mineResult.ok
@@ -1378,6 +1631,10 @@ export class EnginePlaytestAdapter {
       event: 'wood target blocked',
       reason: this.lastResourceScan.lastBlockedReason,
       failures: mineResult.failures,
+      recoveryAction: {
+        type: 'explore-for-wood',
+        reason: this.lastResourceScan.lastBlockedReason,
+      },
       resourceScanResults: this.getResourceScanSnapshot(),
     };
   }
@@ -1720,19 +1977,53 @@ export class EnginePlaytestAdapter {
 
   retrieveAnyResource() {
     for (const reserveKey of ['wood', 'stone', 'food']) {
-      if (this.storage.reserves[reserveKey] <= 0) {
-        continue;
+      if (this.retrieveStoredReserveResource(reserveKey)) {
+        return true;
       }
-
-      this.storage.reserves[reserveKey] -= 1;
-      this.storage.retrieves += 1;
-      this.persistStorageChest({
-        reason: `retrieve-${reserveKey}`,
-      });
-      return true;
     }
 
     return false;
+  }
+
+  retrieveStoredReserveResource(reserveKey) {
+    const resourceConfig = {
+      wood: {
+        itemType: ITEM_TYPES.block,
+        itemId: BLOCK_IDS.wood,
+        name: 'Wood',
+      },
+      stone: {
+        itemType: ITEM_TYPES.block,
+        itemId: BLOCK_IDS.stone,
+        name: 'Stone',
+      },
+      food: {
+        itemType: ITEM_TYPES.consumable,
+        itemId: ITEM_IDS.berries,
+        name: 'Berries',
+      },
+    }[reserveKey];
+
+    if (!resourceConfig || this.storage.reserves[reserveKey] <= 0) {
+      return false;
+    }
+
+    const wasAdded = this.engine.inventorySystem.addItem({
+      ...resourceConfig,
+      count: 1,
+    });
+
+    if (!wasAdded) {
+      return false;
+    }
+
+    this.storage.reserves[reserveKey] -= 1;
+    this.storage.retrieves += 1;
+    this.persistStorageChest({
+      reason: `retrieve-${reserveKey}`,
+    });
+
+    return true;
   }
 
   storeReserveResource(reserveKey) {
@@ -2259,6 +2550,35 @@ function createTerrainCellKey(position) {
 
 function createPlacementKey(placement) {
   return `${placement.worldX},${placement.y},${placement.worldZ}`;
+}
+
+function createWoodTargetKey(target) {
+  return `${target.worldX},${target.y},${target.worldZ}`;
+}
+
+function getHorizontalDistance(leftPosition, rightPosition) {
+  return Math.hypot(
+    Number(leftPosition.x ?? 0) - Number(rightPosition.x ?? 0),
+    Number(leftPosition.z ?? 0) - Number(rightPosition.z ?? 0),
+  );
+}
+
+function normalizePositionCandidate(position = null) {
+  if (!position) {
+    return null;
+  }
+
+  const x = position.x ?? position.worldX;
+  const z = position.z ?? position.worldZ;
+
+  if (x === undefined || z === undefined) {
+    return null;
+  }
+
+  return {
+    x: Number(x),
+    z: Number(z),
+  };
 }
 
 function round(value, digits) {

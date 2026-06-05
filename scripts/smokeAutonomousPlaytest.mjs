@@ -162,6 +162,17 @@ class LowSurvivalAdapter extends HeadlessPlaytestAdapter {
   }
 }
 
+class VoidPlayerAdapter extends HeadlessPlaytestAdapter {
+  begin(options) {
+    super.begin(options);
+    this.position = { x: 460, y: -18, z: 460 };
+    this.velocity = { x: 0, y: 0, z: 0 };
+    this.stats.health = 35;
+    this.stats.hunger = 45;
+    this.lastSafeGroundedPosition = { x: 4, y: 8, z: 4 };
+  }
+}
+
 const { report, snapshot } = runHeadlessAiSimulation({
   mode: 'quick',
   durationSeconds: 60,
@@ -579,6 +590,11 @@ assert.ok(
   blockedWoodResult.report.aiTasks.some((task) => task.id.includes('wood-target-scan-blocked')),
   'blocked wood scan should generate an AI task',
 );
+assert.equal(
+  blockedWoodSimulation.gatherWoodBlockedReason,
+  'No reachable wood target found in a tree-capable biome.',
+  'blocked gatherWood should export the exact blocked reason',
+);
 
 const lowSurvivalResult = runHeadlessAiSimulation({
   mode: 'quick',
@@ -593,6 +609,29 @@ const recoveryTypes = lowSurvivalSimulation.survivalRecoveryActions.map((action)
 assert.ok(recoveryTypes.includes('search-food'), 'low hunger should trigger food search recovery');
 assert.ok(recoveryTypes.includes('eat-food'), 'available food under 50 hunger should trigger eating recovery');
 assert.ok(lowSurvivalSimulation.foodSearchActions.length >= 2, 'food recovery actions should be exported');
+
+const voidRecoveryResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 12,
+  deltaTime: 0.25,
+  seed: 20260539,
+  adapter: new VoidPlayerAdapter({ seed: 20260539 }),
+});
+const voidSimulation = voidRecoveryResult.report.runtimeStats.simulation;
+
+assert.equal(voidSimulation.cameraVoidDetected, true, 'void state should be detected');
+assert.ok(voidSimulation.playerLostRecoveryCount >= 1, 'void state should trigger hard recovery');
+assert.equal(voidSimulation.recoveryTeleportUsed, true, 'void recovery should use teleport');
+assert.equal(voidSimulation.recoverySuccess, true, 'void recovery should restore valid ground');
+assert.ok(voidSimulation.skyOnlyFrames >= 1, 'void report should include sky-only frame evidence');
+assert.ok(voidSimulation.lastSafePosition, 'void recovery should preserve last safe position');
+assert.equal(voidSimulation.playerSafety.isGrounded, true, 'player should be grounded after void recovery');
+assert.equal(voidSimulation.playerSafety.visibleTerrainExists, true, 'terrain should be visible after void recovery');
+assert.equal(voidSimulation.playerSafety.cameraSkyOnly, false, 'camera should no longer be sky-only after recovery');
+assert.ok(
+  voidSimulation.planner.goalsCompleted.some((goal) => goal.id === 'gatherWood'),
+  'AI should resume survival progression after void recovery pause',
+);
 
 const spamReportSystem = new AutoQaReportSystem({
   telemetrySystem: new TelemetrySystem({ now: () => 0 }),
