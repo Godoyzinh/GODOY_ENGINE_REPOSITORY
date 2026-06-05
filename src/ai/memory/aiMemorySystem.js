@@ -558,7 +558,7 @@ function updateDeathCauses(memory, simulationSnapshot = {}, report = null, now =
     ? deathFailures
     : telemetryDeaths.length > 0
       ? telemetryDeaths.map((event) => ({
-        code: event.payload?.source?.toLowerCase?.().includes('terrain') ? 'terrain-death' : 'telemetry-death',
+code: (event.payload?.source?.toLowerCase?.() ?? '').includes('terrain') ? 'terrain-death' : 'telemetry-death',
         summary: `Telemetry death event: ${event.payload?.source ?? 'unknown source'}.`,
         severity: 'medium',
         position: event.payload?.position ?? deathPosition,
@@ -568,6 +568,7 @@ function updateDeathCauses(memory, simulationSnapshot = {}, report = null, now =
         code: terrainDeathContext?.source ?? 'unknown-death',
         summary: terrainDeathContext?.summary ?? 'Death was recorded without a detailed failure record.',
         severity: 'medium',
+        count: Math.max(1, deathCount),
         position: deathPosition,
         biome: activeBiome,
       }];
