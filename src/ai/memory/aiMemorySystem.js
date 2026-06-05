@@ -568,6 +568,7 @@ code: (event.payload?.source?.toLowerCase?.() ?? '').includes('terrain') ? 'terr
         code: terrainDeathContext?.source ?? 'unknown-death',
         summary: terrainDeathContext?.summary ?? 'Death was recorded without a detailed failure record.',
         severity: 'medium',
+        count: Math.max(1, deathCount),
         position: deathPosition,
         biome: activeBiome,
       }];
