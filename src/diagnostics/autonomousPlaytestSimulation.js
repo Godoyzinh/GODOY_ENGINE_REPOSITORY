@@ -11,6 +11,10 @@ const STUCK_WINDOW_SECONDS = 15;
 const STUCK_DISTANCE_THRESHOLD = 0.8;
 const VERTICAL_SNAP_THRESHOLD = 4.75;
 const MINING_SPAM_PER_MINUTE_THRESHOLD = 120;
+const SKY_ONLY_SECONDS_THRESHOLD = 3;
+const UNGROUNDED_SECONDS_THRESHOLD = 4;
+const HARD_RECOVERY_PAUSE_SECONDS = 2;
+const RUNNING_MEMORY_SAVE_SECONDS = 15;
 const REPORT_TRIGGER = 'autonomous-playtest';
 const ACTION_COOLDOWN_SECONDS = {
   explore: 0.2,
@@ -64,6 +68,18 @@ export class AutonomousPlaytestSimulation {
     this.deathPosition = null;
     this.terrainDeathContext = null;
     this.terrainSafety = null;
+    this.playerSafety = null;
+    this.skyOnlySeconds = 0;
+    this.ungroundedSeconds = 0;
+    this.cameraVoidDetected = false;
+    this.playerLostRecoveryCount = 0;
+    this.lastSafePosition = null;
+    this.recoveryTeleportUsed = false;
+    this.recoverySuccess = false;
+    this.skyOnlyFrames = 0;
+    this.gatherWoodBlockedReason = null;
+    this.progressionPausedUntil = 0;
+    this.nextRunningMemorySaveAt = RUNNING_MEMORY_SAVE_SECONDS;
     this.lastDeathCount = 0;
     this.inventorySnapshot = null;
     this.resourceScanResults = null;
@@ -108,6 +124,18 @@ export class AutonomousPlaytestSimulation {
     this.deathPosition = null;
     this.terrainDeathContext = null;
     this.terrainSafety = null;
+    this.playerSafety = null;
+    this.skyOnlySeconds = 0;
+    this.ungroundedSeconds = 0;
+    this.cameraVoidDetected = false;
+    this.playerLostRecoveryCount = 0;
+    this.lastSafePosition = null;
+    this.recoveryTeleportUsed = false;
+    this.recoverySuccess = false;
+    this.skyOnlyFrames = 0;
+    this.gatherWoodBlockedReason = null;
+    this.progressionPausedUntil = 0;
+    this.nextRunningMemorySaveAt = RUNNING_MEMORY_SAVE_SECONDS;
     this.lastDeathCount = 0;
     this.inventorySnapshot = null;
     this.resourceScanResults = null;
@@ -164,6 +192,7 @@ export class AutonomousPlaytestSimulation {
     }
 
     this.elapsedSeconds += safeDeltaTime;
+    this.saveRunningMemorySnapshotIfNeeded();
     this.updateActions(safeDeltaTime);
     this.detectFailures();
 
@@ -218,6 +247,12 @@ export class AutonomousPlaytestSimulation {
   updateActions(deltaTime) {
     this.tickActionCooldowns(deltaTime);
 
+    if (this.elapsedSeconds < this.progressionPausedUntil) {
+      this.performRecoveryPause(deltaTime);
+      this.updateTimedAction('saveLoad', deltaTime, 20, () => this.adapter.checkSaveLoad?.());
+      return;
+    }
+
     const rawContext = this.adapter.getPlanningState?.({
       elapsedSeconds: this.elapsedSeconds,
       mode: this.mode,
@@ -236,6 +271,21 @@ export class AutonomousPlaytestSimulation {
       context,
       plan,
     }) ?? this.terrainSafety;
+    this.playerSafety = this.adapter.getPlayerSafetySnapshot?.({
+      elapsedSeconds: this.elapsedSeconds,
+      context,
+      plan,
+    }) ?? this.playerSafety;
+
+    if (this.updateVoidDetection({
+      deltaTime,
+      plan,
+      context,
+      playerSafety: this.playerSafety,
+    })) {
+      this.updateTimedAction('saveLoad', deltaTime, 20, () => this.adapter.checkSaveLoad?.());
+      return;
+    }
 
     if (this.performSurvivalRecoveryIfNeeded({
       plan,
@@ -253,6 +303,158 @@ export class AutonomousPlaytestSimulation {
     }
 
     this.updateTimedAction('saveLoad', deltaTime, 20, () => this.adapter.checkSaveLoad?.());
+  }
+
+  saveRunningMemorySnapshotIfNeeded() {
+    if (!this.aiMemorySystem || this.elapsedSeconds < this.nextRunningMemorySaveAt) {
+      return;
+    }
+
+    this.nextRunningMemorySaveAt = this.elapsedSeconds + RUNNING_MEMORY_SAVE_SECONDS;
+    this.aiMemorySystem.save?.();
+    this.aiMemorySnapshot = this.aiMemorySystem.getSnapshot?.() ?? this.aiMemorySnapshot;
+    this.adapter.setAiMemorySnapshot?.(this.aiMemorySnapshot);
+    this.goalPlanner.setAiMemorySnapshot?.(this.aiMemorySnapshot);
+  }
+
+  performRecoveryPause(deltaTime) {
+    const rawContext = this.adapter.getPlanningState?.({
+      elapsedSeconds: this.elapsedSeconds,
+      mode: this.mode,
+    }) ?? {};
+    const context = {
+      ...rawContext,
+      memory: this.aiMemorySnapshot?.strategyHints ?? null,
+    };
+    const plan = this.goalPlanner.getSnapshot();
+    const intent = resolveRecoveryPauseIntent(context);
+
+    if (intent) {
+      this.adapter.executeSurvivalRecovery?.({
+        intent,
+        context,
+        plan: {
+          goalId: plan.currentGoalId ?? 'recoveryPause',
+          goalName: plan.currentGoal ?? 'Recovery Pause',
+          action: 'recoveryPause',
+        },
+        deltaTime,
+        elapsedSeconds: this.elapsedSeconds,
+        terrainSafety: this.terrainSafety,
+        terrainDeathContext: this.terrainDeathContext,
+      });
+    }
+
+    this.actionCounts.survive += 1;
+    this.telemetrySystem.recordGameplayEvent('auto-survival-recovery', {
+      type: intent?.type ?? 'recovery-pause',
+      reason: intent?.reason ?? 'Paused progression after hard recovery.',
+      result: 'pause',
+    });
+  }
+
+  updateVoidDetection({ deltaTime, plan, context, playerSafety }) {
+    if (!playerSafety) {
+      return false;
+    }
+
+    if (playerSafety.lastSafePosition) {
+      this.lastSafePosition = { ...playerSafety.lastSafePosition };
+    }
+
+    if (playerSafety.cameraSkyOnly) {
+      this.skyOnlySeconds += deltaTime;
+      this.skyOnlyFrames += 1;
+    } else {
+      this.skyOnlySeconds = 0;
+    }
+
+    if (playerSafety.isUngroundedAbnormally) {
+      this.ungroundedSeconds += deltaTime;
+    } else {
+      this.ungroundedSeconds = 0;
+    }
+
+    const reason = resolveVoidRecoveryReason({
+      playerSafety,
+      skyOnlySeconds: this.skyOnlySeconds,
+      ungroundedSeconds: this.ungroundedSeconds,
+    });
+
+    if (!reason) {
+      return false;
+    }
+
+    this.cameraVoidDetected = true;
+    this.playerLostRecoveryCount += 1;
+    this.recordFailure('camera-void-player-lost', reason, 'medium');
+
+    const recoveryResult = this.adapter.executeHardRecovery?.({
+      reason,
+      lastSafePosition: this.lastSafePosition,
+      context,
+      plan,
+      elapsedSeconds: this.elapsedSeconds,
+      playerSafety,
+    }) ?? {
+      ok: false,
+      reason: 'Adapter does not implement hard recovery.',
+    };
+    const nextSafety = this.adapter.getPlayerSafetySnapshot?.({
+      elapsedSeconds: this.elapsedSeconds,
+      context,
+      plan,
+    }) ?? null;
+
+    this.playerSafety = nextSafety ?? playerSafety;
+    this.lastSafePosition = nextSafety?.lastSafePosition ?? recoveryResult.lastSafePosition ?? this.lastSafePosition;
+    this.recoveryTeleportUsed = this.recoveryTeleportUsed || Boolean(recoveryResult.teleportUsed);
+    this.recoverySuccess = Boolean(recoveryResult.ok && nextSafety?.isGrounded && nextSafety?.visibleTerrainExists);
+
+    this.survivalRecoveryActions.push({
+      type: 'hard-void-recovery',
+      reason,
+      goalId: plan.goalId,
+      goalName: plan.goalName,
+      action: plan.action,
+      ok: this.recoverySuccess,
+      result: recoveryResult.event ?? recoveryResult.reason ?? null,
+      health: Number(this.goalPlanner.lastContext?.survival?.health ?? context.survival?.health ?? 0),
+      hunger: Number(this.goalPlanner.lastContext?.survival?.hunger ?? context.survival?.hunger ?? 0),
+      terrainRisk: this.terrainSafety?.riskLevel ?? 'unknown',
+      atSeconds: round(this.elapsedSeconds, 2),
+    });
+    this.survivalRecoveryActions = this.survivalRecoveryActions.slice(-48);
+    this.recordRecoveryAction(plan, {
+      ok: this.recoverySuccess,
+      recoveryAction: {
+        type: 'hard-void-recovery',
+        reason,
+      },
+    });
+
+    if (this.recoverySuccess) {
+      this.skyOnlySeconds = 0;
+      this.ungroundedSeconds = 0;
+      this.progressionPausedUntil = Math.max(this.progressionPausedUntil, this.elapsedSeconds + HARD_RECOVERY_PAUSE_SECONDS);
+    } else {
+      this.recordFailedAction({
+        plan,
+        actionName: 'survive',
+        result: {
+          ok: false,
+          reason: recoveryResult.reason ?? 'Hard recovery did not restore grounded visible terrain.',
+        },
+      });
+    }
+
+    this.telemetrySystem.recordGameplayEvent('auto-hard-recovery', {
+      reason,
+      ok: this.recoverySuccess,
+      teleportUsed: Boolean(recoveryResult.teleportUsed),
+    });
+
+    return true;
   }
 
   performPlannedAction(plan, context, deltaTime) {
@@ -291,6 +493,7 @@ export class AutonomousPlaytestSimulation {
     this.updateShelterValidationSnapshot(result);
     this.updateFurnaceCraftDiagnostics(plan, result);
     this.updateObtainFurnaceBlockedAttempts(plan, result);
+    this.updateGatherWoodBlockedReason(plan, result);
     this.recordResultFailedActions(plan, actionName, result);
     this.recordBlockedPlacementReasons(plan, result);
     this.recordRecoveryAction(plan, result);
@@ -381,6 +584,19 @@ export class AutonomousPlaytestSimulation {
       terrainRisk: terrainSafety?.riskLevel ?? 'unknown',
       atSeconds: round(elapsedSeconds, 2),
     };
+
+    if (result.teleportUsed) {
+      this.recoveryTeleportUsed = true;
+    }
+
+    if (result.recoverySuccess !== undefined) {
+      this.recoverySuccess = Boolean(result.recoverySuccess);
+    }
+
+    if (result.playerSafety) {
+      this.playerSafety = { ...result.playerSafety };
+      this.lastSafePosition = result.playerSafety.lastSafePosition ?? this.lastSafePosition;
+    }
 
     this.survivalRecoveryActions.push(recoveryRecord);
     this.survivalRecoveryActions = this.survivalRecoveryActions.slice(-48);
@@ -930,6 +1146,17 @@ export class AutonomousPlaytestSimulation {
     this.detectMiningSpam();
   }
 
+  updateGatherWoodBlockedReason(plan, result = {}) {
+    if (plan.action !== 'gatherWood' || result.ok) {
+      return;
+    }
+
+    this.gatherWoodBlockedReason = result.reason ??
+      result.resourceScanResults?.lastBlockedReason ??
+      result.failures?.[0]?.summary ??
+      'Gather Wood was blocked without a detailed reason.';
+  }
+
   detectDeathEvents(telemetrySnapshot, currentPosition) {
     const deathCount = telemetrySnapshot.counts?.deaths ?? 0;
 
@@ -1190,6 +1417,14 @@ export class AutonomousPlaytestSimulation {
       deathPosition: this.deathPosition ? { ...this.deathPosition } : null,
       terrainDeathContext: this.terrainDeathContext ? { ...this.terrainDeathContext } : null,
       terrainSafety: this.terrainSafety ? { ...this.terrainSafety } : null,
+      playerSafety: this.playerSafety ? { ...this.playerSafety } : null,
+      cameraVoidDetected: this.cameraVoidDetected,
+      playerLostRecoveryCount: this.playerLostRecoveryCount,
+      lastSafePosition: this.lastSafePosition ? { ...this.lastSafePosition } : null,
+      recoveryTeleportUsed: this.recoveryTeleportUsed,
+      recoverySuccess: this.recoverySuccess,
+      skyOnlyFrames: this.skyOnlyFrames,
+      gatherWoodBlockedReason: this.gatherWoodBlockedReason,
       survivalRecoveryActions: this.survivalRecoveryActions.map((action) => ({ ...action })),
       foodSearchActions: this.foodSearchActions.map((action) => ({ ...action })),
       blockedPlacementReasons: this.blockedPlacementReasons.map((reason) => ({ ...reason })),
@@ -1350,6 +1585,55 @@ function resolveSurvivalRecoveryIntent({
       type: 'search-food',
       reason: `Hunger is ${Math.round(hunger)}, below the food search threshold.`,
     };
+  }
+
+  return null;
+}
+
+function resolveRecoveryPauseIntent(context = {}) {
+  const health = Number(context.survival?.health ?? 100);
+  const hunger = Number(context.survival?.hunger ?? 100);
+  const food = Number(context.inventory?.food ?? 0) + Number(context.inventory?.berries ?? 0);
+
+  if (hunger < 50 && food > 0) {
+    return {
+      type: 'eat-food',
+      reason: `Recovery pause eating because hunger is ${Math.round(hunger)}.`,
+    };
+  }
+
+  if (hunger < 40) {
+    return {
+      type: 'search-food',
+      reason: `Recovery pause food search because hunger is ${Math.round(hunger)}.`,
+    };
+  }
+
+  if (health < 55) {
+    return {
+      type: 'hold-low-health',
+      reason: `Recovery pause resting because health is ${Math.round(health)}.`,
+    };
+  }
+
+  return null;
+}
+
+function resolveVoidRecoveryReason({ playerSafety, skyOnlySeconds, ungroundedSeconds }) {
+  if (playerSafety.isBelowTerrain) {
+    return playerSafety.reason ?? 'Player Y is below terrain surface.';
+  }
+
+  if (skyOnlySeconds > SKY_ONLY_SECONDS_THRESHOLD) {
+    return `Camera saw only sky/void for ${skyOnlySeconds.toFixed(1)} seconds.`;
+  }
+
+  if (ungroundedSeconds > UNGROUNDED_SECONDS_THRESHOLD) {
+    return `Player stayed ungrounded for ${ungroundedSeconds.toFixed(1)} seconds outside normal jump/fall movement.`;
+  }
+
+  if (playerSafety.distanceFromSafePointAbnormal) {
+    return playerSafety.reason ?? 'Player is abnormally far from valid terrain or base.';
   }
 
   return null;

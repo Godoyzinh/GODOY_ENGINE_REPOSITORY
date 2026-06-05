@@ -131,6 +131,24 @@ export class CameraSystem {
     this.shakeIntensity = MathUtils.clamp(this.shakeIntensity + amount, 0, MAX_SHAKE);
   }
 
+  resetBehindTarget({ targetPosition, yaw = this.yaw, pitch = MathUtils.degToRad(34) } = {}) {
+    if (!targetPosition) {
+      return;
+    }
+
+    this.yaw = yaw;
+    this.pitch = MathUtils.clamp(pitch, MIN_PITCH, MAX_PITCH);
+    this.viewOffset.set(0, 0, 0);
+    this.shakeIntensity = 0;
+    this.targetPosition.copy(targetPosition).add(this.lookAtOffset);
+    this.updateDesiredPosition();
+    this.resolveCameraCollision();
+    this.baseCameraPosition.copy(this.desiredPosition);
+    this.camera.position.copy(this.baseCameraPosition);
+    this.lookTarget.copy(this.targetPosition);
+    this.camera.lookAt(this.lookTarget);
+  }
+
   handlePointerDown() {
     if (!this.isInputEnabled || document.pointerLockElement === this.domElement) {
       return;
