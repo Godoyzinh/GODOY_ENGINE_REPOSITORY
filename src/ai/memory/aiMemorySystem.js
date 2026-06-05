@@ -10,24 +10,37 @@ export class AiMemorySystem {
   constructor({
     storage = getLocalStorage(),
     storageKey = AI_MEMORY_STORAGE_KEY,
+    persistenceSource = storage ? 'browser:localStorage' : 'memory:none',
     now = () => new Date().toISOString(),
   } = {}) {
     this.storage = storage;
     this.storageKey = storageKey;
+    this.persistenceSource = persistenceSource;
     this.now = now;
+    this.memoryLoadRunCount = 0;
+    this.memorySaveRunCount = 0;
+    this.memoryLastLoadStatus = 'not-loaded';
+    this.memoryLastSaveStatus = 'not-saved';
     this.memory = this.load();
   }
 
   load() {
     if (!this.storage) {
+      this.memoryLastLoadStatus = 'storage-unavailable';
       return createEmptyMemory(this.now());
     }
 
     try {
       const parsed = JSON.parse(this.storage.getItem(this.storageKey) ?? 'null');
+      const memory = normalizeMemory(parsed, this.now());
 
-      return normalizeMemory(parsed, this.now());
+      this.memoryLoadRunCount = Number(memory.runs ?? 0);
+      this.memoryLastLoadStatus = parsed ? 'loaded' : 'empty';
+
+      return memory;
     } catch {
+      this.memoryLoadRunCount = 0;
+      this.memoryLastLoadStatus = 'parse-error';
       return createEmptyMemory(this.now());
     }
   }
@@ -39,14 +52,24 @@ export class AiMemorySystem {
 
     try {
       this.storage.setItem(this.storageKey, JSON.stringify(this.memory, null, 2));
+      this.memorySaveRunCount = Number(this.memory.runs ?? 0);
+      this.memoryLastSaveStatus = 'saved';
       return true;
     } catch {
+      this.memoryLastSaveStatus = 'save-error';
       return false;
     }
   }
 
   getSnapshot() {
-    return sanitizeMemorySnapshot(this.memory);
+    return {
+      ...sanitizeMemorySnapshot(this.memory),
+      memoryPersistenceSource: this.persistenceSource,
+      memoryLoadRunCount: this.memoryLoadRunCount,
+      memorySaveRunCount: this.memorySaveRunCount,
+      memoryLastLoadStatus: this.memoryLastLoadStatus,
+      memoryLastSaveStatus: this.memoryLastSaveStatus,
+    };
   }
 
   getStrategyHints() {
@@ -137,7 +160,7 @@ export class AiMemorySystem {
       now,
     });
     updateDiscoveredStructures(this.memory, discoveredStructures, now);
-    updateDeathCauses(this.memory, simulationSnapshot.failures ?? [], report);
+    updateDeathCauses(this.memory, simulationSnapshot, report, now);
     updateBlockedActionStatistics(this.memory, failedActions, bottlenecks);
     updateCraftingStatistics(this.memory, craftedItems, failedCrafts);
     updateShelterStatistics(this.memory, shelterValidation, completedGoals, failedGoals);
@@ -162,6 +185,7 @@ export class AiMemorySystem {
 export function createLocalAiMemorySystem() {
   return new AiMemorySystem({
     storage: getLocalStorage(),
+    persistenceSource: 'browser:localStorage',
   });
 }
 
@@ -513,29 +537,69 @@ function updateDiscoveredStructures(memory, discoveredStructures = [], now) {
     .slice(0, MAX_KNOWLEDGE);
 }
 
-function updateDeathCauses(memory, failures = [], report = null) {
+function updateDeathCauses(memory, simulationSnapshot = {}, report = null, now = null) {
+  const failures = simulationSnapshot.failures ?? [];
   const deathFailures = failures.filter((failure) => (
     String(failure.code ?? '').includes('death') ||
     String(failure.summary ?? '').toLowerCase().includes('died')
   ));
   const deathCount = Number(report?.telemetry?.counts?.deaths ?? 0);
+  const telemetryDeaths = (report?.telemetry?.recentGameplayEvents ?? [])
+    .filter((event) => event.type === 'death');
+  const terrainDeathContext = simulationSnapshot.terrainDeathContext ?? null;
+  const deathPosition = simulationSnapshot.deathPosition ?? terrainDeathContext?.position ?? null;
+  const activeBiome = terrainDeathContext?.biome ?? simulationSnapshot.resourceScanResults?.biome ?? 'Unknown';
 
-  if (deathFailures.length === 0 && deathCount <= 0) {
+  if (deathFailures.length === 0 && deathCount <= 0 && telemetryDeaths.length === 0 && !terrainDeathContext) {
     return;
   }
 
-  if (deathFailures.length === 0) {
-    memory.deathCauses.unknown = incrementCountRecord(memory.deathCauses.unknown, deathCount);
-    return;
-  }
+  const deathRecords = deathFailures.length > 0
+    ? deathFailures
+    : telemetryDeaths.length > 0
+      ? telemetryDeaths.map((event) => ({
+        code: event.payload?.source?.toLowerCase?.().includes('terrain') ? 'terrain-death' : 'telemetry-death',
+        summary: `Telemetry death event: ${event.payload?.source ?? 'unknown source'}.`,
+        severity: 'medium',
+        position: event.payload?.position ?? deathPosition,
+        biome: event.payload?.biome ?? activeBiome,
+      }))
+      : [{
+        code: terrainDeathContext?.source ?? 'unknown-death',
+        summary: terrainDeathContext?.summary ?? 'Death was recorded without a detailed failure record.',
+        severity: 'medium',
+        position: deathPosition,
+        biome: activeBiome,
+      }];
 
-  for (const failure of deathFailures) {
-    const cause = failure.code ?? 'unknown';
+  for (const failure of deathRecords) {
+    const cause = failure.code ?? 'unknown-death';
+    const isTerrainDeath = String(cause).includes('terrain') ||
+      String(failure.summary ?? '').toLowerCase().includes('terrain') ||
+      String(terrainDeathContext?.source ?? '').includes('terrain');
+    const suggestedAvoidanceStrategy = isTerrainDeath
+      ? 'Avoid steep slopes and blacklisted terrain around the death position before resuming exploration.'
+      : 'Recover survival resources before repeating the failed route.';
 
     memory.deathCauses[cause] = incrementCountRecord(memory.deathCauses[cause], Number(failure.count ?? 1), {
       summary: failure.summary,
       severity: failure.severity,
+      biome: failure.biome ?? activeBiome,
+      position: failure.position ?? deathPosition,
+      currentGoal: terrainDeathContext?.currentGoal ?? simulationSnapshot.planner?.currentGoal ?? null,
+      suggestedAvoidanceStrategy,
+      lastSeenAt: now,
     });
+
+    if (isTerrainDeath && activeBiome && !memory.dangerousBiomes.includes(activeBiome)) {
+      memory.dangerousBiomes.push(activeBiome);
+      memory.dangerousBiomes = memory.dangerousBiomes.slice(-MAX_KNOWLEDGE);
+    }
+
+    if (isTerrainDeath) {
+      pushUniqueLimited(memory.learnedLessons, `Terrain death near ${activeBiome}; avoid steep slopes before continuing exploration.`);
+      pushUniqueLimited(memory.optimizationSuggestions, suggestedAvoidanceStrategy);
+    }
   }
 }
 
@@ -630,6 +694,8 @@ function updateStorageStatistics(memory, storageSnapshot = {}, inventoryDelta = 
 }
 
 function updateBiomeRatings(memory) {
+  const learnedDangerousBiomes = new Set(memory.dangerousBiomes ?? []);
+
   for (const biome of CORE_BIOMES) {
     const stats = resolveBiomeStats(memory, biome);
     const resourceYield = Object.values(stats.resourcesFound ?? {})
@@ -649,11 +715,15 @@ function updateBiomeRatings(memory) {
     };
   }
 
-  memory.dangerousBiomes = Object.values(memory.biomeRatings)
+  const ratedDangerousBiomes = Object.values(memory.biomeRatings)
     .filter((rating) => Number(rating.dangerLevel ?? 0) >= 0.35)
     .sort((left, right) => Number(right.dangerLevel ?? 0) - Number(left.dangerLevel ?? 0))
-    .map((rating) => rating.biome)
-    .slice(0, MAX_KNOWLEDGE);
+    .map((rating) => rating.biome);
+
+  memory.dangerousBiomes = [...new Set([
+    ...ratedDangerousBiomes,
+    ...learnedDangerousBiomes,
+  ])].slice(0, MAX_KNOWLEDGE);
 }
 
 function updateOptimizationSuggestions(memory, {
@@ -939,6 +1009,18 @@ function incrementCountRecord(existing = {}, count = 1, metadata = {}) {
     ...metadata,
     count: Number(existing.count ?? 0) + Number(count ?? 1),
   };
+}
+
+function pushUniqueLimited(collection, value, limit = MAX_KNOWLEDGE) {
+  if (!value || collection.includes(value)) {
+    return;
+  }
+
+  collection.push(value);
+
+  while (collection.length > limit) {
+    collection.shift();
+  }
 }
 
 function calculateRate(successes, failures) {

@@ -22,6 +22,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     : new AiMemorySystem({
       storage: createFileStorage(options.memoryPath ?? DEFAULT_AI_MEMORY_PATH),
       storageKey: AI_MEMORY_STORAGE_KEY,
+      persistenceSource: `file:${options.memoryPath ?? DEFAULT_AI_MEMORY_PATH}`,
     });
   const result = options.mode === 'evolution'
     ? runEvolutionAiSimulation({
@@ -57,6 +58,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     },
     aiMemory: {
       runs: result.snapshot.aiMemory?.runs ?? 0,
+      persistenceSource: result.snapshot.aiMemory?.memoryPersistenceSource ?? 'unknown',
+      loadRunCount: result.snapshot.aiMemory?.memoryLoadRunCount ?? 0,
+      saveRunCount: result.snapshot.aiMemory?.memorySaveRunCount ?? 0,
+      lastLoadStatus: result.snapshot.aiMemory?.memoryLastLoadStatus ?? null,
+      lastSaveStatus: result.snapshot.aiMemory?.memoryLastSaveStatus ?? null,
       preferredWoodBiome: result.snapshot.aiMemory?.strategyHints?.preferredWoodBiome ?? null,
       learnedKnowledge: result.snapshot.aiMemory?.learnedKnowledge?.slice(-3) ?? [],
     },

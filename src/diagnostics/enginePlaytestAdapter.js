@@ -1,7 +1,7 @@
 import { Vector3 } from 'three';
 import { FURNACE_RECIPE_IDS } from '../crafting/furnaceSystem.js';
 import { getRecipe, RECIPE_IDS } from '../crafting/recipeRegistry.js';
-import { ITEM_IDS, ITEM_TYPES, normalizeDrop } from '../items/itemRegistry.js';
+import { ITEM_IDS, ITEM_TYPES, getItemDefinition, normalizeDrop } from '../items/itemRegistry.js';
 import { TOOL_IDS } from '../tools/toolSystem.js';
 import { BLOCK_IDS } from '../world/blockTypes.js';
 import { getBlockDefinition, getBlockDrop, isPlaceableBlock } from '../world/blockRegistry.js';
@@ -81,6 +81,9 @@ export class EnginePlaytestAdapter {
     };
     this.discoveredStructures = new Map();
     this.aiMemorySnapshot = null;
+    this.unsafeTerrainBlacklist = [];
+    this.blockedPlacementReasons = [];
+    this.shelterPlacementBlockedKeys = new Set();
   }
 
   begin({ inventoryProfileId = this.inventoryProfileId } = {}) {
@@ -119,6 +122,9 @@ export class EnginePlaytestAdapter {
       chestPosition: null,
     };
     this.discoveredStructures = new Map();
+    this.unsafeTerrainBlacklist = [];
+    this.blockedPlacementReasons = [];
+    this.shelterPlacementBlockedKeys.clear();
     this.recordBiomeVisit(this.engine.terrainGenerator.stats.activeBiome, 0);
   }
 
@@ -553,6 +559,38 @@ export class EnginePlaytestAdapter {
     }
   }
 
+  executeSurvivalRecovery({ intent, elapsedSeconds }) {
+    switch (intent.type) {
+      case 'eat-food':
+        return this.consumeFoodForRecovery();
+      case 'search-food':
+        return this.gatherFoodGoal([{
+          action: 'navigate',
+          event: 'food search',
+        }]);
+      case 'return-to-base':
+        return this.returnToSafeBase();
+      case 'hold-low-health':
+        this.engine.playerController.movementSystem.clearInput();
+        this.engine.playerState.restoreHealth(3);
+        this.engine.playerState.restoreStamina(8);
+
+        return {
+          ok: true,
+          event: 'rested',
+          count: 1,
+        };
+      case 'avoid-risky-terrain':
+        return this.avoidRiskyTerrain(intent.reason, elapsedSeconds);
+      default:
+        return {
+          ok: false,
+          skipped: true,
+          reason: `Unknown survival recovery intent "${intent.type}".`,
+        };
+    }
+  }
+
   getPosition() {
     const position = this.engine.playerController.position;
 
@@ -634,6 +672,46 @@ export class EnginePlaytestAdapter {
     };
   }
 
+  getTerrainSafetySnapshot() {
+    const position = this.getPosition();
+    const terrainGenerator = this.engine.terrainGenerator;
+    const centerHeight = Number(terrainGenerator.getHeightAt?.(position.x, position.z) ?? position.y);
+    const sampleOffsets = [
+      { x: 4, z: 0 },
+      { x: -4, z: 0 },
+      { x: 0, z: 4 },
+      { x: 0, z: -4 },
+    ];
+    const heights = sampleOffsets.map((offset) => Number(
+      terrainGenerator.getHeightAt?.(position.x + offset.x, position.z + offset.z) ?? centerHeight,
+    ));
+    const minHeight = Math.min(centerHeight, ...heights);
+    const maxHeight = Math.max(centerHeight, ...heights);
+    const fallRisk = centerHeight - minHeight > 4;
+    const steepSlope = maxHeight - minHeight > 3;
+    const cellKey = createTerrainCellKey(position);
+    const currentlyBlacklisted = this.unsafeTerrainBlacklist.some((entry) => entry.key === cellKey);
+
+    return {
+      position,
+      biome: this.engine.terrainGenerator.stats.activeBiome,
+      cellKey,
+      fallRisk,
+      steepSlope,
+      currentlyBlacklisted,
+      blacklistSize: this.unsafeTerrainBlacklist.length,
+      heightDelta: round(maxHeight - minHeight, 2),
+      riskLevel: fallRisk ? 'high' : steepSlope || currentlyBlacklisted ? 'medium' : 'low',
+      reason: fallRisk
+        ? 'Potential fall risk detected near current exploration path.'
+        : steepSlope
+          ? 'Steep terrain detected near current exploration path.'
+          : currentlyBlacklisted
+            ? 'Current terrain cell was previously blacklisted.'
+            : null,
+    };
+  }
+
   getBaseSnapshot() {
     return {
       tier: this.baseTier,
@@ -657,6 +735,98 @@ export class EnginePlaytestAdapter {
 
       return count + stack.count;
     }, 0);
+  }
+
+  consumeFoodForRecovery() {
+    const foodStack = this.engine.inventorySystem.getAllStacks().find((stack) => stack?.itemType === ITEM_TYPES.consumable);
+
+    if (!foodStack) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'no food',
+        reason: 'No consumable item available for survival recovery.',
+      };
+    }
+
+    const itemDefinition = getItemDefinition({
+      itemType: foodStack.itemType,
+      itemId: foodStack.itemId,
+    });
+    const effect = itemDefinition?.consumable ?? {};
+    const wasRemoved = this.engine.inventorySystem.removeItem({
+      itemType: foodStack.itemType,
+      itemId: foodStack.itemId,
+      count: 1,
+    });
+
+    if (!wasRemoved) {
+      return {
+        ok: false,
+        skipped: true,
+        event: 'food remove blocked',
+        reason: 'Consumable item was found but could not be removed from inventory.',
+      };
+    }
+
+    this.engine.playerState.restoreHunger(effect.hungerRestore ?? 0);
+    this.engine.playerState.restoreHealth(effect.healthRestore ?? 0);
+    this.engine.playerState.restoreStamina(effect.staminaRestore ?? 0);
+
+    return {
+      ok: true,
+      event: `Ate ${foodStack.name}`,
+      count: 1,
+    };
+  }
+
+  returnToSafeBase() {
+    const target = this.storage.chestPosition ?? this.shelterOrigin ?? {
+      x: 0,
+      y: this.engine.terrainGenerator.getHeightAt?.(0, 0) ?? 2,
+      z: 0,
+    };
+    const y = Number(target.y ?? this.engine.terrainGenerator.getHeightAt?.(target.x, target.z) ?? 2) + 2;
+
+    this.engine.playerController.movementSystem.clearInput();
+    this.engine.playerController.movementSystem.position.set(target.x, y, target.z);
+    this.engine.playerState.restoreHealth(8);
+    this.engine.playerState.restoreStamina(14);
+
+    return {
+      ok: true,
+      event: 'returned to base',
+      count: 1,
+    };
+  }
+
+  avoidRiskyTerrain(reason = 'Unsafe terrain detected.', elapsedSeconds = 0) {
+    const position = this.getPosition();
+    const cellKey = createTerrainCellKey(position);
+
+    if (!this.unsafeTerrainBlacklist.some((entry) => entry.key === cellKey)) {
+      this.unsafeTerrainBlacklist.push({
+        key: cellKey,
+        reason,
+        biome: this.engine.terrainGenerator.stats.activeBiome,
+        position,
+      });
+      this.unsafeTerrainBlacklist = this.unsafeTerrainBlacklist.slice(-24);
+    }
+
+    this.engine.playerController.movementSystem.clearInput();
+    this.engine.playerController.movementSystem.position.set(
+      position.x + 6,
+      Number(this.engine.terrainGenerator.getHeightAt?.(position.x + 6, position.z + 4) ?? position.y) + 2,
+      position.z + 4,
+    );
+    this.explore({ elapsedSeconds });
+
+    return {
+      ok: true,
+      event: 'avoided terrain',
+      count: 1,
+    };
   }
 
   getBasicToolCount() {
@@ -1677,6 +1847,8 @@ export class EnginePlaytestAdapter {
       this.shelterOrigin = this.createShelterOrigin();
     }
 
+    const blockedPlacementReasons = [];
+
     for (let attempt = 0; attempt < SHELTER_PATTERN.length; attempt += 1) {
       const patternIndex = (this.shelterPlacementIndex + attempt) % SHELTER_PATTERN.length;
       const patternPlacement = SHELTER_PATTERN[patternIndex];
@@ -1688,20 +1860,58 @@ export class EnginePlaytestAdapter {
         role: patternPlacement.role,
         side: patternPlacement.side,
       };
+      const placementKey = createPlacementKey(placement);
+
+      if (this.shelterPlacementBlockedKeys.has(placementKey)) {
+        blockedPlacementReasons.push({
+          reason: 'Shelter placement slot was previously blocked.',
+          material: getBlockDefinition(blockId).name,
+          position: placement,
+        });
+        continue;
+      }
 
       if (!this.engine.terrainGenerator.isWorldPositionLoaded(placement.worldX, placement.worldZ)) {
+        this.shelterPlacementBlockedKeys.add(placementKey);
+        blockedPlacementReasons.push({
+          reason: 'Shelter placement slot is in an unloaded chunk.',
+          material: getBlockDefinition(blockId).name,
+          position: placement,
+        });
         continue;
       }
 
       if (this.engine.terrainGenerator.getBlockAtWorldPosition(placement.worldX, placement.y, placement.worldZ) !== BLOCK_IDS.air) {
+        this.shelterPlacementBlockedKeys.add(placementKey);
+        blockedPlacementReasons.push({
+          reason: 'Shelter placement slot is occupied.',
+          material: getBlockDefinition(blockId).name,
+          position: placement,
+        });
         continue;
       }
 
       this.shelterPlacementIndex = patternIndex + 1;
+      this.blockedPlacementReasons = blockedPlacementReasons.slice(-8);
       return placement;
     }
 
-    return this.findPlacementTarget(elapsedSeconds, blockId);
+    const fallbackPlacement = this.findPlacementTarget(elapsedSeconds, blockId);
+
+    if (fallbackPlacement) {
+      this.blockedPlacementReasons = blockedPlacementReasons.slice(-8);
+      return fallbackPlacement;
+    }
+
+    this.blockedPlacementReasons = blockedPlacementReasons.length > 0
+      ? blockedPlacementReasons.slice(-8)
+      : [{
+        reason: 'No reachable empty shelter placement slot found.',
+        material: getBlockDefinition(blockId).name,
+        position: this.shelterOrigin,
+      }];
+
+    return null;
   }
 
   createShelterOrigin() {
@@ -1758,6 +1968,10 @@ export class EnginePlaytestAdapter {
         reason: this.lastShelterValidation.lastBlockedReason,
         failures: invalidSelectionFailure ? [invalidSelectionFailure] : [],
         failedActions: invalidSelectionFailure ? [createInvalidShelterFailedAction(invalidSelectionFailure)] : [],
+        blockedPlacementReasons: [{
+          reason: this.lastShelterValidation.lastBlockedReason,
+          material: this.engine.inventorySystem.getSelectedStack()?.name ?? null,
+        }],
         recoveryAction: {
           type: 'gather-valid-shelter-material',
           reason: 'Shelter placement needs Wood, Planks, Stone, or Dirt.',
@@ -1780,6 +1994,7 @@ export class EnginePlaytestAdapter {
         reason: this.lastShelterValidation.lastBlockedReason,
         failures: invalidSelectionFailure ? [invalidSelectionFailure] : [],
         failedActions: invalidSelectionFailure ? [createInvalidShelterFailedAction(invalidSelectionFailure)] : [],
+        blockedPlacementReasons: this.blockedPlacementReasons.map((blockedReason) => ({ ...blockedReason })),
         recoveryAction: {
           type: 'reposition-for-shelter',
           reason: 'Move to a clearer area before placing shelter blocks.',
@@ -1811,6 +2026,11 @@ export class EnginePlaytestAdapter {
           },
         ],
         failedActions: invalidSelectionFailure ? [createInvalidShelterFailedAction(invalidSelectionFailure)] : [],
+        blockedPlacementReasons: [{
+          reason: this.lastShelterValidation.lastBlockedReason,
+          material: getBlockDefinition(blockStack.itemId).name,
+          position: placement,
+        }],
         shelterValidation: this.getShelterValidationSnapshot(),
       };
     }
@@ -2031,6 +2251,14 @@ function createInvalidShelterFailedAction(failure) {
     actionName: 'place',
     reason: failure.summary,
   };
+}
+
+function createTerrainCellKey(position) {
+  return `${Math.floor(position.x / 8)},${Math.floor(position.z / 8)}`;
+}
+
+function createPlacementKey(placement) {
+  return `${placement.worldX},${placement.y},${placement.worldZ}`;
 }
 
 function round(value, digits) {

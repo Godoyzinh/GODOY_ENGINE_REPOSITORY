@@ -107,13 +107,14 @@ Memory is advisory only. It can influence goal reasons and target selection, but
 - Inventory initial/current/delta snapshots for autonomous playtests, also exported as `inventorySnapshot` and `resourceDeltas`.
 - Actual equipped tool, including missing-pickaxe evidence if Gather Stone starts without a valid mining tool.
 - Furnace crafting diagnostics: recipe presence, valid stone-material options, attempted counts, and block reason.
-- AI memory: `memorySnapshot`, learned knowledge, new knowledge, learned lessons, strategy changes, optimization suggestions, biome ratings, strategy hints, biome statistics, progression times, resource discovery metrics, discovered structures, storage reserves, and base tier state.
+- AI memory: `memorySnapshot`, persistence source, load/save run counts, learned knowledge, new knowledge, learned lessons, strategy changes, optimization suggestions, biome ratings, strategy hints, biome statistics, progression times, resource discovery metrics, discovered structures, storage reserves, and base tier state.
 - Storage persistence: reports include placed storage chests, reserve contents, and persisted chest counts for engine-backed auto tests.
 - Starting inventory profile plus explicit `initialInventory`, `currentInventory`, and `inventoryDelta` aliases.
 - Goal transition history, failed action evidence, and crafted item/failed craft attempt lists, including no-delta craft failures.
 - Resource scan results for wood progression, including nearest trunk target, scan radius, scanned wood blocks, rejected leaves, target counts, and blocked reasons.
 - Shelter validation results, including valid placed blocks, rejected invalid blocks, wall/roof coverage, safety score, and night safety status.
-- Blocked goal and recovery action history for cases where the bot expands wood scans, gathers missing shelter material, or requests a safer shelter footprint.
+- Blocked goal and recovery action history for cases where the bot expands wood scans, gathers missing shelter material, requests a safer shelter footprint, searches food, eats food, returns to base, pauses low-health exploration, or avoids risky terrain.
+- Terrain safety and death context, including `deathPosition`, `terrainDeathContext`, and survival recovery evidence when terrain risk or low survival stats interrupt exploration.
 - Recent sanitized gameplay events.
 - Runtime stats for renderer, settings, terrain, entities, survival, networking, and persistence.
 - Browser/system capabilities needed for QA.
@@ -140,6 +141,7 @@ AI-generated tasks are suggestions, not commands.
 - Treat mining spam above the QA threshold as an actionable gameplay task, especially when resource deltas do not justify the action count.
 - Treat wood target scan blocks as gameplay tasks when the bot is in Gather Wood and a tree-capable biome has no reachable trunk target.
 - Treat invalid shelter material, failed shelter safety validation, and no-delta goal success as actionable gameplay tasks.
+- Treat terrain deaths, blocked shelter placement reasons, and repeated survival recovery blocks as actionable gameplay tasks.
 
 ## Branch And PR Rules
 

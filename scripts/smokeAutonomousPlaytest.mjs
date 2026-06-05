@@ -153,6 +153,15 @@ class BlockedFurnaceAdapter extends HeadlessPlaytestAdapter {
   }
 }
 
+class LowSurvivalAdapter extends HeadlessPlaytestAdapter {
+  begin(options) {
+    super.begin(options);
+    this.stats.health = 45;
+    this.stats.hunger = 35;
+    this.inventory.berries = 0;
+  }
+}
+
 const { report, snapshot } = runHeadlessAiSimulation({
   mode: 'quick',
   durationSeconds: 60,
@@ -287,6 +296,10 @@ assert.equal(memoryResult.snapshot.aiMemory.runs, 1, 'AI memory should record co
 assert.equal(memoryResult.report.runtimeStats.aiMemory.runs, 1, 'top-level report runtime stats should include updated AI memory');
 assert.equal(memoryResult.report.runtimeStats.simulation.aiMemory.runs, 1, 'report should include persisted AI memory');
 assert.equal(memoryResult.report.runtimeStats.simulation.memorySnapshot.runs, 1, 'report should include memorySnapshot alias');
+assert.equal(memoryResult.report.runtimeStats.simulation.memoryPersistenceSource, 'browser:localStorage', 'in-memory smoke should expose memory persistence source');
+assert.equal(memoryResult.report.runtimeStats.simulation.memoryLoadRunCount, 0, 'first memory smoke should expose load run count');
+assert.equal(memoryResult.report.runtimeStats.simulation.memorySaveRunCount, 1, 'first memory smoke should expose save run count');
+assert.equal(memoryResult.report.runtimeStats.aiMemory.memorySaveRunCount, 1, 'top-level AI memory should expose save run count');
 assert.ok(memoryResult.report.runtimeStats.simulation.learnedKnowledge.length > 0, 'report should include learned knowledge');
 assert.ok(Array.isArray(memoryResult.report.runtimeStats.simulation.newKnowledge), 'report should include newKnowledge');
 assert.ok(Array.isArray(memoryResult.report.runtimeStats.simulation.learnedLessons), 'report should include learnedLessons');
@@ -329,6 +342,55 @@ assert.equal(memoryFollowupResult.snapshot.aiMemory.runs, 2, 'future runs should
 assert.ok(
   memoryFollowupResult.snapshot.aiMemory.strategyHints.preferredWoodBiome,
   'future runs should expose learned strategy hints from previous memory',
+);
+assert.equal(memoryFollowupResult.snapshot.aiMemory.memoryLoadRunCount, 0, 'same process memory should preserve original load run count');
+assert.equal(memoryFollowupResult.snapshot.aiMemory.memorySaveRunCount, 2, 'same process memory should expose updated save run count');
+
+const terrainDeathMemorySystem = new AiMemorySystem({
+  storage: createSmokeMemoryStorage(),
+  now: () => '2026-06-02T00:10:00.000Z',
+});
+const terrainDeathMemory = terrainDeathMemorySystem.recordSimulation({
+  simulationSnapshot: {
+    elapsedSeconds: 42,
+    terrainDeathContext: {
+      source: 'terrain-death',
+      summary: 'Autonomous player died from terrain damage.',
+      biome: 'Mountains',
+      position: { x: 12, y: 44, z: -9 },
+      currentGoal: 'Explore World',
+      suggestedAvoidanceStrategy: 'Avoid steep slopes before exploration resumes.',
+    },
+    deathPosition: { x: 12, y: 44, z: -9 },
+    planner: {
+      currentGoal: 'Explore World',
+      goalsCompleted: [],
+      goalsFailed: [],
+      bottlenecks: [],
+    },
+    actionCounts: {},
+    failureCounts: {},
+    resourceDeltas: {},
+  },
+  report: {
+    id: 'terrain-death-smoke',
+    trigger: 'autonomous-playtest',
+    telemetry: {
+      counts: { deaths: 1 },
+      recentGameplayEvents: [],
+    },
+    issues: [],
+    aiTasks: [],
+  },
+});
+
+assert.equal(terrainDeathMemory.runs, 1, 'terrain death memory smoke should increment runs');
+assert.equal(terrainDeathMemory.deathCauses['terrain-death'].biome, 'Mountains', 'terrain death should store biome context');
+assert.equal(terrainDeathMemory.deathCauses['terrain-death'].position.x, 12, 'terrain death should store position context');
+assert.ok(terrainDeathMemory.dangerousBiomes.includes('Mountains'), 'terrain death should mark biome as dangerous');
+assert.ok(
+  terrainDeathMemory.learnedLessons.some((lesson) => lesson.includes('Terrain death')),
+  'terrain death should create a learned lesson',
 );
 
 const emptyInventoryResult = runHeadlessAiSimulation({
@@ -489,6 +551,10 @@ assert.equal(
   0,
   'invalid shelter material should not count as placed shelter',
 );
+assert.ok(
+  invalidShelterResult.blockedPlacementReasons.some((blockedReason) => blockedReason.reason.includes('No valid shelter material')),
+  'shelter should report exact blocked placement reason',
+);
 
 const unsafeNightAdapter = new HeadlessPlaytestAdapter({ seed: 20260533 });
 unsafeNightAdapter.begin();
@@ -513,6 +579,20 @@ assert.ok(
   blockedWoodResult.report.aiTasks.some((task) => task.id.includes('wood-target-scan-blocked')),
   'blocked wood scan should generate an AI task',
 );
+
+const lowSurvivalResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 12,
+  deltaTime: 0.25,
+  seed: 20260538,
+  adapter: new LowSurvivalAdapter({ seed: 20260538 }),
+});
+const lowSurvivalSimulation = lowSurvivalResult.report.runtimeStats.simulation;
+const recoveryTypes = lowSurvivalSimulation.survivalRecoveryActions.map((action) => action.type);
+
+assert.ok(recoveryTypes.includes('search-food'), 'low hunger should trigger food search recovery');
+assert.ok(recoveryTypes.includes('eat-food'), 'available food under 50 hunger should trigger eating recovery');
+assert.ok(lowSurvivalSimulation.foodSearchActions.length >= 2, 'food recovery actions should be exported');
 
 const spamReportSystem = new AutoQaReportSystem({
   telemetrySystem: new TelemetrySystem({ now: () => 0 }),

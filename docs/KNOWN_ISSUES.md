@@ -25,6 +25,8 @@
 - Autonomous playtest behavior now follows survival progression goals instead of random timed action loops.
 - Autonomous wood gathering now validates real trunk targets and wood inventory deltas.
 - Autonomous shelter progression now rejects invalid materials and requires real shelter safety before Survive Night can advance.
+- AI memory now reports persistence source/load/save counts consistently and preserves terrain death learning.
+- Autonomous survival recovery now searches/eats food at low hunger, pauses risky exploration at low health, and records terrain avoidance evidence.
 
 ## WebGL Fallback
 

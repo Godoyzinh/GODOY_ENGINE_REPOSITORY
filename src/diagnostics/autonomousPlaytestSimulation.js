@@ -58,6 +58,13 @@ export class AutonomousPlaytestSimulation {
     this.failedCrafts = [];
     this.failedActions = [];
     this.recoveryActions = [];
+    this.survivalRecoveryActions = [];
+    this.foodSearchActions = [];
+    this.blockedPlacementReasons = [];
+    this.deathPosition = null;
+    this.terrainDeathContext = null;
+    this.terrainSafety = null;
+    this.lastDeathCount = 0;
     this.inventorySnapshot = null;
     this.resourceScanResults = null;
     this.shelterValidation = null;
@@ -95,6 +102,13 @@ export class AutonomousPlaytestSimulation {
     this.failedCrafts = [];
     this.failedActions = [];
     this.recoveryActions = [];
+    this.survivalRecoveryActions = [];
+    this.foodSearchActions = [];
+    this.blockedPlacementReasons = [];
+    this.deathPosition = null;
+    this.terrainDeathContext = null;
+    this.terrainSafety = null;
+    this.lastDeathCount = 0;
     this.inventorySnapshot = null;
     this.resourceScanResults = null;
     this.shelterValidation = null;
@@ -217,6 +231,22 @@ export class AutonomousPlaytestSimulation {
       elapsedSeconds: this.elapsedSeconds,
       context,
     });
+    this.terrainSafety = this.adapter.getTerrainSafetySnapshot?.({
+      elapsedSeconds: this.elapsedSeconds,
+      context,
+      plan,
+    }) ?? this.terrainSafety;
+
+    if (this.performSurvivalRecoveryIfNeeded({
+      plan,
+      context,
+      deltaTime,
+      elapsedSeconds: this.elapsedSeconds,
+      terrainSafety: this.terrainSafety,
+    })) {
+      this.updateTimedAction('saveLoad', deltaTime, 20, () => this.adapter.checkSaveLoad?.());
+      return;
+    }
 
     if (plan.action !== 'blocked') {
       this.performPlannedAction(plan, context, deltaTime);
@@ -262,6 +292,7 @@ export class AutonomousPlaytestSimulation {
     this.updateFurnaceCraftDiagnostics(plan, result);
     this.updateObtainFurnaceBlockedAttempts(plan, result);
     this.recordResultFailedActions(plan, actionName, result);
+    this.recordBlockedPlacementReasons(plan, result);
     this.recordRecoveryAction(plan, result);
 
     if (!result.ok && !result.moving) {
@@ -287,6 +318,118 @@ export class AutonomousPlaytestSimulation {
       action: plan.action,
       result: result.ok ? 'ok' : 'blocked',
     });
+  }
+
+  performSurvivalRecoveryIfNeeded({ plan, context, deltaTime, elapsedSeconds, terrainSafety = null }) {
+    const intent = resolveSurvivalRecoveryIntent({
+      context,
+      plan,
+      terrainSafety,
+      terrainDeathContext: this.terrainDeathContext,
+    });
+
+    if (!intent) {
+      return false;
+    }
+
+    const actionName = intent.type === 'search-food'
+      ? 'collect'
+      : intent.type === 'avoid-risky-terrain'
+        ? 'explore'
+        : 'survive';
+
+    if (!this.canPerformAction(actionName)) {
+      return true;
+    }
+
+    const beforeContext = context;
+    const rawResult = this.adapter.executeSurvivalRecovery?.({
+      intent,
+      context,
+      plan,
+      deltaTime,
+      elapsedSeconds,
+      terrainSafety,
+      terrainDeathContext: this.terrainDeathContext,
+    }) ?? {
+      ok: false,
+      skipped: true,
+      reason: `Adapter does not implement survival recovery intent "${intent.type}".`,
+    };
+    const afterContext = {
+      ...(this.adapter.getPlanningState?.({
+        elapsedSeconds,
+        mode: this.mode,
+      }) ?? beforeContext),
+      memory: this.aiMemorySnapshot?.strategyHints ?? null,
+    };
+    const inventoryDelta = diffInventory(beforeContext.inventory, afterContext.inventory);
+    const result = {
+      ...rawResult,
+      survivalRecoveryIntent: intent,
+    };
+    const recoveryRecord = {
+      type: intent.type,
+      reason: intent.reason,
+      goalId: plan.goalId,
+      goalName: plan.goalName,
+      action: plan.action,
+      ok: Boolean(result.ok),
+      result: result.event ?? result.reason ?? null,
+      health: Number(afterContext.survival?.health ?? beforeContext.survival?.health ?? 0),
+      hunger: Number(afterContext.survival?.hunger ?? beforeContext.survival?.hunger ?? 0),
+      terrainRisk: terrainSafety?.riskLevel ?? 'unknown',
+      atSeconds: round(elapsedSeconds, 2),
+    };
+
+    this.survivalRecoveryActions.push(recoveryRecord);
+    this.survivalRecoveryActions = this.survivalRecoveryActions.slice(-48);
+
+    if (intent.type === 'search-food' || intent.type === 'eat-food') {
+      this.foodSearchActions.push({
+        ...recoveryRecord,
+        inventoryDelta,
+      });
+      this.foodSearchActions = this.foodSearchActions.slice(-48);
+    }
+
+    if (!result.ok) {
+      this.recordFailedAction({
+        plan,
+        actionName,
+        result: {
+          ...result,
+          reason: result.reason ?? intent.reason,
+        },
+      });
+      this.goalPlanner.recordBottleneck({
+        code: `survival-recovery-blocked:${intent.type}`,
+        goalId: plan.goalId,
+        goalName: plan.goalName,
+        summary: result.reason ?? intent.reason,
+        atSeconds: elapsedSeconds,
+      });
+    }
+
+    this.updateInventorySnapshot(afterContext);
+    this.updateResourceScanSnapshot(result);
+    this.updateShelterValidationSnapshot(result);
+    this.recordRecoveryAction(plan, {
+      ...result,
+      recoveryAction: {
+        type: intent.type,
+        reason: intent.reason,
+      },
+    });
+    this.performAction(actionName, () => result);
+    this.setActionCooldown(actionName);
+    this.telemetrySystem.recordGameplayEvent('auto-survival-recovery', {
+      type: intent.type,
+      reason: intent.reason,
+      result: result.ok ? 'ok' : 'blocked',
+    });
+
+    return true;
   }
 
   tickActionCooldowns(deltaTime) {
@@ -565,6 +708,24 @@ export class AutonomousPlaytestSimulation {
     this.failedActions = this.failedActions.slice(-48);
   }
 
+  recordBlockedPlacementReasons(plan, result) {
+    const blockedPlacementReasons = result.blockedPlacementReasons ?? [];
+
+    for (const blockedPlacementReason of blockedPlacementReasons) {
+      this.blockedPlacementReasons.push({
+        goalId: plan.goalId,
+        goalName: plan.goalName,
+        action: plan.action,
+        reason: blockedPlacementReason.reason ?? result.reason ?? 'Placement was blocked.',
+        material: blockedPlacementReason.material ?? null,
+        position: blockedPlacementReason.position ? { ...blockedPlacementReason.position } : null,
+        atSeconds: round(this.elapsedSeconds, 2),
+      });
+    }
+
+    this.blockedPlacementReasons = this.blockedPlacementReasons.slice(-48);
+  }
+
   recordRecoveryAction(plan, result) {
     const recoveryAction = result.recoveryAction ?? (
       result.resourceScanResults?.recovery
@@ -759,12 +920,49 @@ export class AutonomousPlaytestSimulation {
       this.failureCounts.consoleErrors = telemetrySnapshot.consoleErrors;
     }
 
+    this.detectDeathEvents(telemetrySnapshot, currentPosition);
+
     if (telemetrySnapshot.counts.deaths >= 2) {
       this.recordFailure('death-loop', 'Multiple deaths occurred during one autonomous playtest.', 'medium');
       this.failureCounts.deathLoops = Math.max(this.failureCounts.deathLoops, 1);
     }
 
     this.detectMiningSpam();
+  }
+
+  detectDeathEvents(telemetrySnapshot, currentPosition) {
+    const deathCount = telemetrySnapshot.counts?.deaths ?? 0;
+
+    if (deathCount <= this.lastDeathCount) {
+      return;
+    }
+
+    this.lastDeathCount = deathCount;
+
+    const latestDeathEvent = [...(telemetrySnapshot.recentGameplayEvents ?? [])]
+      .reverse()
+      .find((event) => event.type === 'death');
+    const position = latestDeathEvent?.payload?.position ?? currentPosition ?? this.adapter.getPosition?.() ?? null;
+    const biome = latestDeathEvent?.payload?.biome ??
+      this.goalPlanner.lastContext?.world?.activeBiome ??
+      this.resourceScanResults?.biome ??
+      'Unknown';
+    const source = latestDeathEvent?.payload?.source ?? 'unknown';
+
+    this.deathPosition = position ? { ...position } : null;
+
+    if (String(source).toLowerCase().includes('terrain')) {
+      this.terrainDeathContext = {
+        source: 'terrain-death',
+        summary: 'Autonomous player died from terrain damage.',
+        biome,
+        position: this.deathPosition,
+        currentGoal: this.goalPlanner.getSnapshot().currentGoal,
+        suggestedAvoidanceStrategy: 'Avoid steep slopes and blacklisted terrain around the death position before resuming exploration.',
+        atSeconds: round(this.elapsedSeconds, 2),
+      };
+      this.recordFailure('terrain-death', 'Autonomous player died from terrain damage.', 'medium');
+    }
   }
 
   detectMiningSpam() {
@@ -893,6 +1091,9 @@ export class AutonomousPlaytestSimulation {
       simulationResult.learnedLessons = updatedMemorySnapshot.learnedLessons ?? [];
       simulationResult.strategyChanges = updatedMemorySnapshot.strategyChanges ?? [];
       simulationResult.biomeRatings = updatedMemorySnapshot.biomeRatings ?? {};
+      simulationResult.memoryPersistenceSource = updatedMemorySnapshot.memoryPersistenceSource ?? 'unknown';
+      simulationResult.memoryLoadRunCount = Number(updatedMemorySnapshot.memoryLoadRunCount ?? updatedMemorySnapshot.runs ?? 0);
+      simulationResult.memorySaveRunCount = Number(updatedMemorySnapshot.memorySaveRunCount ?? updatedMemorySnapshot.runs ?? 0);
       if (report.runtimeStats) {
         report.runtimeStats.aiMemory = updatedMemorySnapshot;
       }
@@ -904,6 +1105,9 @@ export class AutonomousPlaytestSimulation {
         report.runtimeStats.simulation.learnedLessons = updatedMemorySnapshot.learnedLessons ?? [];
         report.runtimeStats.simulation.strategyChanges = updatedMemorySnapshot.strategyChanges ?? [];
         report.runtimeStats.simulation.biomeRatings = updatedMemorySnapshot.biomeRatings ?? {};
+        report.runtimeStats.simulation.memoryPersistenceSource = updatedMemorySnapshot.memoryPersistenceSource ?? 'unknown';
+        report.runtimeStats.simulation.memoryLoadRunCount = Number(updatedMemorySnapshot.memoryLoadRunCount ?? updatedMemorySnapshot.runs ?? 0);
+        report.runtimeStats.simulation.memorySaveRunCount = Number(updatedMemorySnapshot.memorySaveRunCount ?? updatedMemorySnapshot.runs ?? 0);
       }
     }
 
@@ -975,11 +1179,20 @@ export class AutonomousPlaytestSimulation {
       base: this.adapter.getBaseSnapshot?.() ?? null,
       aiMemory: this.aiMemorySnapshot,
       memorySnapshot: this.aiMemorySnapshot,
+      memoryPersistenceSource: this.aiMemorySnapshot?.memoryPersistenceSource ?? 'unknown',
+      memoryLoadRunCount: Number(this.aiMemorySnapshot?.memoryLoadRunCount ?? this.aiMemorySnapshot?.runs ?? 0),
+      memorySaveRunCount: Number(this.aiMemorySnapshot?.memorySaveRunCount ?? this.aiMemorySnapshot?.runs ?? 0),
       learnedKnowledge: this.aiMemorySnapshot?.learnedKnowledge ?? [],
       newKnowledge: this.aiMemorySnapshot?.newKnowledge ?? [],
       learnedLessons: this.aiMemorySnapshot?.learnedLessons ?? [],
       strategyChanges: this.aiMemorySnapshot?.strategyChanges ?? [],
       biomeRatings: this.aiMemorySnapshot?.biomeRatings ?? {},
+      deathPosition: this.deathPosition ? { ...this.deathPosition } : null,
+      terrainDeathContext: this.terrainDeathContext ? { ...this.terrainDeathContext } : null,
+      terrainSafety: this.terrainSafety ? { ...this.terrainSafety } : null,
+      survivalRecoveryActions: this.survivalRecoveryActions.map((action) => ({ ...action })),
+      foodSearchActions: this.foodSearchActions.map((action) => ({ ...action })),
+      blockedPlacementReasons: this.blockedPlacementReasons.map((reason) => ({ ...reason })),
       woodTargetsFound: resourceScanResults?.woodTargetsFound ?? 0,
       woodTargetsRejected: resourceScanResults?.woodTargetsRejected ?? 0,
       rejectedLeafTargets: resourceScanResults?.rejectedLeafTargets ?? 0,
@@ -1083,6 +1296,77 @@ function mapPlanActionToAction(planAction) {
   }
 
   return planAction;
+}
+
+function resolveSurvivalRecoveryIntent({
+  context,
+  plan,
+  terrainSafety = null,
+  terrainDeathContext = null,
+}) {
+  const health = Number(context.survival?.health ?? 100);
+  const hunger = Number(context.survival?.hunger ?? 100);
+  const food = Number(context.inventory?.food ?? 0) + Number(context.inventory?.berries ?? 0);
+  const isExploration = isExplorationPlan(plan);
+
+  if (
+    isExploration &&
+    (
+      terrainSafety?.fallRisk ||
+      terrainSafety?.steepSlope ||
+      terrainSafety?.currentlyBlacklisted ||
+      terrainDeathContext
+    )
+  ) {
+    return {
+      type: 'avoid-risky-terrain',
+      reason: terrainSafety?.reason ?? terrainDeathContext?.summary ?? 'Exploration path is near risky terrain.',
+    };
+  }
+
+  if (health < 40) {
+    return {
+      type: 'return-to-base',
+      reason: `Health is ${Math.round(health)}, below the return-to-base threshold.`,
+    };
+  }
+
+  if (health < 50 && isExploration) {
+    return {
+      type: 'hold-low-health',
+      reason: `Health is ${Math.round(health)}, so exploration should pause until recovery.`,
+    };
+  }
+
+  if (hunger < 50 && food > 0) {
+    return {
+      type: 'eat-food',
+      reason: `Hunger is ${Math.round(hunger)} and food is available.`,
+    };
+  }
+
+  if (hunger < 40) {
+    return {
+      type: 'search-food',
+      reason: `Hunger is ${Math.round(hunger)}, below the food search threshold.`,
+    };
+  }
+
+  return null;
+}
+
+function isExplorationPlan(plan = {}) {
+  return [
+    'navigate',
+    'exploreWorld',
+    'discoverNewBiome',
+    'discoverStructure',
+  ].includes(plan.action) || [
+    'continueExploration',
+    'exploreWorld',
+    'discoverNewBiome',
+    'discoverStructure',
+  ].includes(plan.goalId);
 }
 
 function hasValidMiningTool(context) {

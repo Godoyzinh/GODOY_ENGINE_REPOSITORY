@@ -60,6 +60,7 @@ Run these before tagging an Alpha build.
 - Reports include `startingInventoryProfile`, `initialInventory`, `currentInventory`, and `inventoryDelta`.
 - Reports include wood resource scan results: nearest trunk target, target distance, scanned wood block count, rejected leaves, and blocked reason.
 - Reports include shelter validation, valid shelter block counts, invalid shelter block rejection counts, blocked goals, and recovery actions.
+- Reports include memory persistence source/load/save counts, survival recovery actions, food search actions, blocked placement reasons, terrain safety, death position, and terrain death context.
 - Quick smoke should complete early survival goals and continue pursuing the next progression goal.
 - Fake craft loops must not count as craft success and must produce failed-craft, action-loop, and missing-sticks evidence.
 - Gather Wood must target real trunk blocks, advance from real wood deltas, avoid leaf-only progress, and stay below the mining spam threshold.
@@ -71,6 +72,7 @@ Run these before tagging an Alpha build.
 - Obtain Furnace must report a blocked loop if furnace crafting fails for more than 10 consecutive attempts.
 - Build Shelter must reject Grass, Leaves, Water, Campfire, and decorative blocks before placement.
 - Survive Night must require a valid shelter or safe-distance/no-aggro validation before progress can count.
+- Low hunger must trigger food search/eating recovery, terrain deaths must teach dangerous-biome context, and blocked shelter placement must report exact reasons.
 - Exported autonomous report JSON must preserve non-empty `issues` and `aiTasks` when the report generator produced them.
 - Failure detection reports stuck states, vertical collision snaps, FPS drops, death loops, console errors, and save/load errors.
 - Generated files in `reports/` remain untracked unless intentionally promoted to a fixture.
