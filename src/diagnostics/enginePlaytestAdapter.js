@@ -948,11 +948,18 @@ export class EnginePlaytestAdapter {
 
   handleHardRecoveryInvalidation({ reason, plan = null } = {}) {
     const position = this.getPosition();
-    const targetPosition = normalizePositionCandidate(plan?.targetPosition) ?? {
-      x: position.x,
-      y: position.y,
-      z: position.z,
-    };
+    const normalizedPlanTarget = normalizePositionCandidate(plan?.targetPosition);
+    const targetPosition = normalizedPlanTarget
+      ? {
+        x: normalizedPlanTarget.x,
+        y: Number(plan?.targetPosition?.y ?? position.y),
+        z: normalizedPlanTarget.z,
+      }
+      : {
+        x: position.x,
+        y: position.y,
+        z: position.z,
+      };
     const key = createRecoveryTargetKey({
       position: targetPosition,
       plan,
