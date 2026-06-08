@@ -90,6 +90,8 @@ export class EnginePlaytestAdapter {
     this.recoveryTeleportUsed = false;
     this.recoverySuccess = false;
     this.blockedWoodTargetKeys = new Set();
+    this.blacklistedTargetKeys = new Set();
+    this.lastFailedTargetPosition = null;
   }
 
   begin({ inventoryProfileId = this.inventoryProfileId } = {}) {
@@ -134,6 +136,8 @@ export class EnginePlaytestAdapter {
     this.recoveryTeleportUsed = false;
     this.recoverySuccess = false;
     this.blockedWoodTargetKeys.clear();
+    this.blacklistedTargetKeys.clear();
+    this.lastFailedTargetPosition = null;
     this.lastSafeGroundedPosition = this.createSurfacePosition(
       this.engine.playerController.position.x,
       this.engine.playerController.position.z,
@@ -899,9 +903,15 @@ export class EnginePlaytestAdapter {
     reason = 'Autonomous playtest hard recovery requested.',
     preferBase = false,
     lastSafePosition = null,
+    plan = null,
+    emergency = false,
   } = {}) {
+    const invalidation = this.handleHardRecoveryInvalidation({
+      reason,
+      plan,
+    });
     const target = this.resolveHardRecoveryTarget({
-      preferBase,
+      preferBase: preferBase || emergency,
       lastSafePosition,
     });
 
@@ -919,18 +929,121 @@ export class EnginePlaytestAdapter {
     this.recoveryTeleportUsed = true;
 
     const safety = this.getPlayerSafetySnapshot();
+    const validation = this.validateHardRecoveryTarget(target, safety);
 
-    this.recoverySuccess = Boolean(safety.isGrounded && safety.visibleTerrainExists && !safety.cameraSkyOnly);
+    this.recoverySuccess = validation.recoveryValid;
 
     return {
       ok: this.recoverySuccess,
       event: this.recoverySuccess ? 'hard recovered to ground' : 'hard recovery failed safety validation',
-      reason: this.recoverySuccess ? reason : safety.reason ?? reason,
+      reason: this.recoverySuccess ? reason : validation.reason ?? safety.reason ?? reason,
       teleportUsed: true,
       recoverySuccess: this.recoverySuccess,
       lastSafePosition: this.lastSafeGroundedPosition ? { ...this.lastSafeGroundedPosition } : null,
       playerSafety: safety,
+      ...validation,
+      ...invalidation,
     };
+  }
+
+  handleHardRecoveryInvalidation({ reason, plan = null } = {}) {
+    const position = this.getPosition();
+    const normalizedPlanTarget = normalizePositionCandidate(plan?.targetPosition);
+    const targetPosition = normalizedPlanTarget
+      ? {
+        x: normalizedPlanTarget.x,
+        y: Number(plan?.targetPosition?.y ?? position.y),
+        z: normalizedPlanTarget.z,
+      }
+      : {
+        x: position.x,
+        y: position.y,
+        z: position.z,
+      };
+    const key = createRecoveryTargetKey({
+      position: targetPosition,
+      plan,
+    });
+    const blacklistedTarget = {
+      key,
+      goalId: plan?.goalId ?? null,
+      action: plan?.action ?? null,
+      reason,
+      position: {
+        x: round(Number(targetPosition.x ?? 0), 2),
+        y: round(Number(targetPosition.y ?? 0), 2),
+        z: round(Number(targetPosition.z ?? 0), 2),
+      },
+    };
+
+    this.blacklistedTargetKeys.add(key);
+    this.lastFailedTargetPosition = blacklistedTarget.position;
+    this.engine.voxelInteractionSystem?.clearSelection?.();
+    this.engine.voxelInteractionSystem?.clearPreview?.();
+    this.engine.playerController.miningSystem?.reset?.();
+
+    return {
+      currentTargetCleared: true,
+      miningTargetCleared: true,
+      goalReplanRequired: true,
+      failedTargetPosition: blacklistedTarget.position,
+      blacklistedTarget,
+      blacklistedTargets: [blacklistedTarget],
+    };
+  }
+
+  validateHardRecoveryTarget(target, safety) {
+    const chunkLoaded = this.engine.terrainGenerator.isWorldPositionLoaded?.(target.x, target.z) !== false;
+    const insideBlock = this.isPlayerBodyInsideSolidBlock(target);
+    const cameraTargetValid = isFiniteVectorLike(this.engine.playerController.cameraTarget) &&
+      isFiniteVectorLike(this.engine.cameraSystem.camera.position);
+    const safelyFallingTowardGround = !safety.isGrounded && !safety.isBelowTerrain &&
+      Number(this.engine.playerController.velocity?.y ?? 0) <= 0;
+    const groundedOrSafeFall = safety.isGrounded || safelyFallingTowardGround;
+    const ok = Boolean(
+      safety &&
+      !safety.isBelowTerrain &&
+      chunkLoaded &&
+      groundedOrSafeFall &&
+      !insideBlock &&
+      !safety.cameraSkyOnly &&
+      safety.visibleTerrainExists &&
+      cameraTargetValid
+    );
+
+    return {
+      chunkLoaded,
+      insideBlock,
+      cameraTargetValid,
+      safelyFallingTowardGround,
+      recoveryValid: ok,
+      reason: ok
+        ? null
+        : createRecoveryValidationReason({
+          safety,
+          chunkLoaded,
+          insideBlock,
+          cameraTargetValid,
+          groundedOrSafeFall,
+        }),
+    };
+  }
+
+  isPlayerBodyInsideSolidBlock(position) {
+    const bodyY = Math.floor(Number(position.y ?? 0) + 1);
+    const blockId = this.engine.terrainGenerator.getBlockAtWorldPosition?.(
+      Math.floor(Number(position.x ?? 0)),
+      bodyY,
+      Math.floor(Number(position.z ?? 0)),
+    );
+
+    if (blockId === undefined || blockId === null || blockId === BLOCK_IDS.air || blockId === BLOCK_IDS.water) {
+      return false;
+    }
+
+    const definition = getBlockDefinition(blockId);
+
+    return !definition?.transparent;
   }
 
   resolveHardRecoveryTarget({ preferBase = false, lastSafePosition = null } = {}) {
@@ -2556,6 +2669,15 @@ function createWoodTargetKey(target) {
   return `${target.worldX},${target.y},${target.worldZ}`;
 }
 
+function createRecoveryTargetKey({ position, plan }) {
+  return [
+    plan?.goalId ?? 'unknown-goal',
+    plan?.action ?? 'unknown-action',
+    Math.floor(Number(position.x ?? 0) / 8),
+    Math.floor(Number(position.z ?? 0) / 8),
+  ].join(':');
+}
+
 function getHorizontalDistance(leftPosition, rightPosition) {
   return Math.hypot(
     Number(leftPosition.x ?? 0) - Number(rightPosition.x ?? 0),
@@ -2579,6 +2701,46 @@ function normalizePositionCandidate(position = null) {
     x: Number(x),
     z: Number(z),
   };
+}
+
+function isFiniteVectorLike(value) {
+  return Number.isFinite(Number(value?.x)) &&
+    Number.isFinite(Number(value?.y)) &&
+    Number.isFinite(Number(value?.z));
+}
+
+function createRecoveryValidationReason({
+  safety,
+  chunkLoaded,
+  insideBlock,
+  cameraTargetValid,
+  groundedOrSafeFall,
+}) {
+  if (!safety) {
+    return 'Hard recovery could not read player safety state.';
+  }
+
+  if (safety.isBelowTerrain) {
+    return 'Hard recovery target is still below terrain.';
+  }
+
+  if (!chunkLoaded || !safety.visibleTerrainExists) {
+    return 'Hard recovery target chunk is not loaded or visible.';
+  }
+
+  if (!groundedOrSafeFall) {
+    return 'Hard recovery target is neither grounded nor safely falling toward ground.';
+  }
+
+  if (insideBlock) {
+    return 'Hard recovery target leaves the player inside a solid block.';
+  }
+
+  if (safety.cameraSkyOnly || !cameraTargetValid) {
+    return 'Hard recovery did not restore a valid camera target.';
+  }
+
+  return safety.reason ?? 'Hard recovery failed validation.';
 }
 
 function round(value, digits) {

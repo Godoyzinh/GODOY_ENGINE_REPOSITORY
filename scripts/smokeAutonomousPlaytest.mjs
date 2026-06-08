@@ -173,6 +173,56 @@ class VoidPlayerAdapter extends HeadlessPlaytestAdapter {
   }
 }
 
+class RepeatingStoneRecoveryAdapter extends HeadlessPlaytestAdapter {
+  constructor(options) {
+    super(options);
+    this.isStoneLoopArmed = false;
+    this.safeUntilSeconds = 0;
+  }
+
+  begin(options) {
+    super.begin(options);
+    this.isStoneLoopArmed = false;
+    this.safeUntilSeconds = 0;
+  }
+
+  executeGoalStep(options) {
+    if (options.plan.action === 'gatherStone') {
+      this.isStoneLoopArmed = true;
+      this.position.y = -18;
+
+      return {
+        ok: false,
+        skipped: true,
+        event: 'stone target blocked',
+        reason: 'Injected stone target remained invalid after recovery.',
+      };
+    }
+
+    return super.executeGoalStep(options);
+  }
+
+  getPlayerSafetySnapshot(options = {}) {
+    if (this.isStoneLoopArmed && Number(options.elapsedSeconds ?? 0) > this.safeUntilSeconds) {
+      this.position.y = -18;
+    }
+
+    return super.getPlayerSafetySnapshot();
+  }
+
+  executeHardRecovery(options) {
+    const result = super.executeHardRecovery(options);
+
+    this.safeUntilSeconds = Number(options.elapsedSeconds ?? 0) + 2.1;
+
+    if (options.emergency) {
+      this.isStoneLoopArmed = false;
+    }
+
+    return result;
+  }
+}
+
 const { report, snapshot } = runHeadlessAiSimulation({
   mode: 'quick',
   durationSeconds: 60,
@@ -659,6 +709,69 @@ assert.equal(voidSimulation.playerSafety.cameraSkyOnly, false, 'camera should no
 assert.ok(
   voidSimulation.planner.goalsCompleted.some((goal) => goal.id === 'gatherWood'),
   'AI should resume survival progression after void recovery pause',
+);
+
+const repeatedRecoveryResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 48,
+  deltaTime: 0.25,
+  seed: 20260540,
+  adapter: new RepeatingStoneRecoveryAdapter({ seed: 20260540 }),
+});
+const repeatedRecoverySimulation = repeatedRecoveryResult.report.runtimeStats.simulation;
+
+assert.equal(repeatedRecoverySimulation.recoveryLoopDetected, true, 'repeated hard recovery should detect a recovery loop');
+assert.ok(repeatedRecoverySimulation.hardRecoveryCount > 3, 'repeated recovery smoke should count hard recoveries');
+assert.ok(repeatedRecoverySimulation.recoveryLoopCycles > 3, 'repeated recovery smoke should export loop cycle count');
+assert.equal(repeatedRecoverySimulation.lastFailedGoal, 'gatherStone', 'recovery loop should report the failed goal');
+assert.equal(repeatedRecoverySimulation.lastFailedAction, 'gatherStone', 'recovery loop should report the failed action');
+assert.ok(repeatedRecoverySimulation.failedTargetPosition, 'recovery loop should report the failed target position');
+assert.ok(repeatedRecoverySimulation.blacklistedTargets.length > 0, 'recovery loop should blacklist failed targets');
+assert.equal(repeatedRecoverySimulation.emergencyTeleportUsed, true, 'recovery loop should force emergency teleport');
+assert.ok(
+  repeatedRecoverySimulation.planner.bottlenecks.some((bottleneck) => bottleneck.code.includes('hard-recovery-loop')),
+  'recovery loop should create a planner bottleneck',
+);
+assert.ok(
+  repeatedRecoveryResult.report.issues.some((issue) => issue.code === 'hard-recovery-loop-detected'),
+  'recovery loop should generate a report issue',
+);
+assert.ok(
+  repeatedRecoveryResult.report.aiTasks.some((task) => task.id.includes('hard-recovery-loop-detected')),
+  'recovery loop should generate an AI task',
+);
+assert.ok(repeatedRecoveryResult.report.lastSimulationSnapshot, 'report should include lastSimulationSnapshot');
+assert.equal(
+  repeatedRecoveryResult.report.lastSimulationSnapshot.recoveryLoopDetected,
+  true,
+  'lastSimulationSnapshot should preserve recovery loop evidence',
+);
+
+const staleSimulationReportSystem = new AutoQaReportSystem({
+  telemetrySystem: new TelemetrySystem({ now: () => 0 }),
+  storage: null,
+});
+const staleSimulationReport = staleSimulationReportSystem.createReport({
+  trigger: 'feedback-ui',
+  runtimeSnapshot: {
+    simulation: null,
+    lastSimulationSnapshot: repeatedRecoveryResult.snapshot,
+    simulationAdapter: {
+      type: 'headless',
+    },
+  },
+});
+
+assert.equal(staleSimulationReport.runtimeStats.simulation, null, 'feedback fallback smoke should allow inactive simulation');
+assert.ok(staleSimulationReport.runtimeStats.lastSimulationSnapshot, 'feedback fallback report should include lastSimulationSnapshot');
+assert.equal(staleSimulationReport.lastSimulationSnapshot.recoveryLoopDetected, true, 'top-level lastSimulationSnapshot should preserve loop state');
+assert.ok(
+  staleSimulationReport.issues.some((issue) => issue.code === 'hard-recovery-loop-detected'),
+  'feedback fallback report should generate issues from lastSimulationSnapshot',
+);
+assert.ok(
+  staleSimulationReport.aiTasks.some((task) => task.id.includes('hard-recovery-loop-detected')),
+  'feedback fallback report should generate AI tasks from lastSimulationSnapshot',
 );
 
 const spamReportSystem = new AutoQaReportSystem({

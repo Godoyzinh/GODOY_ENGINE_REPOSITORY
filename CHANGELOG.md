@@ -1,5 +1,18 @@
 # Changelog
 
+## Hard Recovery Loop And Stale Simulation Reports
+
+### Fixed
+
+- Hard recovery no longer reports success unless the player is above terrain, in a loaded chunk, grounded or safely falling, outside solid blocks, and has a valid camera target.
+- Hard recovery now clears current AI/mining targets, blacklists the failed target location, and forces a replan instead of retrying the same failed action.
+- Feedback reports now include `lastSimulationSnapshot` when generated during or after an autonomous simulation.
+
+### Added
+
+- Recovery loop detection for more than 3 hard recoveries in 15 seconds, with emergency teleport fallback and AI Director issue/task generation.
+- Report fields for `recoveryLoopCycles`, `hardRecoveryCount`, `lastFailedGoal`, `lastFailedAction`, `failedTargetPosition`, `blacklistedTargets`, `emergencyTeleportUsed`, and `lastSimulationSnapshot`.
+
 ## Autonomous Recovery State Machine
 
 ### Fixed

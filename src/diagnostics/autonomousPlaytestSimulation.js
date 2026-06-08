@@ -17,6 +17,9 @@ const HARD_RECOVERY_PAUSE_SECONDS = 2;
 const RUNNING_MEMORY_SAVE_SECONDS = 15;
 const RECOVERY_EVENT_WINDOW_SECONDS = 5;
 const RECOVERY_EVENT_LOOP_THRESHOLD = 3;
+const HARD_RECOVERY_LOOP_WINDOW_SECONDS = 15;
+const HARD_RECOVERY_LOOP_THRESHOLD = 3;
+const GOAL_RECOVERY_REPLAN_THRESHOLD = 2;
 const REPORT_TRIGGER = 'autonomous-playtest';
 const RECOVERY_STATES = Object.freeze({
   idle: 'idle',
@@ -97,6 +100,17 @@ export class AutonomousPlaytestSimulation {
     this.recoveryPauseSpamCount = 0;
     this.recoveryLoopDetected = false;
     this.recoveryEventTimes = [];
+    this.hardRecoveryTimes = [];
+    this.hardRecoveryCount = 0;
+    this.recoveryLoopCycles = 0;
+    this.recoveryGoalCounts = new Map();
+    this.lastFailedGoal = null;
+    this.lastFailedAction = null;
+    this.failedTargetPosition = null;
+    this.blacklistedTargets = [];
+    this.emergencyTeleportUsed = false;
+    this.forcedReplan = null;
+    this.lastSimulationSnapshot = null;
     this.nextRunningMemorySaveAt = RUNNING_MEMORY_SAVE_SECONDS;
     this.lastDeathCount = 0;
     this.inventorySnapshot = null;
@@ -162,6 +176,17 @@ export class AutonomousPlaytestSimulation {
     this.recoveryPauseSpamCount = 0;
     this.recoveryLoopDetected = false;
     this.recoveryEventTimes = [];
+    this.hardRecoveryTimes = [];
+    this.hardRecoveryCount = 0;
+    this.recoveryLoopCycles = 0;
+    this.recoveryGoalCounts = new Map();
+    this.lastFailedGoal = null;
+    this.lastFailedAction = null;
+    this.failedTargetPosition = null;
+    this.blacklistedTargets = [];
+    this.emergencyTeleportUsed = false;
+    this.forcedReplan = null;
+    this.lastSimulationSnapshot = null;
     this.nextRunningMemorySaveAt = RUNNING_MEMORY_SAVE_SECONDS;
     this.lastDeathCount = 0;
     this.inventorySnapshot = null;
@@ -292,11 +317,12 @@ export class AutonomousPlaytestSimulation {
       ...rawContext,
       memory: this.aiMemorySnapshot?.strategyHints ?? null,
     };
-    const plan = this.goalPlanner.update({
+    let plan = this.goalPlanner.update({
       deltaTime,
       elapsedSeconds: this.elapsedSeconds,
       context,
     });
+    plan = this.consumeForcedReplan(plan);
     this.terrainSafety = this.adapter.getTerrainSafetySnapshot?.({
       elapsedSeconds: this.elapsedSeconds,
       context,
@@ -334,6 +360,25 @@ export class AutonomousPlaytestSimulation {
     }
 
     this.updateTimedAction('saveLoad', deltaTime, 20, () => this.adapter.checkSaveLoad?.());
+  }
+
+  consumeForcedReplan(defaultPlan) {
+    if (!this.forcedReplan) {
+      return defaultPlan;
+    }
+
+    const forcedPlan = {
+      ...this.forcedReplan,
+      progress: 0,
+    };
+
+    this.forcedReplan.remainingSteps -= 1;
+
+    if (this.forcedReplan.remainingSteps <= 0) {
+      this.forcedReplan = null;
+    }
+
+    return forcedPlan;
   }
 
   saveRunningMemorySnapshotIfNeeded() {
@@ -455,6 +500,7 @@ export class AutonomousPlaytestSimulation {
     }
 
     this.recoveryLoopDetected = true;
+    this.recoveryLoopCycles = Math.max(this.recoveryLoopCycles, this.recoveryEventTimes.length);
     this.recordFailure(
       'recovery-loop-detected',
       `Autonomous recovery emitted ${this.recoveryEventTimes.length} recovery events within ${RECOVERY_EVENT_WINDOW_SECONDS}s near "${reason}".`,
@@ -508,8 +554,19 @@ export class AutonomousPlaytestSimulation {
     }
 
     this.startRecoveryCycle();
+    this.trackHardRecoveryAttempt(plan, playerSafety);
     this.cameraVoidDetected = true;
     this.playerLostRecoveryCount += 1;
+
+    if (this.recoveryLoopDetected) {
+      this.performEmergencyRecovery({
+        reason: 'Hard recovery loop detected before retrying the same invalid target.',
+        context,
+        plan,
+        playerSafety,
+      });
+      return true;
+    }
 
     const recoveryResult = this.adapter.executeHardRecovery?.({
       reason,
@@ -531,7 +588,16 @@ export class AutonomousPlaytestSimulation {
     this.playerSafety = nextSafety ?? playerSafety;
     this.lastSafePosition = nextSafety?.lastSafePosition ?? recoveryResult.lastSafePosition ?? this.lastSafePosition;
     this.recoveryTeleportUsed = this.recoveryTeleportUsed || Boolean(recoveryResult.teleportUsed);
-    this.recoverySuccess = Boolean(recoveryResult.ok && nextSafety?.isGrounded && nextSafety?.visibleTerrainExists);
+    this.recoverySuccess = this.isHardRecoveryResultValid({
+      recoveryResult,
+      nextSafety,
+    });
+    this.captureRecoveryInvalidation({
+      plan,
+      recoveryResult,
+      playerSafety,
+      nextSafety,
+    });
 
     this.survivalRecoveryActions.push({
       type: 'hard-void-recovery',
@@ -558,6 +624,10 @@ export class AutonomousPlaytestSimulation {
     if (this.recoverySuccess) {
       this.skyOnlySeconds = 0;
       this.ungroundedSeconds = 0;
+      this.scheduleForcedReplanAfterRecovery({
+        plan,
+        reason,
+      });
       this.enterRecoveryPause({
         context,
         plan,
@@ -580,9 +650,140 @@ export class AutonomousPlaytestSimulation {
       reason,
       ok: this.recoverySuccess,
       teleportUsed: Boolean(recoveryResult.teleportUsed),
+      cycle: this.recoveryCycleId,
     });
 
     return true;
+  }
+
+  isHardRecoveryResultValid({ recoveryResult, nextSafety }) {
+    return Boolean(
+      recoveryResult.ok &&
+      isPlayerSafetySafe(nextSafety) &&
+      recoveryResult.chunkLoaded !== false &&
+      recoveryResult.insideBlock !== true &&
+      recoveryResult.cameraTargetValid !== false &&
+      recoveryResult.currentTargetCleared !== false &&
+      recoveryResult.miningTargetCleared !== false &&
+      recoveryResult.goalReplanRequired !== false &&
+      recoveryResult.recoveryValid !== false
+    );
+  }
+
+  trackHardRecoveryAttempt(plan, playerSafety) {
+    this.hardRecoveryCount += 1;
+    this.hardRecoveryTimes.push(this.elapsedSeconds);
+    this.hardRecoveryTimes = this.hardRecoveryTimes.filter((eventTime) => (
+      this.elapsedSeconds - eventTime <= HARD_RECOVERY_LOOP_WINDOW_SECONDS
+    ));
+    this.lastFailedGoal = plan.goalId ?? null;
+    this.lastFailedAction = plan.action ?? null;
+    this.failedTargetPosition = playerSafety?.position ? { ...playerSafety.position } : null;
+    const goalCountKey = plan.goalId ?? 'unknown-goal';
+
+    this.recoveryGoalCounts.set(goalCountKey, (this.recoveryGoalCounts.get(goalCountKey) ?? 0) + 1);
+
+    if (this.hardRecoveryTimes.length > HARD_RECOVERY_LOOP_THRESHOLD) {
+      this.markRecoveryLoopDetected({
+        reason: `${this.hardRecoveryTimes.length} hard recoveries happened within ${HARD_RECOVERY_LOOP_WINDOW_SECONDS}s.`,
+        plan,
+      });
+    }
+  }
+
+  markRecoveryLoopDetected({ reason, plan }) {
+    if (!this.recoveryLoopDetected) {
+      this.recoveryLoopDetected = true;
+      this.recoveryLoopCycles = this.hardRecoveryTimes.length;
+      this.recordFailure('hard-recovery-loop-detected', reason, 'medium');
+    } else {
+      this.recoveryLoopCycles = Math.max(this.recoveryLoopCycles, this.hardRecoveryTimes.length);
+    }
+
+    this.goalPlanner.recordBottleneck({
+      code: `hard-recovery-loop:${plan.goalId ?? 'unknown-goal'}`,
+      goalId: plan.goalId,
+      goalName: plan.goalName,
+      summary: reason,
+      atSeconds: this.elapsedSeconds,
+    });
+  }
+
+  performEmergencyRecovery({ reason, context, plan, playerSafety }) {
+    const recoveryResult = this.adapter.executeHardRecovery?.({
+      reason,
+      preferBase: true,
+      lastSafePosition: this.lastSafePosition,
+      context,
+      plan,
+      elapsedSeconds: this.elapsedSeconds,
+      playerSafety,
+      emergency: true,
+    }) ?? {
+      ok: false,
+      reason: 'Adapter does not implement emergency hard recovery.',
+    };
+    const nextSafety = this.adapter.getPlayerSafetySnapshot?.({
+      elapsedSeconds: this.elapsedSeconds,
+      context,
+      plan,
+    }) ?? null;
+
+    this.emergencyTeleportUsed = this.emergencyTeleportUsed || Boolean(recoveryResult.teleportUsed);
+    this.recoveryTeleportUsed = this.recoveryTeleportUsed || this.emergencyTeleportUsed;
+    this.playerSafety = nextSafety ?? this.playerSafety;
+    this.lastSafePosition = nextSafety?.lastSafePosition ?? recoveryResult.lastSafePosition ?? this.lastSafePosition;
+    this.captureRecoveryInvalidation({
+      plan,
+      recoveryResult,
+      playerSafety,
+      nextSafety,
+    });
+    this.forcedReplan = createForcedRecoveryPlan({
+      plan,
+      reason: 'Emergency recovery forced a safe survival pause after repeated hard recovery.',
+      mode: 'maintainSurvival',
+    });
+    this.transitionRecoveryState(RECOVERY_STATES.failed);
+    this.telemetrySystem.recordGameplayEvent('auto-hard-recovery', {
+      reason,
+      ok: Boolean(recoveryResult.ok && isPlayerSafetySafe(nextSafety)),
+      teleportUsed: Boolean(recoveryResult.teleportUsed),
+      emergency: true,
+      cycle: this.recoveryCycleId,
+    });
+  }
+
+  captureRecoveryInvalidation({ plan, recoveryResult, playerSafety, nextSafety }) {
+    this.lastFailedGoal = plan.goalId ?? this.lastFailedGoal;
+    this.lastFailedAction = plan.action ?? this.lastFailedAction;
+    this.failedTargetPosition = recoveryResult.failedTargetPosition ??
+      recoveryResult.clearedTargetPosition ??
+      playerSafety?.position ??
+      nextSafety?.position ??
+      this.failedTargetPosition;
+
+    const nextBlacklistedTargets = [
+      ...(recoveryResult.blacklistedTargets ?? []),
+      ...(recoveryResult.blacklistedTarget ? [recoveryResult.blacklistedTarget] : []),
+    ];
+
+    if (nextBlacklistedTargets.length > 0) {
+      this.blacklistedTargets.push(...nextBlacklistedTargets.map((target) => ({ ...target })));
+      this.blacklistedTargets = this.blacklistedTargets.slice(-32);
+    }
+  }
+
+  scheduleForcedReplanAfterRecovery({ plan, reason }) {
+    const recoveryCount = this.recoveryGoalCounts.get(plan.goalId ?? 'unknown-goal') ?? 0;
+
+    if (plan.action === 'gatherStone' || recoveryCount >= GOAL_RECOVERY_REPLAN_THRESHOLD) {
+      this.forcedReplan = createForcedRecoveryPlan({
+        plan,
+        reason,
+        mode: plan.action === 'gatherStone' ? 'exploreForStone' : 'maintainSurvival',
+      });
+    }
   }
 
   performPlannedAction(plan, context, deltaTime) {
@@ -1459,12 +1660,14 @@ export class AutonomousPlaytestSimulation {
     };
 
     this.reportSystem.updateReportRuntime?.(report, finalRuntimeSnapshot);
+    this.lastSimulationSnapshot = simulationResult;
 
     this.lastReport = {
       ...report,
       issues: report.issues.map((issue) => ({ ...issue })),
       aiTasks: report.aiTasks.map((task) => ({ ...task })),
       simulationResult,
+      lastSimulationSnapshot: simulationResult,
     };
     this.reportSystem.lastReport = this.lastReport;
     this.reportSystem.persistReport?.(this.lastReport);
@@ -1554,6 +1757,13 @@ export class AutonomousPlaytestSimulation {
       recoveryResumeEventEmitted: this.recoveryResumeEventEmitted,
       recoveryPauseSpamCount: this.recoveryPauseSpamCount,
       recoveryLoopDetected: this.recoveryLoopDetected,
+      recoveryLoopCycles: this.recoveryLoopCycles,
+      hardRecoveryCount: this.hardRecoveryCount,
+      lastFailedGoal: this.lastFailedGoal,
+      lastFailedAction: this.lastFailedAction,
+      failedTargetPosition: this.failedTargetPosition ? { ...this.failedTargetPosition } : null,
+      blacklistedTargets: this.blacklistedTargets.map((target) => ({ ...target })),
+      emergencyTeleportUsed: this.emergencyTeleportUsed,
       skyOnlyFrames: this.skyOnlyFrames,
       gatherWoodBlockedReason: this.gatherWoodBlockedReason,
       survivalRecoveryActions: this.survivalRecoveryActions.map((action) => ({ ...action })),
@@ -1768,6 +1978,32 @@ function resolveVoidRecoveryReason({ playerSafety, skyOnlySeconds, ungroundedSec
   }
 
   return null;
+}
+
+function createForcedRecoveryPlan({ plan = {}, reason, mode }) {
+  if (mode === 'exploreForStone') {
+    return {
+      goalId: 'exploreForStone',
+      goalName: 'Explore For Stone',
+      priority: plan.priority ?? 70,
+      action: 'exploreWorld',
+      subgoal: 'Move away from the failed stone target and search for a safer stone route.',
+      reason: `Hard recovery invalidated ${plan.goalName ?? 'the current goal'}: ${reason}`,
+      target: 'Find a safe stone approach',
+      remainingSteps: 4,
+    };
+  }
+
+  return {
+    goalId: 'safeMaintainSurvival',
+    goalName: 'Safe Maintain Survival',
+    priority: 1,
+    action: 'surviveNight',
+    subgoal: 'Pause progression and validate safe survival state before resuming goals.',
+    reason: `Recovery loop protection paused progression: ${reason}`,
+    target: 'Stable grounded safety',
+    remainingSteps: 2,
+  };
 }
 
 function isPlayerSafetySafe(playerSafety = null) {

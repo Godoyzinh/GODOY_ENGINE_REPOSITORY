@@ -77,6 +77,8 @@ export class HeadlessPlaytestAdapter {
     this.lastSafeGroundedPosition = { x: 0, y: HEADLESS_TERRAIN_HEIGHT, z: 0 };
     this.recoveryTeleportUsed = false;
     this.recoverySuccess = false;
+    this.blacklistedTargetKeys = new Set();
+    this.lastFailedTargetPosition = null;
   }
 
   begin({ inventoryProfileId = this.inventoryProfileId } = {}) {
@@ -116,6 +118,8 @@ export class HeadlessPlaytestAdapter {
     this.lastSafeGroundedPosition = { x: 0, y: HEADLESS_TERRAIN_HEIGHT, z: 0 };
     this.recoveryTeleportUsed = false;
     this.recoverySuccess = false;
+    this.blacklistedTargetKeys.clear();
+    this.lastFailedTargetPosition = null;
     this.recordBiomeVisit(this.stats.activeBiome, 0);
   }
 
@@ -512,8 +516,14 @@ export class HeadlessPlaytestAdapter {
     reason = 'Autonomous playtest hard recovery requested.',
     preferBase = false,
     lastSafePosition = null,
+    plan = null,
+    emergency = false,
   } = {}) {
-    const target = preferBase
+    const invalidation = this.handleHardRecoveryInvalidation({
+      reason,
+      plan,
+    });
+    const target = preferBase || emergency
       ? { x: 0, y: HEADLESS_TERRAIN_HEIGHT, z: 0 }
       : lastSafePosition ?? this.lastSafeGroundedPosition ?? { x: 0, y: HEADLESS_TERRAIN_HEIGHT, z: 0 };
 
@@ -527,17 +537,72 @@ export class HeadlessPlaytestAdapter {
     this.recoveryTeleportUsed = true;
 
     const safety = this.getPlayerSafetySnapshot();
+    const validation = this.validateHardRecoveryTarget(safety);
 
-    this.recoverySuccess = Boolean(safety.isGrounded && safety.visibleTerrainExists && !safety.cameraSkyOnly);
+    this.recoverySuccess = validation.recoveryValid;
 
     return {
       ok: this.recoverySuccess,
       event: this.recoverySuccess ? 'hard recovered to ground' : 'hard recovery failed safety validation',
-      reason,
+      reason: this.recoverySuccess ? reason : validation.reason ?? reason,
       teleportUsed: true,
       recoverySuccess: this.recoverySuccess,
       lastSafePosition: { ...this.lastSafeGroundedPosition },
       playerSafety: safety,
+      ...validation,
+      ...invalidation,
+    };
+  }
+
+  handleHardRecoveryInvalidation({ reason, plan = null } = {}) {
+    const key = `${plan?.goalId ?? 'unknown'}:${plan?.action ?? 'unknown'}:${createTerrainCellKey(this.position)}`;
+    const blacklistedTarget = {
+      key,
+      goalId: plan?.goalId ?? null,
+      action: plan?.action ?? null,
+      reason,
+      position: {
+        x: round(this.position.x, 2),
+        y: round(this.position.y, 2),
+        z: round(this.position.z, 2),
+      },
+    };
+
+    this.blacklistedTargetKeys.add(key);
+    this.lastFailedTargetPosition = blacklistedTarget.position;
+
+    return {
+      currentTargetCleared: true,
+      miningTargetCleared: true,
+      goalReplanRequired: true,
+      failedTargetPosition: blacklistedTarget.position,
+      blacklistedTarget,
+      blacklistedTargets: [blacklistedTarget],
+    };
+  }
+
+  validateHardRecoveryTarget(safety) {
+    const chunkLoaded = safety.visibleTerrainExists;
+    const insideBlock = false;
+    const cameraTargetValid = true;
+    const safelyFallingTowardGround = !safety.isGrounded && !safety.isBelowTerrain && Number(this.velocity.y ?? 0) <= 0;
+    const groundedOrSafeFall = safety.isGrounded || safelyFallingTowardGround;
+    const ok = Boolean(
+      !safety.isBelowTerrain &&
+      chunkLoaded &&
+      groundedOrSafeFall &&
+      !insideBlock &&
+      !safety.cameraSkyOnly &&
+      cameraTargetValid
+    );
+
+    return {
+      chunkLoaded,
+      insideBlock,
+      cameraTargetValid,
+      safelyFallingTowardGround,
+      recoveryValid: ok,
+      reason: ok ? null : 'Headless hard recovery did not restore a valid grounded terrain state.',
     };
   }
 
