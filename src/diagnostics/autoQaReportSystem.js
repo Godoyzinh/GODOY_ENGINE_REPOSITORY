@@ -88,6 +88,26 @@ export class AutoQaReportSystem {
     return { ...this.lastSummary };
   }
 
+  updateReportRuntime(report, runtimeSnapshot = {}) {
+    if (!report) {
+      return report;
+    }
+
+    report.runtimeStats = sanitizeRuntimeSnapshot(runtimeSnapshot);
+    report.capabilities = collectCapabilities(runtimeSnapshot);
+    report.issues = summarizeIssues(report.telemetry, runtimeSnapshot);
+    report.aiTasks = this.taskGenerator.createTasks(report);
+    this.persistReport(report);
+    this.lastSummary = {
+      reportId: report.id,
+      generatedAt: report.generatedAt,
+      issueCount: report.issues.length,
+      taskCount: report.aiTasks.length,
+    };
+
+    return report;
+  }
+
   persistReport(report) {
     if (!this.storage) {
       return false;
@@ -228,6 +248,17 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
       title: 'Recover autonomous camera/player from void state',
       summary: 'The autonomous playtest detected a sky-only or lost-player state and used hard recovery.',
       evidence: `recoveries: ${simulationSnapshot.playerLostRecoveryCount ?? 0}; success: ${Boolean(simulationSnapshot.recoverySuccess)}; last safe: ${JSON.stringify(simulationSnapshot.lastSafePosition ?? null)}.`,
+    });
+  }
+
+  if (simulationSnapshot.recoveryLoopDetected || Number(simulationSnapshot.recoveryPauseSpamCount ?? 0) > 0) {
+    issues.push({
+      code: 'recovery-pause-spam',
+      category: AI_TASK_CATEGORIES.ux,
+      severity: 'medium',
+      title: 'Stop autonomous recovery pause spam',
+      summary: 'The autonomous recovery state machine emitted duplicate pause/resume events in one recovery window.',
+      evidence: `pause spam: ${simulationSnapshot.recoveryPauseSpamCount ?? 0}; loop: ${Boolean(simulationSnapshot.recoveryLoopDetected)}; state: ${simulationSnapshot.recoveryState ?? 'unknown'}.`,
     });
   }
 
@@ -622,6 +653,19 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     lastSafePosition: sanitizePosition(simulationSnapshot.lastSafePosition),
     recoveryTeleportUsed: Boolean(simulationSnapshot.recoveryTeleportUsed),
     recoverySuccess: Boolean(simulationSnapshot.recoverySuccess),
+    recoveryState: simulationSnapshot.recoveryState ?? 'idle',
+    lastRecoveryState: simulationSnapshot.lastRecoveryState ?? 'idle',
+    recoveryCycleId: Number(simulationSnapshot.recoveryCycleId ?? 0),
+    recoveryPauseStartedAt: simulationSnapshot.recoveryPauseStartedAt === null || simulationSnapshot.recoveryPauseStartedAt === undefined
+      ? null
+      : Number(simulationSnapshot.recoveryPauseStartedAt),
+    recoveryPauseEndsAt: simulationSnapshot.recoveryPauseEndsAt === null || simulationSnapshot.recoveryPauseEndsAt === undefined
+      ? null
+      : Number(simulationSnapshot.recoveryPauseEndsAt),
+    recoveryPauseEventEmitted: Boolean(simulationSnapshot.recoveryPauseEventEmitted),
+    recoveryResumeEventEmitted: Boolean(simulationSnapshot.recoveryResumeEventEmitted),
+    recoveryPauseSpamCount: Number(simulationSnapshot.recoveryPauseSpamCount ?? 0),
+    recoveryLoopDetected: Boolean(simulationSnapshot.recoveryLoopDetected),
     skyOnlyFrames: Number(simulationSnapshot.skyOnlyFrames ?? 0),
     gatherWoodBlockedReason: simulationSnapshot.gatherWoodBlockedReason ?? null,
     survivalRecoveryActions,
@@ -1261,7 +1305,7 @@ function classifySimulationFailure(code) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
-  if (code.includes('stuck') || code.includes('collision') || code.includes('camera-void')) {
+  if (code.includes('stuck') || code.includes('collision') || code.includes('camera-void') || code.includes('recovery-loop')) {
     return AI_TASK_CATEGORIES.ux;
   }
 

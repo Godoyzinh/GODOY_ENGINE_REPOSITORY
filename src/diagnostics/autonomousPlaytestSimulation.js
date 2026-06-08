@@ -15,7 +15,16 @@ const SKY_ONLY_SECONDS_THRESHOLD = 3;
 const UNGROUNDED_SECONDS_THRESHOLD = 4;
 const HARD_RECOVERY_PAUSE_SECONDS = 2;
 const RUNNING_MEMORY_SAVE_SECONDS = 15;
+const RECOVERY_EVENT_WINDOW_SECONDS = 5;
+const RECOVERY_EVENT_LOOP_THRESHOLD = 3;
 const REPORT_TRIGGER = 'autonomous-playtest';
+const RECOVERY_STATES = Object.freeze({
+  idle: 'idle',
+  hardRecovering: 'hardRecovering',
+  pausedAfterRecovery: 'pausedAfterRecovery',
+  resumed: 'resumed',
+  failed: 'failed',
+});
 const ACTION_COOLDOWN_SECONDS = {
   explore: 0.2,
   mine: 1,
@@ -78,7 +87,16 @@ export class AutonomousPlaytestSimulation {
     this.recoverySuccess = false;
     this.skyOnlyFrames = 0;
     this.gatherWoodBlockedReason = null;
-    this.progressionPausedUntil = 0;
+    this.recoveryState = RECOVERY_STATES.idle;
+    this.lastRecoveryState = RECOVERY_STATES.idle;
+    this.recoveryCycleId = 0;
+    this.recoveryPauseStartedAt = null;
+    this.recoveryPauseEndsAt = null;
+    this.recoveryPauseEventEmitted = false;
+    this.recoveryResumeEventEmitted = false;
+    this.recoveryPauseSpamCount = 0;
+    this.recoveryLoopDetected = false;
+    this.recoveryEventTimes = [];
     this.nextRunningMemorySaveAt = RUNNING_MEMORY_SAVE_SECONDS;
     this.lastDeathCount = 0;
     this.inventorySnapshot = null;
@@ -134,7 +152,16 @@ export class AutonomousPlaytestSimulation {
     this.recoverySuccess = false;
     this.skyOnlyFrames = 0;
     this.gatherWoodBlockedReason = null;
-    this.progressionPausedUntil = 0;
+    this.recoveryState = RECOVERY_STATES.idle;
+    this.lastRecoveryState = RECOVERY_STATES.idle;
+    this.recoveryCycleId = 0;
+    this.recoveryPauseStartedAt = null;
+    this.recoveryPauseEndsAt = null;
+    this.recoveryPauseEventEmitted = false;
+    this.recoveryResumeEventEmitted = false;
+    this.recoveryPauseSpamCount = 0;
+    this.recoveryLoopDetected = false;
+    this.recoveryEventTimes = [];
     this.nextRunningMemorySaveAt = RUNNING_MEMORY_SAVE_SECONDS;
     this.lastDeathCount = 0;
     this.inventorySnapshot = null;
@@ -247,10 +274,14 @@ export class AutonomousPlaytestSimulation {
   updateActions(deltaTime) {
     this.tickActionCooldowns(deltaTime);
 
-    if (this.elapsedSeconds < this.progressionPausedUntil) {
-      this.performRecoveryPause(deltaTime);
+    if (this.recoveryState === RECOVERY_STATES.pausedAfterRecovery) {
+      this.updatePausedAfterRecovery();
       this.updateTimedAction('saveLoad', deltaTime, 20, () => this.adapter.checkSaveLoad?.());
       return;
+    }
+
+    if (this.recoveryState === RECOVERY_STATES.resumed) {
+      this.transitionRecoveryState(RECOVERY_STATES.idle);
     }
 
     const rawContext = this.adapter.getPlanningState?.({
@@ -317,16 +348,36 @@ export class AutonomousPlaytestSimulation {
     this.goalPlanner.setAiMemorySnapshot?.(this.aiMemorySnapshot);
   }
 
-  performRecoveryPause(deltaTime) {
-    const rawContext = this.adapter.getPlanningState?.({
-      elapsedSeconds: this.elapsedSeconds,
-      mode: this.mode,
-    }) ?? {};
-    const context = {
-      ...rawContext,
-      memory: this.aiMemorySnapshot?.strategyHints ?? null,
-    };
-    const plan = this.goalPlanner.getSnapshot();
+  updatePausedAfterRecovery() {
+    if (this.elapsedSeconds < Number(this.recoveryPauseEndsAt ?? 0)) {
+      return;
+    }
+
+    this.emitRecoveryResumeOnce();
+    this.transitionRecoveryState(RECOVERY_STATES.resumed);
+  }
+
+  enterRecoveryPause({ context, plan, reason }) {
+    this.transitionRecoveryState(RECOVERY_STATES.pausedAfterRecovery);
+    this.recoveryPauseStartedAt = this.elapsedSeconds;
+    this.recoveryPauseEndsAt = this.elapsedSeconds + HARD_RECOVERY_PAUSE_SECONDS;
+    this.emitRecoveryPauseOnce({
+      context,
+      plan,
+      reason,
+    });
+  }
+
+  emitRecoveryPauseOnce({ context, plan, reason }) {
+    if (this.recoveryPauseEventEmitted) {
+      this.recoveryPauseSpamCount += 1;
+      this.detectRecoveryEventLoop('recovery-pause-duplicate');
+      return;
+    }
+
+    this.recoveryPauseEventEmitted = true;
+    this.recordRecoveryLifecycleEvent('recovery-pause');
+
     const intent = resolveRecoveryPauseIntent(context);
 
     if (intent) {
@@ -334,11 +385,11 @@ export class AutonomousPlaytestSimulation {
         intent,
         context,
         plan: {
-          goalId: plan.currentGoalId ?? 'recoveryPause',
-          goalName: plan.currentGoal ?? 'Recovery Pause',
+          goalId: plan.goalId ?? plan.currentGoalId ?? 'recoveryPause',
+          goalName: plan.goalName ?? plan.currentGoal ?? 'Recovery Pause',
           action: 'recoveryPause',
         },
-        deltaTime,
+        deltaTime: 0,
         elapsedSeconds: this.elapsedSeconds,
         terrainSafety: this.terrainSafety,
         terrainDeathContext: this.terrainDeathContext,
@@ -347,10 +398,68 @@ export class AutonomousPlaytestSimulation {
 
     this.actionCounts.survive += 1;
     this.telemetrySystem.recordGameplayEvent('auto-survival-recovery', {
-      type: intent?.type ?? 'recovery-pause',
-      reason: intent?.reason ?? 'Paused progression after hard recovery.',
+      type: 'recovery-pause',
+      reason: reason ?? intent?.reason ?? 'Paused progression after hard recovery.',
       result: 'pause',
+      cycle: this.recoveryCycleId,
     });
+  }
+
+  emitRecoveryResumeOnce() {
+    if (this.recoveryResumeEventEmitted) {
+      this.detectRecoveryEventLoop('recovery-resume-duplicate');
+      return;
+    }
+
+    this.recoveryResumeEventEmitted = true;
+    this.recordRecoveryLifecycleEvent('recovery-resume');
+    this.telemetrySystem.recordGameplayEvent('auto-recovery-resume', {
+      cycle: this.recoveryCycleId,
+      pausedSeconds: round(this.elapsedSeconds - Number(this.recoveryPauseStartedAt ?? this.elapsedSeconds), 2),
+    });
+  }
+
+  transitionRecoveryState(nextState) {
+    if (this.recoveryState === nextState) {
+      return;
+    }
+
+    this.lastRecoveryState = this.recoveryState;
+    this.recoveryState = nextState;
+  }
+
+  startRecoveryCycle() {
+    this.recoveryCycleId += 1;
+    this.recoveryPauseStartedAt = null;
+    this.recoveryPauseEndsAt = null;
+    this.recoveryPauseEventEmitted = false;
+    this.recoveryResumeEventEmitted = false;
+    this.transitionRecoveryState(RECOVERY_STATES.hardRecovering);
+    this.recordRecoveryLifecycleEvent('hard-recovering');
+  }
+
+  recordRecoveryLifecycleEvent(type) {
+    this.recoveryEventTimes.push(this.elapsedSeconds);
+    this.recoveryEventTimes = this.recoveryEventTimes.filter((eventTime) => (
+      this.elapsedSeconds - eventTime <= RECOVERY_EVENT_WINDOW_SECONDS
+    ));
+    this.detectRecoveryEventLoop(type);
+  }
+
+  detectRecoveryEventLoop(reason) {
+    if (
+      this.recoveryLoopDetected ||
+      this.recoveryEventTimes.length <= RECOVERY_EVENT_LOOP_THRESHOLD
+    ) {
+      return;
+    }
+
+    this.recoveryLoopDetected = true;
+    this.recordFailure(
+      'recovery-loop-detected',
+      `Autonomous recovery emitted ${this.recoveryEventTimes.length} recovery events within ${RECOVERY_EVENT_WINDOW_SECONDS}s near "${reason}".`,
+      'medium',
+    );
   }
 
   updateVoidDetection({ deltaTime, plan, context, playerSafety }) {
@@ -385,9 +494,22 @@ export class AutonomousPlaytestSimulation {
       return false;
     }
 
+    if (this.recoveryState === RECOVERY_STATES.hardRecovering || this.recoveryState === RECOVERY_STATES.pausedAfterRecovery) {
+      return true;
+    }
+
+    if (isPlayerSafetySafe(playerSafety)) {
+      this.skyOnlySeconds = 0;
+      this.ungroundedSeconds = 0;
+      if (this.recoveryState === RECOVERY_STATES.resumed) {
+        this.transitionRecoveryState(RECOVERY_STATES.idle);
+      }
+      return false;
+    }
+
+    this.startRecoveryCycle();
     this.cameraVoidDetected = true;
     this.playerLostRecoveryCount += 1;
-    this.recordFailure('camera-void-player-lost', reason, 'medium');
 
     const recoveryResult = this.adapter.executeHardRecovery?.({
       reason,
@@ -436,8 +558,14 @@ export class AutonomousPlaytestSimulation {
     if (this.recoverySuccess) {
       this.skyOnlySeconds = 0;
       this.ungroundedSeconds = 0;
-      this.progressionPausedUntil = Math.max(this.progressionPausedUntil, this.elapsedSeconds + HARD_RECOVERY_PAUSE_SECONDS);
+      this.enterRecoveryPause({
+        context,
+        plan,
+        reason,
+      });
     } else {
+      this.transitionRecoveryState(RECOVERY_STATES.failed);
+      this.recordFailure('camera-void-player-lost', reason, 'medium');
       this.recordFailedAction({
         plan,
         actionName: 'survive',
@@ -1301,7 +1429,7 @@ export class AutonomousPlaytestSimulation {
       trigger: REPORT_TRIGGER,
     });
 
-    const simulationResult = this.getSnapshot();
+    let simulationResult = this.getSnapshot();
     const updatedMemorySnapshot = this.aiMemorySystem?.recordSimulation?.({
       simulationSnapshot: simulationResult,
       report,
@@ -1321,22 +1449,16 @@ export class AutonomousPlaytestSimulation {
       simulationResult.memoryPersistenceSource = updatedMemorySnapshot.memoryPersistenceSource ?? 'unknown';
       simulationResult.memoryLoadRunCount = Number(updatedMemorySnapshot.memoryLoadRunCount ?? updatedMemorySnapshot.runs ?? 0);
       simulationResult.memorySaveRunCount = Number(updatedMemorySnapshot.memorySaveRunCount ?? updatedMemorySnapshot.runs ?? 0);
-      if (report.runtimeStats) {
-        report.runtimeStats.aiMemory = updatedMemorySnapshot;
-      }
-      if (report.runtimeStats?.simulation) {
-        report.runtimeStats.simulation.aiMemory = updatedMemorySnapshot;
-        report.runtimeStats.simulation.memorySnapshot = updatedMemorySnapshot;
-        report.runtimeStats.simulation.learnedKnowledge = updatedMemorySnapshot.learnedKnowledge ?? [];
-        report.runtimeStats.simulation.newKnowledge = updatedMemorySnapshot.newKnowledge ?? [];
-        report.runtimeStats.simulation.learnedLessons = updatedMemorySnapshot.learnedLessons ?? [];
-        report.runtimeStats.simulation.strategyChanges = updatedMemorySnapshot.strategyChanges ?? [];
-        report.runtimeStats.simulation.biomeRatings = updatedMemorySnapshot.biomeRatings ?? {};
-        report.runtimeStats.simulation.memoryPersistenceSource = updatedMemorySnapshot.memoryPersistenceSource ?? 'unknown';
-        report.runtimeStats.simulation.memoryLoadRunCount = Number(updatedMemorySnapshot.memoryLoadRunCount ?? updatedMemorySnapshot.runs ?? 0);
-        report.runtimeStats.simulation.memorySaveRunCount = Number(updatedMemorySnapshot.memorySaveRunCount ?? updatedMemorySnapshot.runs ?? 0);
-      }
     }
+
+    simulationResult = this.getSnapshot();
+    const finalRuntimeSnapshot = {
+      ...this.adapter.getRuntimeSnapshot?.(),
+      aiMemory: simulationResult.aiMemory,
+      simulation: simulationResult,
+    };
+
+    this.reportSystem.updateReportRuntime?.(report, finalRuntimeSnapshot);
 
     this.lastReport = {
       ...report,
@@ -1423,6 +1545,15 @@ export class AutonomousPlaytestSimulation {
       lastSafePosition: this.lastSafePosition ? { ...this.lastSafePosition } : null,
       recoveryTeleportUsed: this.recoveryTeleportUsed,
       recoverySuccess: this.recoverySuccess,
+      recoveryState: this.recoveryState,
+      lastRecoveryState: this.lastRecoveryState,
+      recoveryCycleId: this.recoveryCycleId,
+      recoveryPauseStartedAt: this.recoveryPauseStartedAt === null ? null : round(this.recoveryPauseStartedAt, 2),
+      recoveryPauseEndsAt: this.recoveryPauseEndsAt === null ? null : round(this.recoveryPauseEndsAt, 2),
+      recoveryPauseEventEmitted: this.recoveryPauseEventEmitted,
+      recoveryResumeEventEmitted: this.recoveryResumeEventEmitted,
+      recoveryPauseSpamCount: this.recoveryPauseSpamCount,
+      recoveryLoopDetected: this.recoveryLoopDetected,
       skyOnlyFrames: this.skyOnlyFrames,
       gatherWoodBlockedReason: this.gatherWoodBlockedReason,
       survivalRecoveryActions: this.survivalRecoveryActions.map((action) => ({ ...action })),
@@ -1637,6 +1768,17 @@ function resolveVoidRecoveryReason({ playerSafety, skyOnlySeconds, ungroundedSec
   }
 
   return null;
+}
+
+function isPlayerSafetySafe(playerSafety = null) {
+  return Boolean(
+    playerSafety &&
+    playerSafety.isGrounded &&
+    playerSafety.visibleTerrainExists &&
+    !playerSafety.cameraSkyOnly &&
+    !playerSafety.isBelowTerrain &&
+    !playerSafety.distanceFromSafePointAbnormal
+  );
 }
 
 function isExplorationPlan(plan = {}) {

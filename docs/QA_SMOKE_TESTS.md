@@ -62,6 +62,7 @@ Run these before tagging an Alpha build.
 - Reports include shelter validation, valid shelter block counts, invalid shelter block rejection counts, blocked goals, and recovery actions.
 - Reports include memory persistence source/load/save counts, survival recovery actions, food search actions, blocked placement reasons, terrain safety, death position, and terrain death context.
 - Reports include player/camera safety fields for void recovery: `cameraVoidDetected`, `playerLostRecoveryCount`, `lastSafePosition`, `recoveryTeleportUsed`, `recoverySuccess`, `skyOnlyFrames`, and `gatherWoodBlockedReason`.
+- Reports include recovery state fields: `recoveryState`, `recoveryPauseSpamCount`, `recoveryLoopDetected`, `recoveryPauseEventEmitted`, and `recoveryResumeEventEmitted`.
 - Quick smoke should complete early survival goals and continue pursuing the next progression goal.
 - Fake craft loops must not count as craft success and must produce failed-craft, action-loop, and missing-sticks evidence.
 - Gather Wood must target real trunk blocks, advance from real wood deltas, avoid leaf-only progress, and stay below the mining spam threshold.
@@ -75,6 +76,7 @@ Run these before tagging an Alpha build.
 - Survive Night must require a valid shelter or safe-distance/no-aggro validation before progress can count.
 - Low hunger must trigger food search/eating recovery, terrain deaths must teach dangerous-biome context, and blocked shelter placement must report exact reasons.
 - Simulated void/fall states must hard-recover to valid visible terrain, reset grounded state, recenter the camera, and resume survival progression.
+- Quick autonomous smoke must finish with `recoveryPauseSpamCount = 0`, `recoveryLoopDetected = false`, and no recovery-spam failures.
 - Exported autonomous report JSON must preserve non-empty `issues` and `aiTasks` when the report generator produced them.
 - Failure detection reports stuck states, vertical collision snaps, FPS drops, death loops, console errors, and save/load errors.
 - Generated files in `reports/` remain untracked unless intentionally promoted to a fixture.

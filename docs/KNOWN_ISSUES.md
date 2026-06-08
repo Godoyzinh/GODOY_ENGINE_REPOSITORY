@@ -28,6 +28,7 @@
 - AI memory now reports persistence source/load/save counts consistently and preserves terrain death learning.
 - Autonomous survival recovery now searches/eats food at low hunger, pauses risky exploration at low health, and records terrain avoidance evidence.
 - Autonomous void/camera recovery now detects sky-only or below-terrain states, teleports to safe ground, resets grounded/camera state, and reports recovery evidence.
+- Autonomous recovery pause now emits one pause and one resume event per recovery cycle instead of spamming telemetry every tick.
 
 ## WebGL Fallback
 
