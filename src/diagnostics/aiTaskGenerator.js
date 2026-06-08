@@ -128,6 +128,10 @@ function proposeChange(issue) {
     return 'Replay the autonomous path, inspect movement/collision boundaries, and add a camera/collision smoke assertion if reproduced.';
   }
 
+  if (issue.code.includes('hard-recovery') || issue.code.includes('recovery-pause')) {
+    return 'Inspect hard recovery validation, target invalidation, and planner replanning so recovery cannot resume the same failed target.';
+  }
+
   if (issue.code.includes('save')) {
     return 'Inspect save serialization and migration paths, then add or extend save migration smoke coverage.';
   }

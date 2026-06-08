@@ -3,6 +3,7 @@ import { AI_TASK_CATEGORIES, AiTaskGenerator } from './aiTaskGenerator.js';
 const STORAGE_KEY = 'godoy:auto-qa:last-report';
 const SCHEMA_VERSION = 1;
 const MINING_SPAM_PER_MINUTE_THRESHOLD = 120;
+const HARD_RECOVERY_LOOP_THRESHOLD = 3;
 
 export class AutoQaReportSystem {
   constructor({
@@ -53,6 +54,7 @@ export class AutoQaReportSystem {
       capabilities: collectCapabilities(runtimeSnapshot),
       issues: summarizeIssues(telemetrySnapshot, runtimeSnapshot),
       aiTasks: [],
+      lastSimulationSnapshot: sanitizeSimulationSnapshot(runtimeSnapshot.lastSimulationSnapshot ?? runtimeSnapshot.simulation),
     };
 
     report.aiTasks = this.taskGenerator.createTasks(report);
@@ -95,6 +97,7 @@ export class AutoQaReportSystem {
 
     report.runtimeStats = sanitizeRuntimeSnapshot(runtimeSnapshot);
     report.capabilities = collectCapabilities(runtimeSnapshot);
+    report.lastSimulationSnapshot = sanitizeSimulationSnapshot(runtimeSnapshot.lastSimulationSnapshot ?? runtimeSnapshot.simulation);
     report.issues = summarizeIssues(report.telemetry, runtimeSnapshot);
     report.aiTasks = this.taskGenerator.createTasks(report);
     this.persistReport(report);
@@ -164,7 +167,7 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
   const averageFps = telemetrySnapshot.fps?.average ?? 0;
   const minFps = telemetrySnapshot.fps?.min ?? null;
   const deaths = telemetrySnapshot.counts?.deaths ?? 0;
-  const simulationSnapshot = runtimeSnapshot.simulation ?? {};
+  const simulationSnapshot = runtimeSnapshot.simulation ?? runtimeSnapshot.lastSimulationSnapshot ?? {};
   const simulationFailures = simulationSnapshot.failures ?? [];
   const simulationFailureCounts = simulationSnapshot.failureCounts ?? {};
   const plannerSnapshot = simulationSnapshot.planner ?? null;
@@ -259,6 +262,17 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
       title: 'Stop autonomous recovery pause spam',
       summary: 'The autonomous recovery state machine emitted duplicate pause/resume events in one recovery window.',
       evidence: `pause spam: ${simulationSnapshot.recoveryPauseSpamCount ?? 0}; loop: ${Boolean(simulationSnapshot.recoveryLoopDetected)}; state: ${simulationSnapshot.recoveryState ?? 'unknown'}.`,
+    });
+  }
+
+  if (simulationSnapshot.recoveryLoopDetected || Number(simulationSnapshot.hardRecoveryCount ?? 0) > HARD_RECOVERY_LOOP_THRESHOLD) {
+    issues.push({
+      code: 'hard-recovery-loop-detected',
+      category: AI_TASK_CATEGORIES.ux,
+      severity: 'medium',
+      title: 'Break autonomous hard recovery loop',
+      summary: 'Hard recovery repeated without clearing the invalid target or player state.',
+      evidence: `hard recoveries: ${simulationSnapshot.hardRecoveryCount ?? 0}; cycles: ${simulationSnapshot.recoveryLoopCycles ?? 0}; goal: ${simulationSnapshot.lastFailedGoal ?? 'unknown'}; action: ${simulationSnapshot.lastFailedAction ?? 'unknown'}; target: ${JSON.stringify(simulationSnapshot.failedTargetPosition ?? null)}.`,
     });
   }
 
@@ -529,6 +543,7 @@ function sanitizeRuntimeSnapshot(runtimeSnapshot) {
     ]),
     aiMemory: sanitizeAiMemorySnapshot(runtimeSnapshot.aiMemory),
     simulation: sanitizeSimulationSnapshot(runtimeSnapshot.simulation),
+    lastSimulationSnapshot: sanitizeSimulationSnapshot(runtimeSnapshot.lastSimulationSnapshot ?? runtimeSnapshot.simulation),
     simulationAdapter: pick(runtimeSnapshot.simulationAdapter, [
       'type',
       'seed',
@@ -666,6 +681,13 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     recoveryResumeEventEmitted: Boolean(simulationSnapshot.recoveryResumeEventEmitted),
     recoveryPauseSpamCount: Number(simulationSnapshot.recoveryPauseSpamCount ?? 0),
     recoveryLoopDetected: Boolean(simulationSnapshot.recoveryLoopDetected),
+    recoveryLoopCycles: Number(simulationSnapshot.recoveryLoopCycles ?? 0),
+    hardRecoveryCount: Number(simulationSnapshot.hardRecoveryCount ?? 0),
+    lastFailedGoal: simulationSnapshot.lastFailedGoal ?? null,
+    lastFailedAction: simulationSnapshot.lastFailedAction ?? null,
+    failedTargetPosition: sanitizePosition(simulationSnapshot.failedTargetPosition),
+    blacklistedTargets: (simulationSnapshot.blacklistedTargets ?? []).slice(-32).map(sanitizeBlacklistedTarget).filter(Boolean),
+    emergencyTeleportUsed: Boolean(simulationSnapshot.emergencyTeleportUsed),
     skyOnlyFrames: Number(simulationSnapshot.skyOnlyFrames ?? 0),
     gatherWoodBlockedReason: simulationSnapshot.gatherWoodBlockedReason ?? null,
     survivalRecoveryActions,
@@ -1138,6 +1160,20 @@ function sanitizePlayerSafetySnapshot(playerSafety = null) {
     lastSafePosition: sanitizePosition(playerSafety.lastSafePosition),
     safeBasePosition: sanitizePosition(playerSafety.safeBasePosition),
     reason: playerSafety.reason ?? null,
+  };
+}
+
+function sanitizeBlacklistedTarget(target = null) {
+  if (!target) {
+    return null;
+  }
+
+  return {
+    key: target.key ?? null,
+    goalId: target.goalId ?? null,
+    action: target.action ?? null,
+    reason: target.reason ?? null,
+    position: sanitizePosition(target.position ?? target),
   };
 }
 

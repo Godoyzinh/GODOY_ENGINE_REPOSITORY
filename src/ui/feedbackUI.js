@@ -242,8 +242,15 @@ export class FeedbackUI {
   }
 
   generateReport() {
+    const runtimeSnapshot = this.getRuntimeSnapshot();
+    const autoTestSnapshot = this.getAutoTestSnapshot?.() ?? this.autoTestSnapshot;
+
+    if (!runtimeSnapshot.simulation && autoTestSnapshot) {
+      runtimeSnapshot.lastSimulationSnapshot = autoTestSnapshot;
+    }
+
     this.lastReport = this.reportSystem.createReport({
-      runtimeSnapshot: this.getRuntimeSnapshot(),
+      runtimeSnapshot,
       trigger: 'feedback-ui',
     });
     this.statusMessage = `Generated ${this.lastReport.id}. Review before sharing.`;

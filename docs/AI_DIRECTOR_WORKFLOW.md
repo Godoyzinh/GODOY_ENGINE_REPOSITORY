@@ -117,6 +117,8 @@ Memory is advisory only. It can influence goal reasons and target selection, but
 - Terrain safety and death context, including `deathPosition`, `terrainDeathContext`, and survival recovery evidence when terrain risk or low survival stats interrupt exploration.
 - Player/camera safety evidence for autonomous runs, including `cameraVoidDetected`, `playerLostRecoveryCount`, `lastSafePosition`, `recoveryTeleportUsed`, `recoverySuccess`, `skyOnlyFrames`, and `gatherWoodBlockedReason`.
 - Recovery state-machine evidence, including `recoveryState`, `lastRecoveryState`, `recoveryPauseSpamCount`, `recoveryLoopDetected`, and single-shot pause/resume markers.
+- Hard recovery loop evidence, including `recoveryLoopCycles`, `hardRecoveryCount`, `lastFailedGoal`, `lastFailedAction`, `failedTargetPosition`, `blacklistedTargets`, and `emergencyTeleportUsed`.
+- `lastSimulationSnapshot` is included when Feedback reports are generated during or after an autonomous run, even if there is no active `runtimeStats.simulation`.
 - Recent sanitized gameplay events.
 - Runtime stats for renderer, settings, terrain, entities, survival, networking, and persistence.
 - Browser/system capabilities needed for QA.
@@ -144,7 +146,7 @@ AI-generated tasks are suggestions, not commands.
 - Treat wood target scan blocks as gameplay tasks when the bot is in Gather Wood and a tree-capable biome has no reachable trunk target.
 - Treat invalid shelter material, failed shelter safety validation, and no-delta goal success as actionable gameplay tasks.
 - Treat terrain deaths, blocked shelter placement reasons, and repeated survival recovery blocks as actionable gameplay tasks.
-- Treat sky-only camera states, below-terrain player positions, failed hard recoveries, and recovery pause spam as actionable UX tasks.
+- Treat sky-only camera states, below-terrain player positions, failed hard recoveries, repeated hard recovery loops, and recovery pause spam as actionable UX tasks.
 
 ## Branch And PR Rules
 
