@@ -185,8 +185,22 @@ assert.equal(report.trigger, 'autonomous-playtest');
 assert.equal(report.privacy.automaticUpload, false);
 assert.equal(snapshot.startingInventoryProfile, AUTONOMOUS_INVENTORY_PROFILE_IDS.survivalStart);
 assert.equal(report.runtimeStats.simulation.startingInventoryProfile, AUTONOMOUS_INVENTORY_PROFILE_IDS.survivalStart);
+assert.equal(report.runtimeStats.simulation.status, 'completed', 'completed report should use the final simulation snapshot');
+assert.equal(report.runtimeStats.simulation.elapsedSeconds, snapshot.elapsedSeconds, 'runtime simulation snapshot should match the final snapshot elapsed time');
 assert.ok(report.runtimeStats.simulation, 'report should include sanitized simulation stats');
 assert.ok(report.simulationResult, 'exported report should include full simulation result');
+assert.equal(report.simulationResult.elapsedSeconds, report.runtimeStats.simulation.elapsedSeconds, 'simulationResult and runtimeStats.simulation should stay aligned');
+assert.equal(snapshot.recoveryPauseSpamCount, 0, 'quick smoke should not emit duplicate recovery pause events');
+assert.equal(snapshot.recoveryLoopDetected, false, 'quick smoke should not detect recovery event loops');
+assert.equal(report.runtimeStats.simulation.recoveryPauseSpamCount, 0, 'quick report should export zero recovery pause spam');
+assert.equal(report.runtimeStats.simulation.recoveryLoopDetected, false, 'quick report should export no recovery loop');
+assert.equal(snapshot.failures.length, 0, 'quick smoke should finish without recovery spam failures');
+assert.equal(report.runtimeStats.simulation.failures.length, 0, 'quick report should export no simulation failures');
+assert.equal(
+  report.telemetry.recentGameplayEvents.filter((event) => event.payload?.type === 'recovery-pause').length,
+  0,
+  'quick smoke recent telemetry should not contain recovery-pause spam',
+);
 assert.ok(snapshot.actionCounts.explore > 0, 'bot should explore');
 assert.ok(snapshot.actionCounts.mine > 0, 'bot should mine');
 assert.ok(snapshot.actionCounts.mine <= 64, 'bot mining should be throttled during quick smoke');
@@ -623,6 +637,20 @@ assert.equal(voidSimulation.cameraVoidDetected, true, 'void state should be dete
 assert.ok(voidSimulation.playerLostRecoveryCount >= 1, 'void state should trigger hard recovery');
 assert.equal(voidSimulation.recoveryTeleportUsed, true, 'void recovery should use teleport');
 assert.equal(voidSimulation.recoverySuccess, true, 'void recovery should restore valid ground');
+assert.equal(voidSimulation.recoveryPauseSpamCount, 0, 'void recovery should emit one pause event per recovery cycle');
+assert.equal(voidSimulation.recoveryLoopDetected, false, 'void recovery should not trip recovery loop detection');
+assert.equal(voidSimulation.recoveryPauseEventEmitted, true, 'void recovery should emit recovery-pause once');
+assert.equal(voidSimulation.recoveryResumeEventEmitted, true, 'void recovery should emit recovery-resume once');
+assert.equal(
+  voidRecoveryResult.report.telemetry.recentGameplayEvents.filter((event) => event.payload?.type === 'recovery-pause').length,
+  1,
+  'void recovery telemetry should include exactly one recovery-pause event',
+);
+assert.equal(
+  voidRecoveryResult.report.telemetry.recentGameplayEvents.filter((event) => event.type === 'auto-recovery-resume').length,
+  1,
+  'void recovery telemetry should include exactly one recovery-resume event',
+);
 assert.ok(voidSimulation.skyOnlyFrames >= 1, 'void report should include sky-only frame evidence');
 assert.ok(voidSimulation.lastSafePosition, 'void recovery should preserve last safe position');
 assert.equal(voidSimulation.playerSafety.isGrounded, true, 'player should be grounded after void recovery');

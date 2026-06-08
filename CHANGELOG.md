@@ -1,5 +1,17 @@
 # Changelog
 
+## Autonomous Recovery State Machine
+
+### Fixed
+
+- Recovery pause no longer emits telemetry every simulation tick after hard recovery.
+- Completed autonomous reports now refresh `runtimeStats.simulation` from the final simulation snapshot after AI memory is saved.
+
+### Added
+
+- Recovery state machine diagnostics for `idle`, `hardRecovering`, `pausedAfterRecovery`, `resumed`, and `failed`.
+- Report fields for `recoveryPauseSpamCount`, `recoveryLoopDetected`, recovery cycle state, and single-shot pause/resume markers.
+
 ## Autonomous Void Recovery And Camera Reset
 
 ### Fixed
