@@ -729,7 +729,7 @@ export class AutonomousPlaytestSimulation {
       plan,
     }) ?? null;
 
-    this.emergencyTeleportUsed = Boolean(recoveryResult.teleportUsed);
+    this.emergencyTeleportUsed = this.emergencyTeleportUsed || Boolean(recoveryResult.teleportUsed);
     this.recoveryTeleportUsed = this.recoveryTeleportUsed || this.emergencyTeleportUsed;
     this.playerSafety = nextSafety ?? this.playerSafety;
     this.lastSafePosition = nextSafety?.lastSafePosition ?? recoveryResult.lastSafePosition ?? this.lastSafePosition;
