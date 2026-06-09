@@ -680,6 +680,7 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     failedCrafts: craftingSnapshot.failedCrafts,
     failedActions,
     recoveryActions,
+    neuralAgent: sanitizeNeuralAgentSnapshot(simulationSnapshot.neuralAgent),
     resourceScanResults,
     biomeStats: sanitizeBiomeStats(simulationSnapshot.biomeStats),
     discoveredStructures: sanitizeDiscoveredStructures(simulationSnapshot.discoveredStructures),
@@ -761,6 +762,35 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
       'count',
     ])),
     planner: sanitizeGoalPlannerSnapshot(simulationSnapshot.planner),
+  };
+}
+
+function sanitizeNeuralAgentSnapshot(neuralAgent = null) {
+  if (!neuralAgent) {
+    return null;
+  }
+
+  return {
+    enabled: Boolean(neuralAgent.enabled),
+    generation: Number(neuralAgent.generation ?? 0),
+    championFitness: Number(neuralAgent.championFitness ?? 0),
+    currentFitness: Number(neuralAgent.currentFitness ?? 0),
+    populationSize: Number(neuralAgent.populationSize ?? 0),
+    mutationRate: Number(neuralAgent.mutationRate ?? 0),
+    selectedAction: neuralAgent.selectedAction ?? null,
+    actionScores: sanitizeNumberRecord(neuralAgent.actionScores),
+    sensorSnapshot: neuralAgent.sensorSnapshot
+      ? {
+        names: Array.isArray(neuralAgent.sensorSnapshot.names)
+          ? neuralAgent.sensorSnapshot.names.slice(0, 32).map((name) => String(name))
+          : [],
+        values: sanitizeNumberRecord(neuralAgent.sensorSnapshot.values),
+        nearestTarget: sanitizeResourceTarget(neuralAgent.sensorSnapshot.nearestTarget),
+      }
+      : null,
+    neuralDecisionReason: neuralAgent.neuralDecisionReason ?? null,
+    neuralTrainingMode: Boolean(neuralAgent.neuralTrainingMode),
+    lastRewardReason: neuralAgent.lastRewardReason ?? null,
   };
 }
 

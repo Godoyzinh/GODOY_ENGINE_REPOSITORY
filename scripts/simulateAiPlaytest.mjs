@@ -66,6 +66,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       preferredWoodBiome: result.snapshot.aiMemory?.strategyHints?.preferredWoodBiome ?? null,
       learnedKnowledge: result.snapshot.aiMemory?.learnedKnowledge?.slice(-3) ?? [],
     },
+    neuralAgent: result.snapshot.neuralAgent ?? null,
     evolution: result.snapshot.evolution ?? null,
     failures: result.snapshot.failureCounts,
     issues: result.report.issues.length,
@@ -80,6 +81,10 @@ export function runEvolutionAiSimulation({
   seed = 1337,
   inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
   aiMemorySystem = null,
+  neuralGenome = null,
+  neuralAgentEnabled = false,
+  neuralTrainingMode = false,
+  neuralTrainingMetadata = null,
 } = {}) {
   const parsedRuns = Number(runs);
   const safeRunCount = Number.isFinite(parsedRuns)
@@ -96,6 +101,10 @@ export function runEvolutionAiSimulation({
       seed: seed + runIndex,
       inventoryProfileId,
       aiMemorySystem,
+      neuralGenome,
+      neuralAgentEnabled,
+      neuralTrainingMode,
+      neuralTrainingMetadata,
     });
 
     results.push(result);
@@ -146,6 +155,10 @@ export function runHeadlessAiSimulation({
   inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
   adapter = null,
   aiMemorySystem = null,
+  neuralGenome = null,
+  neuralAgentEnabled = false,
+  neuralTrainingMode = false,
+  neuralTrainingMetadata = null,
 } = {}) {
   const normalizedInventoryProfileId = normalizeAutonomousInventoryProfileId(inventoryProfileId);
   let simulatedNow = 0;
@@ -167,6 +180,10 @@ export function runHeadlessAiSimulation({
     telemetrySystem,
     reportSystem,
     aiMemorySystem,
+    neuralGenome,
+    neuralAgentEnabled,
+    neuralTrainingMode,
+    neuralTrainingMetadata,
     recordFrames: true,
     advanceClock: (stepSeconds) => {
       simulatedNow += stepSeconds * 1000;
@@ -178,6 +195,10 @@ export function runHeadlessAiSimulation({
     durationSeconds,
     deltaTime,
     inventoryProfileId: normalizedInventoryProfileId,
+    neuralGenome,
+    neuralAgentEnabled,
+    neuralTrainingMode,
+    neuralTrainingMetadata,
   });
 }
 
@@ -212,6 +233,9 @@ function parseArgs(args) {
       options.outputDir = arg.slice('--output='.length);
     } else if (arg.startsWith('--memory=')) {
       options.memoryPath = arg.slice('--memory='.length);
+    } else if (arg === '--neural') {
+      options.neuralAgentEnabled = true;
+      options.neuralTrainingMode = true;
     } else if (arg === '--no-memory') {
       options.useMemory = false;
     } else if (arg === '--no-write') {

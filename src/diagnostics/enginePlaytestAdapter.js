@@ -525,7 +525,7 @@ export class EnginePlaytestAdapter {
     };
   }
 
-  executeGoalStep({ plan, elapsedSeconds, deltaTime }) {
+  executeGoalStep({ plan, elapsedSeconds, deltaTime, neuralDecision = null }) {
     const secondaryActions = [];
 
     if (plan.action !== 'surviveNight' && plan.action !== 'gatherWood') {
@@ -542,6 +542,7 @@ export class EnginePlaytestAdapter {
           elapsedSeconds,
           deltaTime,
           plan,
+          neuralDecision,
         });
       case 'craftPlanks':
         return this.craftRecipe(RECIPE_IDS.woodPlanks, {
@@ -1687,7 +1688,7 @@ export class EnginePlaytestAdapter {
     };
   }
 
-  gatherWoodGoal({ elapsedSeconds, plan = null }) {
+  gatherWoodGoal({ elapsedSeconds, plan = null, neuralDecision = null }) {
     if (plan?.goalId === 'createResourceReserve' && this.retrieveStoredReserveResource('wood')) {
       return {
         ok: true,
@@ -1746,7 +1747,7 @@ export class EnginePlaytestAdapter {
       };
     }
 
-    this.moveTowardTarget(target);
+    this.moveTowardTarget(target, neuralDecision);
     this.faceTarget(target);
 
     if (target.distance > WOOD_MINE_DISTANCE) {
@@ -2035,7 +2036,7 @@ export class EnginePlaytestAdapter {
     };
   }
 
-  moveTowardTarget(target) {
+  moveTowardTarget(target, neuralDecision = null) {
     const movement = this.engine.playerController.movementSystem;
     const distance = Math.hypot(
       target.worldX + 0.5 - this.engine.playerController.position.x,
@@ -2046,9 +2047,19 @@ export class EnginePlaytestAdapter {
       movement.setInput(code, false);
     }
 
-    if (distance > 2.2) {
+    const selectedAction = neuralDecision?.selectedAction ?? null;
+
+    if (distance > 2.2 && selectedAction !== 'eatOrRecover') {
       movement.setInput('KeyW', true);
-      movement.setInput('ShiftLeft', distance > 8);
+      movement.setInput('ShiftLeft', distance > 8 || selectedAction === 'moveForward' || selectedAction === 'explore');
+    }
+
+    if (selectedAction === 'turnLeft') {
+      movement.setInput('KeyA', true);
+    } else if (selectedAction === 'turnRight') {
+      movement.setInput('KeyD', true);
+    } else if (selectedAction === 'jump') {
+      movement.setInput('Space', true);
     }
   }
 

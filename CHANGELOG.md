@@ -1,5 +1,20 @@
 # Changelog
 
+## Neural Survival Agent Foundation
+
+### Added
+
+- Added a lightweight neural survival agent foundation with MLP networks, genomes, population evolution, sensors, action mapping, fitness scoring, and champion serialization.
+- Added `neural-train` autonomous simulation mode plus `npm run train:neural` for headless population training.
+- Added `npm run smoke:neural-ai` to verify forward pass, mutation, serialization, fitness rewards/penalties, recovery safety, and champion generation.
+- Feedback UI now exposes Run Neural Training and shows neural generation, fitness, selected action, and decision reason during neural-assisted runs.
+- QA reports now include a `neuralAgent` snapshot with action scores, sensor state, fitness, mutation rate, and training mode.
+
+### Changed
+
+- Autonomous playtests can run as hybrid planner/neural sessions: the survival planner still chooses goals, while the neural layer only biases local movement/action selection.
+- Neural control is explicitly blocked from triggering hard recovery; physical recovery remains owned by the existing validation state machine.
+
 ## Starter Progression False Completion And Post-Test Cleanup
 
 ### Fixed

@@ -14,6 +14,7 @@
     "smoke:webgl": "node scripts/smokeWebglFallback.mjs",
     "smoke:ai-director": "node scripts/smokeAiDirector.mjs",
     "smoke:autoplaytest": "node scripts/smokeAutonomousPlaytest.mjs",
+    "smoke:neural-ai": "node scripts/smokeNeuralAi.mjs",
     "smoke:settings": "node scripts/smokeSettings.mjs",
     "smoke:camera": "node scripts/smokeCameraCollision.mjs",
     "smoke:visual": "node scripts/smokeVisualFeel.mjs",
@@ -24,7 +25,8 @@
     "verify:alpha": "node scripts/verifyAlpha.mjs",
     "multiplayer:server": "node server/multiplayerServer.js",
     "dedicated:server": "node server/multiplayerServer.js",
-    "simulate:ai": "node scripts/simulateAiPlaytest.mjs --mode=quick"
+    "simulate:ai": "node scripts/simulateAiPlaytest.mjs --mode=quick",
+    "train:neural": "node scripts/trainNeuralAgent.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

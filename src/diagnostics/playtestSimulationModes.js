@@ -20,6 +20,11 @@ export const PLAYTEST_SIMULATION_MODES = {
     durationSeconds: 30 * 60,
     multiRun: true,
   },
+  'neural-train': {
+    id: 'neural-train',
+    label: 'Neural Train',
+    durationSeconds: 60,
+  },
 };
 
 export function resolvePlaytestMode(modeId = 'quick', overrides = {}) {

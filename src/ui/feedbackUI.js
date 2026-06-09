@@ -12,6 +12,7 @@ export class FeedbackUI {
     getAutoTestSnapshot = null,
     getAiMemorySnapshot = null,
     onRunAutoTest = null,
+    onRunNeuralTraining = null,
     runtimeConfig = null,
     onUiAction = null,
   }) {
@@ -20,6 +21,7 @@ export class FeedbackUI {
     this.getAutoTestSnapshot = getAutoTestSnapshot;
     this.getAiMemorySnapshot = getAiMemorySnapshot;
     this.onRunAutoTest = onRunAutoTest;
+    this.onRunNeuralTraining = onRunNeuralTraining;
     this.runtimeConfig = runtimeConfig;
     this.onUiAction = onUiAction;
     this.isOpen = false;
@@ -118,9 +120,29 @@ export class FeedbackUI {
           <span style="width: ${progressPercent}%"></span>
         </div>
         ${this.renderAiGoalOverlay(snapshot?.planner)}
+        ${this.renderNeuralAgentStatus(snapshot?.neuralAgent)}
         <button type="button" data-action="run-auto-test" ${isRunning ? 'disabled' : ''}>
           ${isRunning ? 'Running Auto Test' : 'Run Auto Test'}
         </button>
+        <button type="button" data-action="run-neural-training" ${isRunning ? 'disabled' : ''}>
+          Run Neural Training
+        </button>
+      </div>
+    `;
+  }
+
+  renderNeuralAgentStatus(neuralAgent) {
+    if (!neuralAgent?.enabled) {
+      return '';
+    }
+
+    return `
+      <div class="feedback-ui__ai-plan" aria-label="Neural survival agent">
+        <div class="feedback-ui__ai-plan-title">Neural Agent</div>
+        ${this.renderAiPlanRow('Generation', neuralAgent.generation ?? 0)}
+        ${this.renderAiPlanRow('Fitness', neuralAgent.currentFitness ?? 0)}
+        ${this.renderAiPlanRow('Action', neuralAgent.selectedAction ?? 'none')}
+        ${this.renderAiPlanRow('Reason', neuralAgent.neuralDecisionReason ?? 'planner fallback')}
       </div>
     `;
   }
@@ -239,6 +261,9 @@ export class FeedbackUI {
     this.element.querySelector('[data-action="run-auto-test"]')?.addEventListener('click', () => {
       this.runAutoTest();
     });
+    this.element.querySelector('[data-action="run-neural-training"]')?.addEventListener('click', () => {
+      this.runNeuralTraining();
+    });
   }
 
   generateReport() {
@@ -267,6 +292,23 @@ export class FeedbackUI {
     this.autoTestSnapshot = result?.snapshot ?? this.getAutoTestSnapshot?.() ?? this.autoTestSnapshot;
     this.statusMessage = result?.message ?? 'Autonomous playtest started.';
     this.onUiAction?.('auto-test-run');
+    this.render();
+  }
+
+  runNeuralTraining() {
+    const result = this.onRunNeuralTraining?.({
+      inventoryProfileId: this.selectedInventoryProfile,
+    }) ?? this.onRunAutoTest?.({
+      modeId: 'neural-train',
+      inventoryProfileId: this.selectedInventoryProfile,
+      neuralAgentEnabled: true,
+      neuralTrainingMode: true,
+    });
+
+    this.selectedAutoTestMode = 'neural-train';
+    this.autoTestSnapshot = result?.snapshot ?? this.getAutoTestSnapshot?.() ?? this.autoTestSnapshot;
+    this.statusMessage = result?.message ?? 'Neural training started.';
+    this.onUiAction?.('neural-training-run');
     this.render();
   }
 

@@ -228,7 +228,8 @@ export class Engine {
       getRuntimeSnapshot: () => this.createAutoQaRuntimeSnapshot(),
       getAutoTestSnapshot: () => this.autonomousPlaytest.getSnapshot(),
       getAiMemorySnapshot: () => this.aiMemorySystem.getSnapshot(),
-      onRunAutoTest: ({ modeId, inventoryProfileId }) => this.startAutonomousPlaytest({ modeId, inventoryProfileId }),
+      onRunAutoTest: (options) => this.startAutonomousPlaytest(options),
+      onRunNeuralTraining: ({ inventoryProfileId }) => this.startNeuralTraining({ inventoryProfileId }),
       runtimeConfig: this.runtimeConfig,
       onUiAction: (action) => {
         this.telemetrySystem.recordGameplayEvent('feedback', { action });
@@ -405,8 +406,20 @@ export class Engine {
     this.applySettings(this.settingsSystem.getSnapshot());
   }
 
-  startAutonomousPlaytest({ modeId = 'quick', inventoryProfileId = undefined } = {}) {
-    const result = this.autonomousPlaytest.start({ modeId, inventoryProfileId });
+  startAutonomousPlaytest({
+    modeId = 'quick',
+    inventoryProfileId = undefined,
+    neuralAgentEnabled = false,
+    neuralTrainingMode = false,
+    neuralTrainingMetadata = null,
+  } = {}) {
+    const result = this.autonomousPlaytest.start({
+      modeId,
+      inventoryProfileId,
+      neuralAgentEnabled,
+      neuralTrainingMode,
+      neuralTrainingMetadata,
+    });
 
     if (result.ok) {
       this.setGameplayInputEnabled(true);
@@ -417,6 +430,19 @@ export class Engine {
     this.feedbackUI.setAutoTestSnapshot(result.snapshot, this.lastAutoTestReport);
 
     return result;
+  }
+
+  startNeuralTraining({ inventoryProfileId = undefined } = {}) {
+    return this.startAutonomousPlaytest({
+      modeId: 'neural-train',
+      inventoryProfileId,
+      neuralAgentEnabled: true,
+      neuralTrainingMode: true,
+      neuralTrainingMetadata: {
+        populationSize: 32,
+        source: 'feedback-ui',
+      },
+    });
   }
 
   applySettings(settingsSnapshot) {

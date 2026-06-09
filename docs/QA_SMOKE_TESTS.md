@@ -11,6 +11,7 @@ Run these before tagging an Alpha build.
 - `npm run smoke:webgl` validates the WebGL fallback copy and escaping.
 - `npm run smoke:ai-director` validates telemetry, local QA reports, and AI task generation.
 - `npm run smoke:autoplaytest` validates autonomous bot simulation, goal planning, and report export shape.
+- `npm run smoke:neural-ai` validates neural network math, mutation, serialization, neural fitness, recovery safety, and champion training.
 - `npm run smoke:settings` validates settings normalization and persistence.
 - `npm run smoke:camera` validates camera-relative movement, paused input, and vertical snap protection.
 - `npm run smoke:visual` validates sky, ambient particles, feedback particles, and procedural audio hooks.
@@ -31,6 +32,7 @@ Run these before tagging an Alpha build.
 - Feedback opens a compact AI Session Report panel.
 - Feedback report generation shows issue/task counts and keeps reports local until copied or downloaded.
 - Run Auto Test starts an autonomous playtest, shows the current AI goal/subgoal/reason/progress/target, and produces an AI Director report when complete.
+- Run Neural Training starts a neural-assisted autonomous episode and shows generation, fitness, selected action, and decision reason.
 - Join Multiplayer reports that the dedicated server is offline when `npm run dedicated:server` is not running.
 - Join Multiplayer reports a clear configuration message when a public client lacks `VITE_GODOY_WS_URL`.
 
@@ -66,6 +68,9 @@ Run these before tagging an Alpha build.
 - Reports include hard recovery loop fields: `recoveryLoopCycles`, `hardRecoveryCount`, `lastFailedGoal`, `lastFailedAction`, `failedTargetPosition`, `blacklistedTargets`, and `emergencyTeleportUsed`.
 - Reports include starter false-completion fields: `falseCompletionDetected`, `earlyAbortReason`, `woodProgressBy90s`, `craftPlanksBlockedByMissingWood`, and `hardRecoveryMisuseDetected`.
 - Reports include post-completion cleanup fields: `postCompletionEventsDetected`, `postCompletionDeaths`, plus terrain death `velocityY`, `fallDistance`, `healthBefore`, and `healthAfter` when available.
+- Reports include `neuralAgent` when neural assistance is enabled: generation, champion/current fitness, population size, mutation rate, selected action, action scores, sensor snapshot, decision reason, and training mode.
+- `npm run train:neural -- --generations=10 --population=32 --duration=60` runs headless population training and writes the local champion brain to `data/AI_NEURAL_CHAMPION.json`.
+- `npm run simulate:ai -- --mode=neural-train --duration=60 --neural` runs a neural-assisted 60 second autonomous episode without allowing neural control to trigger hard recovery.
 - Quick smoke should complete early survival goals and continue pursuing the next progression goal.
 - Quick smoke should use `hardRecoveryCount = 0` unless a physical invalid state is injected.
 - If mining and wood are still zero after 90 seconds, autonomous simulation must abort as failed with a clear starter progression reason.
