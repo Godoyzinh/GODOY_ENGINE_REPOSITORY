@@ -118,6 +118,8 @@ Memory is advisory only. It can influence goal reasons and target selection, but
 - Player/camera safety evidence for autonomous runs, including `cameraVoidDetected`, `playerLostRecoveryCount`, `lastSafePosition`, `recoveryTeleportUsed`, `recoverySuccess`, `skyOnlyFrames`, and `gatherWoodBlockedReason`.
 - Recovery state-machine evidence, including `recoveryState`, `lastRecoveryState`, `recoveryPauseSpamCount`, `recoveryLoopDetected`, and single-shot pause/resume markers.
 - Hard recovery loop evidence, including `recoveryLoopCycles`, `hardRecoveryCount`, `lastFailedGoal`, `lastFailedAction`, `failedTargetPosition`, `blacklistedTargets`, and `emergencyTeleportUsed`.
+- Starter false-completion evidence, including `falseCompletionDetected`, `earlyAbortReason`, `woodProgressBy90s`, `craftPlanksBlockedByMissingWood`, and `hardRecoveryMisuseDetected`.
+- Post-completion cleanup evidence, including `postCompletionEventsDetected`, `postCompletionDeaths`, and terrain death context with position, `velocityY`, `fallDistance`, `healthBefore`, and `healthAfter`.
 - `lastSimulationSnapshot` is included when Feedback reports are generated during or after an autonomous run, even if there is no active `runtimeStats.simulation`.
 - Recent sanitized gameplay events.
 - Runtime stats for renderer, settings, terrain, entities, survival, networking, and persistence.

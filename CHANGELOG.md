@@ -1,5 +1,20 @@
 # Changelog
 
+## Starter Progression False Completion And Post-Test Cleanup
+
+### Fixed
+
+- Autonomous simulations now abort as failed if starter survival has zero mining actions and zero wood after 90 seconds.
+- Evolution mode now stops on starter false-completion failures instead of continuing later segments that could hide the regression.
+- Craft Planks no longer waits indefinitely when wood is missing; the planner routes back to real wood gathering.
+- Engine-backed autoplaytests clear autonomous movement, targets, mining state, landing impact, and recovery state on completion so automated death loops cannot continue after `auto-test-complete`.
+- Hard recovery is reserved for physical invalid states; return-to-base survival recovery now uses soft safe-base relocation.
+
+### Added
+
+- Report fields for `falseCompletionDetected`, `earlyAbortReason`, `postCompletionEventsDetected`, `postCompletionDeaths`, `woodProgressBy90s`, `craftPlanksBlockedByMissingWood`, and `hardRecoveryMisuseDetected`.
+- Death diagnostics now preserve position, vertical velocity, fall distance, and health before/after when terrain deaths are reported.
+
 ## Hard Recovery Loop And Stale Simulation Reports
 
 ### Fixed

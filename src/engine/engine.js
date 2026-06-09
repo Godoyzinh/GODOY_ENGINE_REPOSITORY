@@ -529,8 +529,20 @@ export class Engine {
     this.craftingSystem.update();
     const survivalSnapshot = this.survivalSystem.getSnapshot();
     if (survivalSnapshot.isDead && !this.wasPlayerDeadLastFrame) {
+      const lastDamageEvent = this.damageSystem.getSnapshot().lastDamageEvent;
+
       this.telemetrySystem.recordGameplayEvent('death', {
         source: survivalSnapshot.lastEvent,
+        position: {
+          x: this.playerController.position.x,
+          y: this.playerController.position.y,
+          z: this.playerController.position.z,
+        },
+        velocityY: this.playerController.velocity?.y ?? 0,
+        fallDistance: lastDamageEvent?.fallDistance ?? null,
+        landingImpact: lastDamageEvent?.landingImpact ?? landingImpact,
+        healthBefore: lastDamageEvent?.healthBefore ?? null,
+        healthAfter: lastDamageEvent?.healthAfter ?? survivalSnapshot.health,
       });
     }
     this.wasPlayerDeadLastFrame = survivalSnapshot.isDead;

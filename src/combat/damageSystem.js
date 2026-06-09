@@ -10,8 +10,10 @@ export class DamageSystem {
     this.lastDamageEvent = null;
   }
 
-  applyPlayerDamage({ amount, type = DAMAGE_TYPES.attack, source = null }) {
+  applyPlayerDamage({ amount, type = DAMAGE_TYPES.attack, source = null, landingImpact = null, fallDistance = null }) {
+    const healthBefore = this.survivalSystem.playerState.health;
     const wasApplied = this.survivalSystem.applyDamage({ amount, type, source });
+    const healthAfter = this.survivalSystem.playerState.health;
 
     if (wasApplied) {
       this.lastDamageEvent = {
@@ -19,6 +21,11 @@ export class DamageSystem {
         amount,
         type,
         source,
+        healthBefore,
+        healthAfter,
+        killed: this.survivalSystem.playerState.isDead,
+        landingImpact,
+        fallDistance,
       };
     }
 
@@ -56,6 +63,8 @@ export class DamageSystem {
       amount: damageAmount,
       type: DAMAGE_TYPES.fall,
       source: 'terrain',
+      landingImpact,
+      fallDistance: landingImpact,
     });
   }
 

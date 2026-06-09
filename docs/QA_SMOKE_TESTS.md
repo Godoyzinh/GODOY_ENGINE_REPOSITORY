@@ -64,9 +64,16 @@ Run these before tagging an Alpha build.
 - Reports include player/camera safety fields for void recovery: `cameraVoidDetected`, `playerLostRecoveryCount`, `lastSafePosition`, `recoveryTeleportUsed`, `recoverySuccess`, `skyOnlyFrames`, and `gatherWoodBlockedReason`.
 - Reports include recovery state fields: `recoveryState`, `recoveryPauseSpamCount`, `recoveryLoopDetected`, `recoveryPauseEventEmitted`, and `recoveryResumeEventEmitted`.
 - Reports include hard recovery loop fields: `recoveryLoopCycles`, `hardRecoveryCount`, `lastFailedGoal`, `lastFailedAction`, `failedTargetPosition`, `blacklistedTargets`, and `emergencyTeleportUsed`.
+- Reports include starter false-completion fields: `falseCompletionDetected`, `earlyAbortReason`, `woodProgressBy90s`, `craftPlanksBlockedByMissingWood`, and `hardRecoveryMisuseDetected`.
+- Reports include post-completion cleanup fields: `postCompletionEventsDetected`, `postCompletionDeaths`, plus terrain death `velocityY`, `fallDistance`, `healthBefore`, and `healthAfter` when available.
 - Quick smoke should complete early survival goals and continue pursuing the next progression goal.
+- Quick smoke should use `hardRecoveryCount = 0` unless a physical invalid state is injected.
+- If mining and wood are still zero after 90 seconds, autonomous simulation must abort as failed with a clear starter progression reason.
+- Evolution mode must not continue remaining segments after a starter false-completion abort.
 - Fake craft loops must not count as craft success and must produce failed-craft, action-loop, and missing-sticks evidence.
 - Gather Wood must target real trunk blocks, advance from real wood deltas, avoid leaf-only progress, and stay below the mining spam threshold.
+- Gather Wood must not select trunk targets outside mining reach; unreachable targets are blacklisted and replaced by Explore For Wood movement, not hard recovery.
+- Craft Planks must not wait forever at zero wood; it must route back to Gather Wood or Explore For Wood and report missing wood.
 - Empty-inventory runs must select Gather Wood first and avoid simulated craft completions.
 - Gather Stone must not start until Craft Wooden Pickaxe has produced a real pickaxe item.
 - Reports must include `actualEquippedTool` and create an issue/task if Gather Stone starts without a valid mining tool.
@@ -79,6 +86,8 @@ Run these before tagging an Alpha build.
 - Simulated void/fall states must hard-recover to valid visible terrain, reset grounded state, recenter the camera, and resume survival progression.
 - Quick autonomous smoke must finish with `recoveryPauseSpamCount = 0`, `recoveryLoopDetected = false`, and no recovery-spam failures.
 - Repeated hard recovery after a blocked `gatherStone` target must set `recoveryLoopDetected = true`, blacklist failed targets, emergency teleport, and generate non-empty issues/AI tasks.
+- Hard recovery must only run for physical invalid states such as below-terrain, inside-block, void/camera-lost, or invalid positions.
+- After `auto-test-complete`, autonomous movement/recovery/planner activity must stop and no automated death events should continue.
 - Feedback-generated reports during or after an autonomous run must include `lastSimulationSnapshot` when `runtimeStats.simulation` is not active.
 - Exported autonomous report JSON must preserve non-empty `issues` and `aiTasks` when the report generator produced them.
 - Failure detection reports stuck states, vertical collision snaps, FPS drops, death loops, console errors, and save/load errors.

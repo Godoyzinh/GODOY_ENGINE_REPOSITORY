@@ -79,7 +79,7 @@ function classifyIssue(issue) {
     return AI_TASK_CATEGORIES.gameplay;
   }
 
-  if (issue.code.includes('console') || issue.code.includes('report-export')) {
+  if (issue.code.includes('console') || issue.code.includes('report-export') || issue.code.includes('post-autotest')) {
     return AI_TASK_CATEGORIES.bug;
   }
 
@@ -122,6 +122,14 @@ function proposeChange(issue) {
     issue.code.includes('goal-reality-validation')
   ) {
     return 'Inspect the AI planner requirement chain, adapter execution result, and inventory/world state for this progression goal.';
+  }
+
+  if (issue.code.includes('starter-progression') || issue.code.includes('craft-planks-missing-wood')) {
+    return 'Fail the autonomous run early when starter resources do not change, then route the planner back to reachable wood gathering before crafting.';
+  }
+
+  if (issue.code.includes('post-autotest')) {
+    return 'Ensure autonomous controllers, movement inputs, recovery state, and pending landing damage are cleared when the playtest completes.';
   }
 
   if (issue.code.includes('stuck') || issue.code.includes('collision')) {

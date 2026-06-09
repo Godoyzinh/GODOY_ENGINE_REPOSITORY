@@ -20,6 +20,7 @@ const RECOVERY_EVENT_LOOP_THRESHOLD = 3;
 const HARD_RECOVERY_LOOP_WINDOW_SECONDS = 15;
 const HARD_RECOVERY_LOOP_THRESHOLD = 3;
 const GOAL_RECOVERY_REPLAN_THRESHOLD = 2;
+const STARTER_PROGRESS_ABORT_SECONDS = 90;
 const REPORT_TRIGGER = 'autonomous-playtest';
 const RECOVERY_STATES = Object.freeze({
   idle: 'idle',
@@ -111,6 +112,15 @@ export class AutonomousPlaytestSimulation {
     this.emergencyTeleportUsed = false;
     this.forcedReplan = null;
     this.lastSimulationSnapshot = null;
+    this.falseCompletionDetected = false;
+    this.earlyAbortReason = null;
+    this.postCompletionEventsDetected = false;
+    this.postCompletionDeaths = 0;
+    this.postCompletionBaseline = null;
+    this.woodProgressBy90s = null;
+    this.craftPlanksBlockedByMissingWood = false;
+    this.hardRecoveryMisuseDetected = false;
+    this.completedAtSeconds = null;
     this.nextRunningMemorySaveAt = RUNNING_MEMORY_SAVE_SECONDS;
     this.lastDeathCount = 0;
     this.inventorySnapshot = null;
@@ -187,6 +197,15 @@ export class AutonomousPlaytestSimulation {
     this.emergencyTeleportUsed = false;
     this.forcedReplan = null;
     this.lastSimulationSnapshot = null;
+    this.falseCompletionDetected = false;
+    this.earlyAbortReason = null;
+    this.postCompletionEventsDetected = false;
+    this.postCompletionDeaths = 0;
+    this.postCompletionBaseline = null;
+    this.woodProgressBy90s = null;
+    this.craftPlanksBlockedByMissingWood = false;
+    this.hardRecoveryMisuseDetected = false;
+    this.completedAtSeconds = null;
     this.nextRunningMemorySaveAt = RUNNING_MEMORY_SAVE_SECONDS;
     this.lastDeathCount = 0;
     this.inventorySnapshot = null;
@@ -228,6 +247,7 @@ export class AutonomousPlaytestSimulation {
 
   update(deltaTime = DEFAULT_STEP_SECONDS) {
     if (this.status !== 'running') {
+      this.detectPostCompletionEvents();
       return {
         completed: false,
         snapshot: this.getSnapshot(),
@@ -247,6 +267,16 @@ export class AutonomousPlaytestSimulation {
     this.saveRunningMemorySnapshotIfNeeded();
     this.updateActions(safeDeltaTime);
     this.detectFailures();
+
+    if (this.detectStarterProgressAbort()) {
+      const report = this.finish('starter-progress-aborted');
+
+      return {
+        completed: true,
+        snapshot: this.getSnapshot(),
+        report,
+      };
+    }
 
     if (this.elapsedSeconds >= this.mode.durationSeconds) {
       const report = this.finish('completed');
@@ -355,7 +385,9 @@ export class AutonomousPlaytestSimulation {
       return;
     }
 
-    if (plan.action !== 'blocked') {
+    if (plan.action === 'blocked') {
+      this.handleBlockedPlannerPlan(plan, context);
+    } else {
       this.performPlannedAction(plan, context, deltaTime);
     }
 
@@ -817,6 +849,7 @@ export class AutonomousPlaytestSimulation {
     });
 
     this.detectActionLoop(plan);
+    this.detectCraftPlanksMissingWood(plan, context, result);
     this.updateInventorySnapshot(nextContext);
     this.updateResourceScanSnapshot(result);
     this.updateShelterValidationSnapshot(result);
@@ -849,6 +882,27 @@ export class AutonomousPlaytestSimulation {
       goal: plan.goalId,
       action: plan.action,
       result: result.ok ? 'ok' : 'blocked',
+    });
+  }
+
+  handleBlockedPlannerPlan(plan, context) {
+    if (plan.goalId !== 'craftPlanks') {
+      return;
+    }
+
+    const woodCount = Number(context.inventory?.wood ?? 0);
+
+    if (woodCount > 0) {
+      return;
+    }
+
+    this.craftPlanksBlockedByMissingWood = true;
+    this.goalPlanner.recordBottleneck({
+      code: 'craft-planks-missing-wood',
+      goalId: 'craftPlanks',
+      goalName: 'Craft Planks',
+      summary: 'Craft Planks is blocked by missing wood and must return to Gather Wood or Explore For Wood.',
+      atSeconds: this.elapsedSeconds,
     });
   }
 
@@ -1475,6 +1529,103 @@ export class AutonomousPlaytestSimulation {
     this.detectMiningSpam();
   }
 
+  detectStarterProgressAbort() {
+    if (this.earlyAbortReason || this.elapsedSeconds < STARTER_PROGRESS_ABORT_SECONDS) {
+      return false;
+    }
+
+    const progress = this.createStarterProgressSnapshot();
+
+    this.woodProgressBy90s = progress;
+
+    if (progress.miningActions > 0 || progress.woodCount > 0 || progress.woodDelta > 0) {
+      return false;
+    }
+
+    this.falseCompletionDetected = true;
+    this.earlyAbortReason = 'No mining actions and no wood collected after 90 seconds of starter survival progression.';
+    this.recordFailure('starter-no-wood-progress-90s', this.earlyAbortReason, 'high');
+    this.goalPlanner.recordBottleneck({
+      code: 'starter-no-wood-progress-90s',
+      goalId: 'gatherWood',
+      goalName: 'Gather Wood',
+      summary: this.earlyAbortReason,
+      atSeconds: this.elapsedSeconds,
+    });
+
+    return true;
+  }
+
+  createStarterProgressSnapshot() {
+    const inventorySnapshot = this.inventorySnapshot ?? this.goalPlanner.getInventorySnapshot();
+    const currentInventory = inventorySnapshot.current ?? {};
+    const deltaInventory = inventorySnapshot.delta ?? {};
+    const telemetrySnapshot = this.telemetrySystem.getSnapshot();
+
+    return {
+      atSeconds: round(this.elapsedSeconds, 2),
+      miningActions: Number(this.actionCounts.mine ?? telemetrySnapshot.counts?.mining ?? 0),
+      telemetryMining: Number(telemetrySnapshot.counts?.mining ?? 0),
+      woodCount: Number(currentInventory.wood ?? 0),
+      woodDelta: Number(deltaInventory.wood ?? 0),
+      completedGoalCount: this.goalPlanner.getSnapshot().goalsCompleted.length,
+      currentGoalId: this.goalPlanner.getSnapshot().currentGoalId,
+    };
+  }
+
+  detectFalseCompletionBeforeFinish(reason) {
+    if (reason !== 'completed') {
+      return false;
+    }
+
+    const progress = this.createStarterProgressSnapshot();
+    const plannerSnapshot = this.goalPlanner.getSnapshot();
+    const starterStillFailed = plannerSnapshot.progressionTierReached === 'starter' &&
+      plannerSnapshot.goalsCompleted.length === 0;
+    const noStarterResourceProgress = progress.miningActions === 0 &&
+      progress.woodCount <= 0 &&
+      progress.woodDelta <= 0;
+
+    if (!starterStillFailed && !noStarterResourceProgress) {
+      return false;
+    }
+
+    this.falseCompletionDetected = true;
+    this.woodProgressBy90s = this.woodProgressBy90s ?? progress;
+    this.earlyAbortReason = this.earlyAbortReason ??
+      'Simulation reached its duration without proving starter survival progression.';
+    this.recordFailure('false-starter-completion', this.earlyAbortReason, 'high');
+
+    return true;
+  }
+
+  detectPostCompletionEvents() {
+    if (!this.postCompletionBaseline || this.status === 'running') {
+      return;
+    }
+
+    const telemetrySnapshot = this.telemetrySystem.getSnapshot();
+    const postCompletionDeaths = Math.max(
+      0,
+      Number(telemetrySnapshot.counts?.deaths ?? 0) - Number(this.postCompletionBaseline.deaths ?? 0),
+    );
+    const postCompletionAutoEvents = (telemetrySnapshot.recentGameplayEvents ?? [])
+      .filter((event) => (
+        Number(event.atSeconds ?? 0) > Number(this.completedAtSeconds ?? 0) &&
+        String(event.type ?? '').startsWith('auto-') &&
+        event.type !== 'auto-test-complete'
+      ));
+
+    this.postCompletionDeaths = postCompletionDeaths;
+    this.postCompletionEventsDetected = postCompletionDeaths > 0 || postCompletionAutoEvents.length > 0;
+
+    if (!this.postCompletionEventsDetected) {
+      return;
+    }
+
+    this.lastSimulationSnapshot = this.getSnapshot();
+  }
+
   updateGatherWoodBlockedReason(plan, result = {}) {
     if (plan.action !== 'gatherWood' || result.ok) {
       return;
@@ -1484,6 +1635,32 @@ export class AutonomousPlaytestSimulation {
       result.resourceScanResults?.lastBlockedReason ??
       result.failures?.[0]?.summary ??
       'Gather Wood was blocked without a detailed reason.';
+  }
+
+  detectCraftPlanksMissingWood(plan, context, result = {}) {
+    if (plan.action !== 'craftPlanks') {
+      return;
+    }
+
+    const woodCount = Number(context.inventory?.wood ?? 0);
+
+    if (woodCount > 0 || result.ok) {
+      return;
+    }
+
+    this.craftPlanksBlockedByMissingWood = true;
+    this.recordFailure(
+      'craft-planks-missing-wood',
+      'Craft Planks was attempted or selected while wood inventory was still zero.',
+      'medium',
+    );
+    this.goalPlanner.recordBottleneck({
+      code: 'craft-planks-missing-wood',
+      goalId: plan.goalId,
+      goalName: plan.goalName,
+      summary: 'Craft Planks is missing wood; the planner should return to Gather Wood or Explore For Wood.',
+      atSeconds: this.elapsedSeconds,
+    });
   }
 
   detectDeathEvents(telemetrySnapshot, currentPosition) {
@@ -1513,6 +1690,10 @@ export class AutonomousPlaytestSimulation {
         summary: 'Autonomous player died from terrain damage.',
         biome,
         position: this.deathPosition,
+        velocityY: latestDeathEvent?.payload?.velocityY ?? null,
+        fallDistance: latestDeathEvent?.payload?.fallDistance ?? latestDeathEvent?.payload?.landingImpact ?? null,
+        healthBefore: latestDeathEvent?.payload?.healthBefore ?? null,
+        healthAfter: latestDeathEvent?.payload?.healthAfter ?? null,
         currentGoal: this.goalPlanner.getSnapshot().currentGoal,
         suggestedAvoidanceStrategy: 'Avoid steep slopes and blacklisted terrain around the death position before resuming exploration.',
         atSeconds: round(this.elapsedSeconds, 2),
@@ -1610,16 +1791,26 @@ export class AutonomousPlaytestSimulation {
   }
 
   finish(reason) {
-    this.status = reason === 'completed' ? 'completed' : 'failed';
+    const falseCompletion = this.detectFalseCompletionBeforeFinish(reason);
+    const finalReason = falseCompletion ? 'false-starter-completion' : reason;
+
+    this.status = finalReason === 'completed' ? 'completed' : 'failed';
     this.adapter.end?.({
-      reason,
+      reason: finalReason,
     });
+    this.completedAtSeconds = this.elapsedSeconds;
     this.telemetrySystem.recordGameplayEvent('auto-test-complete', {
       mode: this.mode.id,
       duration: this.elapsedSeconds,
       failures: this.failures.length,
-      reason,
+      reason: finalReason,
     });
+    const telemetryAfterComplete = this.telemetrySystem.getSnapshot();
+
+    this.postCompletionBaseline = {
+      deaths: Number(telemetryAfterComplete.counts?.deaths ?? 0),
+      gameplayEvents: Number(telemetryAfterComplete.counts?.gameplayEvents ?? 0),
+    };
 
     const runtimeSnapshot = {
       ...this.adapter.getRuntimeSnapshot?.(),
@@ -1672,7 +1863,7 @@ export class AutonomousPlaytestSimulation {
     this.reportSystem.lastReport = this.lastReport;
     this.reportSystem.persistReport?.(this.lastReport);
     this.lastResult = {
-      reason,
+      reason: finalReason,
       reportId: report.id,
       finishedAt: new Date().toISOString(),
     };
@@ -1764,6 +1955,13 @@ export class AutonomousPlaytestSimulation {
       failedTargetPosition: this.failedTargetPosition ? { ...this.failedTargetPosition } : null,
       blacklistedTargets: this.blacklistedTargets.map((target) => ({ ...target })),
       emergencyTeleportUsed: this.emergencyTeleportUsed,
+      falseCompletionDetected: this.falseCompletionDetected,
+      earlyAbortReason: this.earlyAbortReason,
+      postCompletionEventsDetected: this.postCompletionEventsDetected,
+      postCompletionDeaths: this.postCompletionDeaths,
+      woodProgressBy90s: this.woodProgressBy90s ? { ...this.woodProgressBy90s } : null,
+      craftPlanksBlockedByMissingWood: this.craftPlanksBlockedByMissingWood,
+      hardRecoveryMisuseDetected: this.hardRecoveryMisuseDetected,
       skyOnlyFrames: this.skyOnlyFrames,
       gatherWoodBlockedReason: this.gatherWoodBlockedReason,
       survivalRecoveryActions: this.survivalRecoveryActions.map((action) => ({ ...action })),

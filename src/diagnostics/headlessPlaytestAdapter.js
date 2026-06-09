@@ -455,9 +455,8 @@ export class HeadlessPlaytestAdapter {
 
       case 'return-to-base':
       {
-        const recoveryResult = this.executeHardRecovery({
+        const recoveryResult = this.returnToSafeBase({
           reason: 'Returning to safe base because survival recovery requested it.',
-          preferBase: true,
         });
 
         if (!recoveryResult.ok) {
@@ -551,6 +550,23 @@ export class HeadlessPlaytestAdapter {
       playerSafety: safety,
       ...validation,
       ...invalidation,
+    };
+  }
+
+  returnToSafeBase({ reason = 'Returning to safe base.' } = {}) {
+    this.position = { x: 0, y: HEADLESS_TERRAIN_HEIGHT, z: 0 };
+    this.velocity = { x: 0, y: 0, z: 0 };
+    this.lastSafeGroundedPosition = { ...this.position };
+
+    return {
+      ok: true,
+      event: 'returned to base',
+      reason,
+      teleportUsed: true,
+      recoverySuccess: true,
+      softRecovery: true,
+      playerSafety: this.getPlayerSafetySnapshot(),
+      lastSafePosition: { ...this.lastSafeGroundedPosition },
     };
   }
 
@@ -657,6 +673,8 @@ export class HeadlessPlaytestAdapter {
       return {
         ok: false,
         skipped: true,
+        event: 'missing wood',
+        reason: 'Craft Planks requires at least 1 wood block.',
       };
     }
 

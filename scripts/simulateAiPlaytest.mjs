@@ -41,7 +41,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   console.log(JSON.stringify({
-    ok: true,
+    ok: result.snapshot.status !== 'failed',
     reportId: result.report.id,
     mode: result.snapshot.evolution?.mode ?? result.snapshot.mode.id,
     startingInventoryProfile: result.snapshot.startingInventoryProfile,
@@ -89,22 +89,31 @@ export function runEvolutionAiSimulation({
   const results = [];
 
   for (let runIndex = 0; runIndex < safeRunCount; runIndex += 1) {
-    results.push(runHeadlessAiSimulation({
+    const result = runHeadlessAiSimulation({
       mode: 'quick',
       durationSeconds: segmentDuration,
       deltaTime,
       seed: seed + runIndex,
       inventoryProfileId,
       aiMemorySystem,
-    }));
+    });
+
+    results.push(result);
+
+    if (shouldAbortEvolution(result.snapshot)) {
+      break;
+    }
   }
 
   const finalResult = results.at(-1);
   const evolution = {
     mode: 'evolution',
-    runs: safeRunCount,
+    runs: results.length,
+    requestedRuns: safeRunCount,
     segmentDurationSeconds: segmentDuration,
-    totalDurationSeconds: segmentDuration * safeRunCount,
+    totalDurationSeconds: segmentDuration * results.length,
+    abortedEarly: results.length < safeRunCount,
+    abortReason: finalResult.snapshot.earlyAbortReason ?? (finalResult.snapshot.falseCompletionDetected ? 'False starter completion detected.' : null),
     reportIds: results.map((result) => result.report.id),
     progressionTiers: results.map((result) => result.snapshot.planner?.progressionTierReached ?? 'unknown'),
     goalsCompletedByRun: results.map((result) => result.snapshot.planner?.goalsCompleted?.length ?? 0),
@@ -116,6 +125,17 @@ export function runEvolutionAiSimulation({
   finalResult.report.runtimeStats.simulation.evolution = evolution;
 
   return finalResult;
+}
+
+function shouldAbortEvolution(snapshot = {}) {
+  return Boolean(
+    snapshot.status === 'failed' &&
+    (
+      snapshot.earlyAbortReason ||
+      snapshot.falseCompletionDetected ||
+      snapshot.planner?.progressionTierReached === 'starter'
+    )
+  );
 }
 
 export function runHeadlessAiSimulation({

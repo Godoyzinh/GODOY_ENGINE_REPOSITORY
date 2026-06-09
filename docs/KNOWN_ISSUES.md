@@ -30,6 +30,8 @@
 - Autonomous void/camera recovery now detects sky-only or below-terrain states, teleports to safe ground, resets grounded/camera state, and reports recovery evidence.
 - Autonomous recovery pause now emits one pause and one resume event per recovery cycle instead of spamming telemetry every tick.
 - Autonomous hard recovery now invalidates failed targets, forces replanning, detects repeated recovery loops, and includes stale-simulation fallback snapshots in Feedback reports.
+- Autonomous starter progression now aborts failed runs after 90 seconds with no mining/wood progress instead of reporting false completion.
+- Autonomous post-test cleanup now clears movement, mining targets, landing impact, and recovery state so automated death loops do not continue after completion.
 
 ## WebGL Fallback
 

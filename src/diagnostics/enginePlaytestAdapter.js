@@ -149,8 +149,9 @@ export class EnginePlaytestAdapter {
     this.aiMemorySnapshot = aiMemorySnapshot ?? null;
   }
 
-  end() {
-    this.engine.playerController.movementSystem.clearInput();
+  end({ reason = 'completed' } = {}) {
+    this.clearAutonomousControlState();
+    this.stabilizePlayerAfterAutoTest(reason);
     this.engine.setGameplayInputEnabled(this.originalInputEnabled);
 
     if (this.originalInventoryContents) {
@@ -158,6 +159,39 @@ export class EnginePlaytestAdapter {
       this.engine.inventorySystem.replaceContents(this.originalInventoryContents);
       this.originalInventoryContents = null;
     }
+  }
+
+  clearAutonomousControlState() {
+    this.engine.playerController.movementSystem.clearInput();
+    this.engine.voxelInteractionSystem?.clearSelection?.();
+    this.engine.voxelInteractionSystem?.clearPreview?.();
+    this.engine.playerController.miningSystem?.reset?.();
+  }
+
+  stabilizePlayerAfterAutoTest(reason) {
+    const safePosition = this.lastSafeGroundedPosition ??
+      this.getSafeBasePosition() ??
+      this.createSurfacePosition(
+        this.engine.playerController.position.x,
+        this.engine.playerController.position.z,
+      );
+
+    if (safePosition) {
+      this.ensureTerrainLoadedNear(safePosition);
+      this.applyPlayerGroundedPosition(safePosition);
+      this.recenterCameraBehindPlayer(safePosition);
+    }
+
+    if (this.engine.playerState.isDead) {
+      this.engine.playerState.respawn();
+    }
+
+    this.engine.playerState.restoreHealth(this.engine.playerState.maxHealth);
+    this.engine.playerState.restoreStamina(this.engine.playerState.maxStamina);
+    this.engine.survivalSystem.starvationTimer = 0;
+    this.engine.survivalSystem.respawnTimer = 0;
+    this.engine.survivalSystem.lastEvent = `Auto Test ${reason}`;
+    this.engine.wasPlayerDeadLastFrame = this.engine.playerState.isDead;
   }
 
   explore({ elapsedSeconds }) {
@@ -510,7 +544,9 @@ export class EnginePlaytestAdapter {
           plan,
         });
       case 'craftPlanks':
-        return this.craftRecipe(RECIPE_IDS.woodPlanks);
+        return this.craftRecipe(RECIPE_IDS.woodPlanks, {
+          blockedReason: 'Craft Planks requires at least 1 wood block.',
+        });
       case 'craftTools':
         return this.craftToolsForGoal();
       case 'craftWoodenPickaxe':
@@ -854,10 +890,30 @@ export class EnginePlaytestAdapter {
   }
 
   returnToSafeBase() {
-    const recoveryResult = this.executeHardRecovery({
+    const target = this.getSafeBasePosition();
+
+    if (!target) {
+      return {
+        ok: false,
+        reason: 'No valid base or terrain surface was available for return-to-base recovery.',
+        teleportUsed: false,
+      };
+    }
+
+    this.ensureTerrainLoadedNear(target);
+    this.applyPlayerGroundedPosition(target);
+    this.recenterCameraBehindPlayer(target);
+    const safety = this.getPlayerSafetySnapshot();
+    const recoveryResult = {
+      ok: safety.isGrounded && safety.visibleTerrainExists && !safety.isBelowTerrain,
+      event: 'returned to base',
       reason: 'Returning to safe base because survival recovery requested it.',
-      preferBase: true,
-    });
+      teleportUsed: true,
+      recoverySuccess: safety.isGrounded && safety.visibleTerrainExists && !safety.isBelowTerrain,
+      softRecovery: true,
+      playerSafety: safety,
+      lastSafePosition: this.lastSafeGroundedPosition ? { ...this.lastSafeGroundedPosition } : null,
+    };
 
     if (!recoveryResult.ok) {
       return recoveryResult;
@@ -1249,7 +1305,7 @@ export class EnginePlaytestAdapter {
       this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.sandstone);
   }
 
-  craftRecipe(recipeId) {
+  craftRecipe(recipeId, { blockedReason = null } = {}) {
     const recipe = getRecipe(recipeId);
     const wasCrafted = this.engine.craftingSystem.craft(recipeId);
 
@@ -1257,6 +1313,8 @@ export class EnginePlaytestAdapter {
       return {
         ok: false,
         skipped: true,
+        event: recipe?.name ? `missing ${recipe.name}` : 'craft blocked',
+        reason: blockedReason ?? 'Crafting requirements were not satisfied.',
       };
     }
 
@@ -1644,7 +1702,7 @@ export class EnginePlaytestAdapter {
 
     const beforeWoodCount = this.getItemCount(ITEM_TYPES.block, BLOCK_IDS.wood);
     const scanResult = this.scanWoodTargets();
-    const target = scanResult.nearestWoodTarget;
+    const target = this.selectReachableWoodTarget(scanResult);
 
     if (!target) {
       const fallbackResult = this.recoverWoodSearch({
@@ -1664,11 +1722,13 @@ export class EnginePlaytestAdapter {
 
     const targetKey = createWoodTargetKey(target);
 
-    if (this.blockedWoodTargetKeys.has(targetKey)) {
+    if (target.distance > WOOD_MINE_DISTANCE) {
+      this.blockedWoodTargetKeys.add(targetKey);
       this.explore({ elapsedSeconds });
       this.lastResourceScan = {
         ...scanResult,
-        lastBlockedReason: 'Nearest trunk target was already blocked; exploring for a different wood target.',
+        nearestWoodTarget: target,
+        lastBlockedReason: `Trunk target at ${target.distance.toFixed(1)} blocks is outside mining reach and was blacklisted.`,
         recovery: 'explore-for-wood',
       };
 
@@ -1676,7 +1736,7 @@ export class EnginePlaytestAdapter {
         ok: false,
         skipped: true,
         moving: true,
-        event: 'exploring for alternate wood',
+        event: 'exploring for reachable wood',
         reason: this.lastResourceScan.lastBlockedReason,
         recoveryAction: {
           type: 'explore-for-wood',
@@ -1757,6 +1817,7 @@ export class EnginePlaytestAdapter {
     let scanResult = this.resourceScanner.scanWoodTargets({
       origin,
       radius: WOOD_SCAN_RADIUS,
+      maxTargetDistance: WOOD_MINE_DISTANCE,
     });
 
     if (scanResult.nearestWoodTarget || !scanResult.biomeHasTrees) {
@@ -1767,6 +1828,7 @@ export class EnginePlaytestAdapter {
     const expandedScanResult = this.resourceScanner.scanWoodTargets({
       origin,
       radius: WOOD_EXPANDED_SCAN_RADIUS,
+      maxTargetDistance: WOOD_MINE_DISTANCE,
     });
 
     scanResult = {
@@ -1779,6 +1841,30 @@ export class EnginePlaytestAdapter {
     this.lastResourceScan = scanResult;
 
     return scanResult;
+  }
+
+  selectReachableWoodTarget(scanResult) {
+    const targets = scanResult.targets?.length
+      ? scanResult.targets
+      : (scanResult.nearestWoodTarget ? [scanResult.nearestWoodTarget] : []);
+    const target = targets.find((candidate) => (
+      candidate &&
+      candidate.blockId === BLOCK_IDS.wood &&
+      candidate.distance <= WOOD_MINE_DISTANCE &&
+      !this.blockedWoodTargetKeys.has(createWoodTargetKey(candidate))
+    )) ?? null;
+
+    if (!target) {
+      return null;
+    }
+
+    this.lastResourceScan = {
+      ...scanResult,
+      nearestWoodTarget: target,
+      woodTargetDistance: target.distance,
+    };
+
+    return target;
   }
 
   recoverWoodSearch({ elapsedSeconds, scanResult }) {

@@ -276,6 +276,50 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
     });
   }
 
+  if (simulationSnapshot.falseCompletionDetected || simulationSnapshot.earlyAbortReason) {
+    issues.push({
+      code: 'starter-progression-false-completion',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'high',
+      title: 'Stop false autonomous starter completion',
+      summary: simulationSnapshot.earlyAbortReason ?? 'Autonomous playtest did not prove starter survival progression.',
+      evidence: `wood by 90s: ${JSON.stringify(simulationSnapshot.woodProgressBy90s ?? null)}; tier: ${plannerSnapshot?.progressionTierReached ?? 'unknown'}; completed goals: ${plannerSnapshot?.goalsCompleted?.length ?? 0}.`,
+    });
+  }
+
+  if (simulationSnapshot.craftPlanksBlockedByMissingWood) {
+    issues.push({
+      code: 'craft-planks-missing-wood',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Return to wood gathering before Craft Planks',
+      summary: 'Craft Planks was selected or attempted while wood inventory was zero.',
+      evidence: `Current inventory: ${JSON.stringify(simulationSnapshot.currentInventory ?? {})}; current goal: ${plannerSnapshot?.currentGoal ?? 'unknown'}.`,
+    });
+  }
+
+  if (simulationSnapshot.hardRecoveryMisuseDetected) {
+    issues.push({
+      code: 'hard-recovery-misuse-detected',
+      category: AI_TASK_CATEGORIES.ux,
+      severity: 'medium',
+      title: 'Restrict hard recovery to physical invalid states',
+      summary: 'Hard recovery was requested for a non-physical progression blocker.',
+      evidence: `Goal: ${simulationSnapshot.lastFailedGoal ?? 'unknown'}; action: ${simulationSnapshot.lastFailedAction ?? 'unknown'}; reason: ${simulationSnapshot.gatherWoodBlockedReason ?? 'unknown'}.`,
+    });
+  }
+
+  if (simulationSnapshot.postCompletionEventsDetected || Number(simulationSnapshot.postCompletionDeaths ?? 0) > 0) {
+    issues.push({
+      code: 'post-autotest-death-loop',
+      category: AI_TASK_CATEGORIES.bug,
+      severity: 'high',
+      title: 'Stop autonomous activity after auto-test completion',
+      summary: 'Gameplay events or deaths occurred after the autonomous test completed.',
+      evidence: `Post-completion deaths: ${simulationSnapshot.postCompletionDeaths ?? 0}; last death: ${JSON.stringify(simulationSnapshot.terrainDeathContext ?? null)}.`,
+    });
+  }
+
   if (Number(runtimeSnapshot.survival?.health ?? 100) < 50 || Number(runtimeSnapshot.survival?.hunger ?? 100) < 25) {
     issues.push({
       code: 'survival-recovery-needed',
@@ -688,6 +732,13 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     failedTargetPosition: sanitizePosition(simulationSnapshot.failedTargetPosition),
     blacklistedTargets: (simulationSnapshot.blacklistedTargets ?? []).slice(-32).map(sanitizeBlacklistedTarget).filter(Boolean),
     emergencyTeleportUsed: Boolean(simulationSnapshot.emergencyTeleportUsed),
+    falseCompletionDetected: Boolean(simulationSnapshot.falseCompletionDetected),
+    earlyAbortReason: simulationSnapshot.earlyAbortReason ?? null,
+    postCompletionEventsDetected: Boolean(simulationSnapshot.postCompletionEventsDetected),
+    postCompletionDeaths: Number(simulationSnapshot.postCompletionDeaths ?? 0),
+    woodProgressBy90s: sanitizeWoodProgressSnapshot(simulationSnapshot.woodProgressBy90s),
+    craftPlanksBlockedByMissingWood: Boolean(simulationSnapshot.craftPlanksBlockedByMissingWood),
+    hardRecoveryMisuseDetected: Boolean(simulationSnapshot.hardRecoveryMisuseDetected),
     skyOnlyFrames: Number(simulationSnapshot.skyOnlyFrames ?? 0),
     gatherWoodBlockedReason: simulationSnapshot.gatherWoodBlockedReason ?? null,
     survivalRecoveryActions,
@@ -1116,6 +1167,18 @@ function sanitizeTerrainDeathContext(terrainDeathContext = null) {
     summary: terrainDeathContext.summary ?? null,
     biome: terrainDeathContext.biome ?? null,
     position: sanitizePosition(terrainDeathContext.position),
+    velocityY: terrainDeathContext.velocityY === null || terrainDeathContext.velocityY === undefined
+      ? null
+      : Number(terrainDeathContext.velocityY),
+    fallDistance: terrainDeathContext.fallDistance === null || terrainDeathContext.fallDistance === undefined
+      ? null
+      : Number(terrainDeathContext.fallDistance),
+    healthBefore: terrainDeathContext.healthBefore === null || terrainDeathContext.healthBefore === undefined
+      ? null
+      : Number(terrainDeathContext.healthBefore),
+    healthAfter: terrainDeathContext.healthAfter === null || terrainDeathContext.healthAfter === undefined
+      ? null
+      : Number(terrainDeathContext.healthAfter),
     currentGoal: terrainDeathContext.currentGoal ?? null,
     suggestedAvoidanceStrategy: terrainDeathContext.suggestedAvoidanceStrategy ?? null,
     atSeconds: terrainDeathContext.atSeconds ?? null,
@@ -1174,6 +1237,22 @@ function sanitizeBlacklistedTarget(target = null) {
     action: target.action ?? null,
     reason: target.reason ?? null,
     position: sanitizePosition(target.position ?? target),
+  };
+}
+
+function sanitizeWoodProgressSnapshot(snapshot = null) {
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    atSeconds: Number(snapshot.atSeconds ?? 0),
+    miningActions: Number(snapshot.miningActions ?? 0),
+    telemetryMining: Number(snapshot.telemetryMining ?? 0),
+    woodCount: Number(snapshot.woodCount ?? 0),
+    woodDelta: Number(snapshot.woodDelta ?? 0),
+    completedGoalCount: Number(snapshot.completedGoalCount ?? 0),
+    currentGoalId: snapshot.currentGoalId ?? null,
   };
 }
 
