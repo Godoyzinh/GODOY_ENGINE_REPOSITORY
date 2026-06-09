@@ -188,7 +188,9 @@ export class AutonomousPlaytestSimulation {
     }
 
     this.mode = resolvePlaytestMode(modeId, { durationSeconds });
-    this.neuralGenome = neuralGenome ? NeuralGenome.deserialize(neuralGenome) : this.neuralGenome;
+    this.neuralGenome = neuralGenome === null
+      ? null
+      : (neuralGenome ? NeuralGenome.deserialize(neuralGenome) : this.neuralGenome);
     this.neuralAgentEnabled = Boolean(neuralAgentEnabled || this.mode.id === 'neural-train' || this.neuralGenome);
     this.neuralTrainingMode = Boolean(neuralTrainingMode || this.mode.id === 'neural-train');
     this.neuralTrainingMetadata = neuralTrainingMetadata ?? this.neuralTrainingMetadata;
