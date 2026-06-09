@@ -41,7 +41,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   console.log(JSON.stringify({
-    ok: true,
+    ok: result.snapshot.status !== 'failed',
     reportId: result.report.id,
     mode: result.snapshot.evolution?.mode ?? result.snapshot.mode.id,
     startingInventoryProfile: result.snapshot.startingInventoryProfile,
@@ -66,6 +66,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       preferredWoodBiome: result.snapshot.aiMemory?.strategyHints?.preferredWoodBiome ?? null,
       learnedKnowledge: result.snapshot.aiMemory?.learnedKnowledge?.slice(-3) ?? [],
     },
+    neuralAgent: result.snapshot.neuralAgent ?? null,
     evolution: result.snapshot.evolution ?? null,
     failures: result.snapshot.failureCounts,
     issues: result.report.issues.length,
@@ -80,6 +81,10 @@ export function runEvolutionAiSimulation({
   seed = 1337,
   inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
   aiMemorySystem = null,
+  neuralGenome = null,
+  neuralAgentEnabled = false,
+  neuralTrainingMode = false,
+  neuralTrainingMetadata = null,
 } = {}) {
   const parsedRuns = Number(runs);
   const safeRunCount = Number.isFinite(parsedRuns)
@@ -89,22 +94,35 @@ export function runEvolutionAiSimulation({
   const results = [];
 
   for (let runIndex = 0; runIndex < safeRunCount; runIndex += 1) {
-    results.push(runHeadlessAiSimulation({
+    const result = runHeadlessAiSimulation({
       mode: 'quick',
       durationSeconds: segmentDuration,
       deltaTime,
       seed: seed + runIndex,
       inventoryProfileId,
       aiMemorySystem,
-    }));
+      neuralGenome,
+      neuralAgentEnabled,
+      neuralTrainingMode,
+      neuralTrainingMetadata,
+    });
+
+    results.push(result);
+
+    if (shouldAbortEvolution(result.snapshot)) {
+      break;
+    }
   }
 
   const finalResult = results.at(-1);
   const evolution = {
     mode: 'evolution',
-    runs: safeRunCount,
+    runs: results.length,
+    requestedRuns: safeRunCount,
     segmentDurationSeconds: segmentDuration,
-    totalDurationSeconds: segmentDuration * safeRunCount,
+    totalDurationSeconds: segmentDuration * results.length,
+    abortedEarly: results.length < safeRunCount,
+    abortReason: finalResult.snapshot.earlyAbortReason ?? (finalResult.snapshot.falseCompletionDetected ? 'False starter completion detected.' : null),
     reportIds: results.map((result) => result.report.id),
     progressionTiers: results.map((result) => result.snapshot.planner?.progressionTierReached ?? 'unknown'),
     goalsCompletedByRun: results.map((result) => result.snapshot.planner?.goalsCompleted?.length ?? 0),
@@ -118,6 +136,17 @@ export function runEvolutionAiSimulation({
   return finalResult;
 }
 
+function shouldAbortEvolution(snapshot = {}) {
+  return Boolean(
+    snapshot.status === 'failed' &&
+    (
+      snapshot.earlyAbortReason ||
+      snapshot.falseCompletionDetected ||
+      snapshot.planner?.progressionTierReached === 'starter'
+    )
+  );
+}
+
 export function runHeadlessAiSimulation({
   mode = 'quick',
   durationSeconds = null,
@@ -126,6 +155,10 @@ export function runHeadlessAiSimulation({
   inventoryProfileId = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
   adapter = null,
   aiMemorySystem = null,
+  neuralGenome = null,
+  neuralAgentEnabled = false,
+  neuralTrainingMode = false,
+  neuralTrainingMetadata = null,
 } = {}) {
   const normalizedInventoryProfileId = normalizeAutonomousInventoryProfileId(inventoryProfileId);
   let simulatedNow = 0;
@@ -147,6 +180,10 @@ export function runHeadlessAiSimulation({
     telemetrySystem,
     reportSystem,
     aiMemorySystem,
+    neuralGenome,
+    neuralAgentEnabled,
+    neuralTrainingMode,
+    neuralTrainingMetadata,
     recordFrames: true,
     advanceClock: (stepSeconds) => {
       simulatedNow += stepSeconds * 1000;
@@ -158,6 +195,10 @@ export function runHeadlessAiSimulation({
     durationSeconds,
     deltaTime,
     inventoryProfileId: normalizedInventoryProfileId,
+    neuralGenome,
+    neuralAgentEnabled,
+    neuralTrainingMode,
+    neuralTrainingMetadata,
   });
 }
 
@@ -192,6 +233,9 @@ function parseArgs(args) {
       options.outputDir = arg.slice('--output='.length);
     } else if (arg.startsWith('--memory=')) {
       options.memoryPath = arg.slice('--memory='.length);
+    } else if (arg === '--neural') {
+      options.neuralAgentEnabled = true;
+      options.neuralTrainingMode = true;
     } else if (arg === '--no-memory') {
       options.useMemory = false;
     } else if (arg === '--no-write') {

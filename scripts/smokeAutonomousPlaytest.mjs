@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { runHeadlessAiSimulation } from './simulateAiPlaytest.mjs';
 import { AutoQaReportSystem } from '../src/diagnostics/autoQaReportSystem.js';
 import { AiMemorySystem } from '../src/ai/memory/aiMemorySystem.js';
+import { AutonomousPlaytestSimulation } from '../src/diagnostics/autonomousPlaytestSimulation.js';
 import { EnginePlaytestAdapter } from '../src/diagnostics/enginePlaytestAdapter.js';
 import { HeadlessPlaytestAdapter } from '../src/diagnostics/headlessPlaytestAdapter.js';
 import { ResourceScanner } from '../src/diagnostics/resourceScanner.js';
@@ -84,6 +85,31 @@ class BlockedWoodAdapter extends HeadlessPlaytestAdapter {
         summary: this.lastResourceScan.lastBlockedReason,
         severity: 'medium',
       }],
+    };
+  }
+}
+
+class NoStarterProgressAdapter extends HeadlessPlaytestAdapter {
+  gatherWood() {
+    this.lastResourceScan = this.createResourceScanSnapshot({
+      radius: 48,
+      scannedWoodBlocks: 0,
+      woodTargetsFound: 0,
+      lastBlockedReason: 'Injected starter route found no reachable wood and made no mining progress.',
+      recovery: 'explore-for-wood',
+    });
+
+    return {
+      ok: false,
+      skipped: true,
+      moving: true,
+      event: 'searching for wood',
+      reason: this.lastResourceScan.lastBlockedReason,
+      resourceScanResults: this.lastResourceScan,
+      recoveryAction: {
+        type: 'explore-for-wood',
+        reason: this.lastResourceScan.lastBlockedReason,
+      },
     };
   }
 }
@@ -242,6 +268,10 @@ assert.ok(report.simulationResult, 'exported report should include full simulati
 assert.equal(report.simulationResult.elapsedSeconds, report.runtimeStats.simulation.elapsedSeconds, 'simulationResult and runtimeStats.simulation should stay aligned');
 assert.equal(snapshot.recoveryPauseSpamCount, 0, 'quick smoke should not emit duplicate recovery pause events');
 assert.equal(snapshot.recoveryLoopDetected, false, 'quick smoke should not detect recovery event loops');
+assert.equal(snapshot.hardRecoveryCount, 0, 'quick smoke should not use hard recovery without injected physical invalid state');
+assert.equal(snapshot.falseCompletionDetected, false, 'healthy quick smoke should not mark false completion');
+assert.equal(snapshot.earlyAbortReason, null, 'healthy quick smoke should not set an early abort reason');
+assert.equal(snapshot.postCompletionDeaths, 0, 'healthy quick smoke should not report post-completion deaths');
 assert.equal(report.runtimeStats.simulation.recoveryPauseSpamCount, 0, 'quick report should export zero recovery pause spam');
 assert.equal(report.runtimeStats.simulation.recoveryLoopDetected, false, 'quick report should export no recovery loop');
 assert.equal(snapshot.failures.length, 0, 'quick smoke should finish without recovery spam failures');
@@ -659,6 +689,32 @@ assert.equal(
   'No reachable wood target found in a tree-capable biome.',
   'blocked gatherWood should export the exact blocked reason',
 );
+assert.equal(blockedWoodSimulation.hardRecoveryCount, 0, 'blocked gatherWood should not use hard recovery for a resource target failure');
+assert.equal(blockedWoodSimulation.hardRecoveryMisuseDetected, false, 'blocked gatherWood should not be classified as physical recovery');
+
+const noStarterProgressResult = runHeadlessAiSimulation({
+  mode: 'quick',
+  durationSeconds: 180,
+  deltaTime: 0.25,
+  seed: 20260541,
+  adapter: new NoStarterProgressAdapter({ seed: 20260541 }),
+});
+const noStarterProgressSimulation = noStarterProgressResult.report.runtimeStats.simulation;
+
+assert.equal(noStarterProgressSimulation.status, 'failed', 'no starter progress should abort as a failed simulation');
+assert.equal(noStarterProgressSimulation.falseCompletionDetected, true, 'starter abort should mark false completion protection');
+assert.ok(noStarterProgressSimulation.earlyAbortReason.includes('No mining actions'), 'starter abort should explain missing mining and wood');
+assert.equal(noStarterProgressSimulation.woodProgressBy90s.miningActions, 0, 'starter abort should record zero mining by 90s');
+assert.equal(noStarterProgressSimulation.woodProgressBy90s.woodCount, 0, 'starter abort should record zero wood by 90s');
+assert.equal(noStarterProgressSimulation.hardRecoveryCount, 0, 'starter no-resource abort should not use hard recovery');
+assert.ok(
+  noStarterProgressResult.report.issues.some((issue) => issue.code === 'starter-progression-false-completion'),
+  'starter abort should create a false-completion report issue',
+);
+assert.ok(
+  noStarterProgressResult.report.aiTasks.some((task) => task.id.includes('starter-progression-false-completion')),
+  'starter abort should create an AI task',
+);
 
 const lowSurvivalResult = runHeadlessAiSimulation({
   mode: 'quick',
@@ -772,6 +828,62 @@ assert.ok(
 assert.ok(
   staleSimulationReport.aiTasks.some((task) => task.id.includes('hard-recovery-loop-detected')),
   'feedback fallback report should generate AI tasks from lastSimulationSnapshot',
+);
+
+let postCompletionNow = 0;
+const postCompletionTelemetry = new TelemetrySystem({
+  now: () => postCompletionNow,
+});
+const postCompletionReportSystem = new AutoQaReportSystem({
+  telemetrySystem: postCompletionTelemetry,
+  storage: null,
+});
+const postCompletionSimulation = new AutonomousPlaytestSimulation({
+  adapter: new HeadlessPlaytestAdapter({ seed: 20260542 }),
+  telemetrySystem: postCompletionTelemetry,
+  reportSystem: postCompletionReportSystem,
+  recordFrames: true,
+  advanceClock: (stepSeconds) => {
+    postCompletionNow += stepSeconds * 1000;
+  },
+});
+
+postCompletionSimulation.runToCompletion({
+  modeId: 'quick',
+  durationSeconds: 12,
+  deltaTime: 0.25,
+});
+postCompletionNow += 1000;
+postCompletionTelemetry.updateFrame(0.25);
+postCompletionTelemetry.recordGameplayEvent('death', {
+  source: 'Death terrain',
+  position: { x: 1, y: 8, z: 1 },
+  velocityY: -0.4,
+  fallDistance: 0.4,
+  healthBefore: 100,
+  healthAfter: 0,
+});
+const postCompletionSnapshot = postCompletionSimulation.update(0.25).snapshot;
+const postCompletionReport = postCompletionReportSystem.createReport({
+  trigger: 'feedback-ui',
+  runtimeSnapshot: {
+    simulation: null,
+    lastSimulationSnapshot: postCompletionSnapshot,
+    simulationAdapter: {
+      type: 'headless',
+    },
+  },
+});
+
+assert.equal(postCompletionSnapshot.postCompletionEventsDetected, true, 'post-completion death should be detected in stale simulation snapshot');
+assert.equal(postCompletionSnapshot.postCompletionDeaths, 1, 'post-completion death count should be exported');
+assert.ok(
+  postCompletionReport.issues.some((issue) => issue.code === 'post-autotest-death-loop'),
+  'post-completion death should create a report issue',
+);
+assert.ok(
+  postCompletionReport.aiTasks.some((task) => task.id.includes('post-autotest-death-loop')),
+  'post-completion death should create an AI task',
 );
 
 const spamReportSystem = new AutoQaReportSystem({

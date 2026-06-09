@@ -850,6 +850,19 @@ export class SurvivalGoalPlanner {
       });
     }
 
+    if (blockedGoal?.id === SURVIVAL_GOAL_IDS.craftPlanks && getCount(context, 'wood') < 1) {
+      return {
+        goalId: SURVIVAL_GOAL_IDS.gatherWood,
+        goalName: 'Gather Wood',
+        priority: 100,
+        action: 'gatherWood',
+        subgoal: 'Recover missing wood before Craft Planks can run.',
+        reason: 'Craft Planks is blocked by missing wood, so the planner must return to real wood gathering instead of waiting.',
+        progress: clamp01(getDelta(context, 'wood') / 3),
+        target: `${Math.min(getDelta(context, 'wood'), 3)}/3 wood`,
+      };
+    }
+
     if (!blockedGoal) {
       return {
         goalId: 'continueExploration',

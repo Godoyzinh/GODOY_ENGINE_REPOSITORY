@@ -1,5 +1,35 @@
 # Changelog
 
+## Neural Survival Agent Foundation
+
+### Added
+
+- Added a lightweight neural survival agent foundation with MLP networks, genomes, population evolution, sensors, action mapping, fitness scoring, and champion serialization.
+- Added `neural-train` autonomous simulation mode plus `npm run train:neural` for headless population training.
+- Added `npm run smoke:neural-ai` to verify forward pass, mutation, serialization, fitness rewards/penalties, recovery safety, and champion generation.
+- Feedback UI now exposes Run Neural Training and shows neural generation, fitness, selected action, and decision reason during neural-assisted runs.
+- QA reports now include a `neuralAgent` snapshot with action scores, sensor state, fitness, mutation rate, and training mode.
+
+### Changed
+
+- Autonomous playtests can run as hybrid planner/neural sessions: the survival planner still chooses goals, while the neural layer only biases local movement/action selection.
+- Neural control is explicitly blocked from triggering hard recovery; physical recovery remains owned by the existing validation state machine.
+
+## Starter Progression False Completion And Post-Test Cleanup
+
+### Fixed
+
+- Autonomous simulations now abort as failed if starter survival has zero mining actions and zero wood after 90 seconds.
+- Evolution mode now stops on starter false-completion failures instead of continuing later segments that could hide the regression.
+- Craft Planks no longer waits indefinitely when wood is missing; the planner routes back to real wood gathering.
+- Engine-backed autoplaytests clear autonomous movement, targets, mining state, landing impact, and recovery state on completion so automated death loops cannot continue after `auto-test-complete`.
+- Hard recovery is reserved for physical invalid states; return-to-base survival recovery now uses soft safe-base relocation.
+
+### Added
+
+- Report fields for `falseCompletionDetected`, `earlyAbortReason`, `postCompletionEventsDetected`, `postCompletionDeaths`, `woodProgressBy90s`, `craftPlanksBlockedByMissingWood`, and `hardRecoveryMisuseDetected`.
+- Death diagnostics now preserve position, vertical velocity, fall distance, and health before/after when terrain deaths are reported.
+
 ## Hard Recovery Loop And Stale Simulation Reports
 
 ### Fixed

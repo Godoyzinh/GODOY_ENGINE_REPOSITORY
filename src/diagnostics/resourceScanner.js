@@ -11,7 +11,7 @@ export class ResourceScanner {
     this.terrainGenerator = terrainGenerator;
   }
 
-  scanWoodTargets({ origin, radius = DEFAULT_SCAN_RADIUS } = {}) {
+  scanWoodTargets({ origin, radius = DEFAULT_SCAN_RADIUS, maxTargetDistance = Infinity } = {}) {
     const safeOrigin = normalizeOrigin(origin);
     const loadedChunks = [...(this.terrainGenerator.chunkManager?.chunks?.values() ?? [])];
     const targetCandidates = [];
@@ -55,8 +55,9 @@ export class ResourceScanner {
         }
 
         const verticalDelta = Math.abs((y + 0.5) - safeOrigin.y);
+        const isOutsideMiningReach = distance > maxTargetDistance;
 
-        if (verticalDelta > WOOD_VERTICAL_REACH) {
+        if (verticalDelta > WOOD_VERTICAL_REACH || isOutsideMiningReach) {
           rejectedUnreachableTargets += 1;
           continue;
         }
@@ -85,6 +86,7 @@ export class ResourceScanner {
 
     return {
       radius,
+      maxTargetDistance: Number.isFinite(maxTargetDistance) ? maxTargetDistance : null,
       scannedChunks: loadedChunks.length,
       scannedWoodBlocks,
       rejectedLeafTargets,
@@ -116,6 +118,7 @@ export class ResourceScanner {
 export function createEmptyResourceScanSnapshot(reason = 'Resource scan has not run yet.') {
   return {
     radius: 0,
+    maxTargetDistance: null,
     scannedChunks: 0,
     scannedWoodBlocks: 0,
     rejectedLeafTargets: 0,

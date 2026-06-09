@@ -11,6 +11,7 @@ Run these before tagging an Alpha build.
 - `npm run smoke:webgl` validates the WebGL fallback copy and escaping.
 - `npm run smoke:ai-director` validates telemetry, local QA reports, and AI task generation.
 - `npm run smoke:autoplaytest` validates autonomous bot simulation, goal planning, and report export shape.
+- `npm run smoke:neural-ai` validates neural network math, mutation, serialization, neural fitness, recovery safety, and champion training.
 - `npm run smoke:settings` validates settings normalization and persistence.
 - `npm run smoke:camera` validates camera-relative movement, paused input, and vertical snap protection.
 - `npm run smoke:visual` validates sky, ambient particles, feedback particles, and procedural audio hooks.
@@ -31,6 +32,7 @@ Run these before tagging an Alpha build.
 - Feedback opens a compact AI Session Report panel.
 - Feedback report generation shows issue/task counts and keeps reports local until copied or downloaded.
 - Run Auto Test starts an autonomous playtest, shows the current AI goal/subgoal/reason/progress/target, and produces an AI Director report when complete.
+- Run Neural Training starts a neural-assisted autonomous episode and shows generation, fitness, selected action, and decision reason.
 - Join Multiplayer reports that the dedicated server is offline when `npm run dedicated:server` is not running.
 - Join Multiplayer reports a clear configuration message when a public client lacks `VITE_GODOY_WS_URL`.
 
@@ -64,9 +66,19 @@ Run these before tagging an Alpha build.
 - Reports include player/camera safety fields for void recovery: `cameraVoidDetected`, `playerLostRecoveryCount`, `lastSafePosition`, `recoveryTeleportUsed`, `recoverySuccess`, `skyOnlyFrames`, and `gatherWoodBlockedReason`.
 - Reports include recovery state fields: `recoveryState`, `recoveryPauseSpamCount`, `recoveryLoopDetected`, `recoveryPauseEventEmitted`, and `recoveryResumeEventEmitted`.
 - Reports include hard recovery loop fields: `recoveryLoopCycles`, `hardRecoveryCount`, `lastFailedGoal`, `lastFailedAction`, `failedTargetPosition`, `blacklistedTargets`, and `emergencyTeleportUsed`.
+- Reports include starter false-completion fields: `falseCompletionDetected`, `earlyAbortReason`, `woodProgressBy90s`, `craftPlanksBlockedByMissingWood`, and `hardRecoveryMisuseDetected`.
+- Reports include post-completion cleanup fields: `postCompletionEventsDetected`, `postCompletionDeaths`, plus terrain death `velocityY`, `fallDistance`, `healthBefore`, and `healthAfter` when available.
+- Reports include `neuralAgent` when neural assistance is enabled: generation, champion/current fitness, population size, mutation rate, selected action, action scores, sensor snapshot, decision reason, and training mode.
+- `npm run train:neural -- --generations=10 --population=32 --duration=60` runs headless population training and writes the local champion brain to `data/AI_NEURAL_CHAMPION.json`.
+- `npm run simulate:ai -- --mode=neural-train --duration=60 --neural` runs a neural-assisted 60 second autonomous episode without allowing neural control to trigger hard recovery.
 - Quick smoke should complete early survival goals and continue pursuing the next progression goal.
+- Quick smoke should use `hardRecoveryCount = 0` unless a physical invalid state is injected.
+- If mining and wood are still zero after 90 seconds, autonomous simulation must abort as failed with a clear starter progression reason.
+- Evolution mode must not continue remaining segments after a starter false-completion abort.
 - Fake craft loops must not count as craft success and must produce failed-craft, action-loop, and missing-sticks evidence.
 - Gather Wood must target real trunk blocks, advance from real wood deltas, avoid leaf-only progress, and stay below the mining spam threshold.
+- Gather Wood must not select trunk targets outside mining reach; unreachable targets are blacklisted and replaced by Explore For Wood movement, not hard recovery.
+- Craft Planks must not wait forever at zero wood; it must route back to Gather Wood or Explore For Wood and report missing wood.
 - Empty-inventory runs must select Gather Wood first and avoid simulated craft completions.
 - Gather Stone must not start until Craft Wooden Pickaxe has produced a real pickaxe item.
 - Reports must include `actualEquippedTool` and create an issue/task if Gather Stone starts without a valid mining tool.
@@ -79,6 +91,8 @@ Run these before tagging an Alpha build.
 - Simulated void/fall states must hard-recover to valid visible terrain, reset grounded state, recenter the camera, and resume survival progression.
 - Quick autonomous smoke must finish with `recoveryPauseSpamCount = 0`, `recoveryLoopDetected = false`, and no recovery-spam failures.
 - Repeated hard recovery after a blocked `gatherStone` target must set `recoveryLoopDetected = true`, blacklist failed targets, emergency teleport, and generate non-empty issues/AI tasks.
+- Hard recovery must only run for physical invalid states such as below-terrain, inside-block, void/camera-lost, or invalid positions.
+- After `auto-test-complete`, autonomous movement/recovery/planner activity must stop and no automated death events should continue.
 - Feedback-generated reports during or after an autonomous run must include `lastSimulationSnapshot` when `runtimeStats.simulation` is not active.
 - Exported autonomous report JSON must preserve non-empty `issues` and `aiTasks` when the report generator produced them.
 - Failure detection reports stuck states, vertical collision snaps, FPS drops, death loops, console errors, and save/load errors.

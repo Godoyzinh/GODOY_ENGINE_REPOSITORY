@@ -230,10 +230,32 @@ function sanitizePayload(payload) {
       sanitizedPayload[key] = value;
     } else if (typeof value === 'string') {
       sanitizedPayload[key] = value.replace(/\s+/g, ' ').slice(0, 80);
+    } else if (isPlainObject(value)) {
+      sanitizedPayload[key] = sanitizeNestedPayloadObject(value);
     }
   }
 
   return sanitizedPayload;
+}
+
+function sanitizeNestedPayloadObject(value) {
+  const sanitized = {};
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (typeof nestedValue === 'number') {
+      sanitized[key] = round(nestedValue, 2);
+    } else if (typeof nestedValue === 'boolean') {
+      sanitized[key] = nestedValue;
+    } else if (typeof nestedValue === 'string') {
+      sanitized[key] = nestedValue.replace(/\s+/g, ' ').slice(0, 80);
+    }
+  }
+
+  return sanitized;
+}
+
+function isPlainObject(value) {
+  return Object.prototype.toString.call(value) === '[object Object]';
 }
 
 function sanitizeSource(source) {

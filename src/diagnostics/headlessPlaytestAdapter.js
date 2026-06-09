@@ -360,11 +360,12 @@ export class HeadlessPlaytestAdapter {
     };
   }
 
-  executeGoalStep({ plan, deltaTime, elapsedSeconds }) {
+  executeGoalStep({ plan, deltaTime, elapsedSeconds, neuralDecision = null }) {
     this.moveTowardGoal({
       plan,
       deltaTime,
       elapsedSeconds,
+      neuralDecision,
     });
 
     const secondaryActions = [{
@@ -455,9 +456,8 @@ export class HeadlessPlaytestAdapter {
 
       case 'return-to-base':
       {
-        const recoveryResult = this.executeHardRecovery({
+        const recoveryResult = this.returnToSafeBase({
           reason: 'Returning to safe base because survival recovery requested it.',
-          preferBase: true,
         });
 
         if (!recoveryResult.ok) {
@@ -554,6 +554,23 @@ export class HeadlessPlaytestAdapter {
     };
   }
 
+  returnToSafeBase({ reason = 'Returning to safe base.' } = {}) {
+    this.position = { x: 0, y: HEADLESS_TERRAIN_HEIGHT, z: 0 };
+    this.velocity = { x: 0, y: 0, z: 0 };
+    this.lastSafeGroundedPosition = { ...this.position };
+
+    return {
+      ok: true,
+      event: 'returned to base',
+      reason,
+      teleportUsed: true,
+      recoverySuccess: true,
+      softRecovery: true,
+      playerSafety: this.getPlayerSafetySnapshot(),
+      lastSafePosition: { ...this.lastSafeGroundedPosition },
+    };
+  }
+
   handleHardRecoveryInvalidation({ reason, plan = null } = {}) {
     const key = `${plan?.goalId ?? 'unknown'}:${plan?.action ?? 'unknown'}:${createTerrainCellKey(this.position)}`;
     const blacklistedTarget = {
@@ -606,10 +623,26 @@ export class HeadlessPlaytestAdapter {
     };
   }
 
-  moveTowardGoal({ plan, deltaTime, elapsedSeconds }) {
+  moveTowardGoal({ plan, deltaTime, elapsedSeconds, neuralDecision = null }) {
     const goalHash = hashGoal(plan.goalId ?? 'idle');
-    const angle = goalHash * 0.7 + elapsedSeconds * 0.18;
-    const speed = plan.action === 'surviveNight' ? 2.5 : 8;
+    let angle = goalHash * 0.7 + elapsedSeconds * 0.18;
+    let speed = plan.action === 'surviveNight' ? 2.5 : 8;
+    const selectedAction = neuralDecision?.selectedAction ?? null;
+
+    if (selectedAction === 'turnLeft') {
+      angle -= 0.55;
+    } else if (selectedAction === 'turnRight') {
+      angle += 0.55;
+    } else if (selectedAction === 'explore') {
+      angle += this.noise() * 1.1 - 0.55;
+      speed *= 1.08;
+    } else if (selectedAction === 'moveForward') {
+      speed *= 1.14;
+    } else if (selectedAction === 'eatOrRecover') {
+      speed *= 0.25;
+    } else if (selectedAction === 'jump') {
+      this.velocity.y = 4;
+    }
 
     this.velocity.x = Math.cos(angle) * speed;
     this.velocity.z = Math.sin(angle) * speed;
@@ -657,6 +690,8 @@ export class HeadlessPlaytestAdapter {
       return {
         ok: false,
         skipped: true,
+        event: 'missing wood',
+        reason: 'Craft Planks requires at least 1 wood block.',
       };
     }
 
