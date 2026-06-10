@@ -27,7 +27,7 @@ const trainer = new NeuralTrainer({
   mutationRate: Number(options.mutationRate ?? DEFAULT_NEURAL_TRAINING_OPTIONS.mutationRate),
   mutationStrength: Number(options.mutationStrength ?? DEFAULT_NEURAL_TRAINING_OPTIONS.mutationStrength),
 });
-const baselineResult = options.skipBaseline
+const baselineResult = (options.skipBaseline === 'true' || options.skipBaseline === true)
   ? null
   : runHeadlessAiSimulation({
     mode,
