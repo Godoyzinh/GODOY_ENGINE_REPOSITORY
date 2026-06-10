@@ -255,7 +255,7 @@ export function createRunSummary(snapshot = {}) {
     recoveryCount: Number(snapshot.hardRecoveryCount ?? 0),
     blockedActions,
     hardRecoveryMisuseCount: snapshot.hardRecoveryMisuseDetected ? 1 : 0,
-    movementPingPongDetected: Boolean(snapshot.neuralAgent?.lastRewardReason?.toLowerCase?.().includes('ping-pong')),
+    movementPingPongDetected: Boolean(snapshot.neuralAgent?.lastRewardReason?.toLowerCase?.()?.includes('ping-pong')),
     trainingContaminated: Boolean(snapshot.neuralEvolution?.trainingContaminated),
     fitnessValid: snapshot.neuralEvolution?.fitnessValid !== false,
     failures: (snapshot.failures ?? []).map((failure) => failure.code).slice(0, 8),
