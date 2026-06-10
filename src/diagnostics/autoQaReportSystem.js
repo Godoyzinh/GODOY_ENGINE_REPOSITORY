@@ -854,6 +854,14 @@ function sanitizeNeuralEvolutionSnapshot(neuralEvolution = null) {
       selectedAction: agent.selectedAction ?? null,
       trainingContaminated: Boolean(agent.trainingContaminated),
       fitnessValid: agent.fitnessValid !== false,
+      actionHistory: sanitizeNumberRecord(agent.actionHistory),
+      sensorHistory: (agent.sensorHistory ?? []).slice(0, 16).map((sensor) => ({
+        names: Array.isArray(sensor?.names)
+          ? sensor.names.slice(0, 32).map((name) => String(name))
+          : [],
+        values: sanitizeNumberRecord(sensor?.values),
+        nearestTarget: sanitizeResourceTarget(sensor?.nearestTarget),
+      })),
     })),
   };
 }
