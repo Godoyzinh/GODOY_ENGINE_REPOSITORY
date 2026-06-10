@@ -1,5 +1,20 @@
 # Changelog
 
+## Unified Survival Neural Evolution
+
+### Added
+
+- Autonomous survival modes now expose neural evolution metadata so Quick, Standard, and Evolution runs can evaluate or train neural-assisted local behavior.
+- Neural population training now records per-agent episode results, fitness, best goal reached, wood progress, deaths, blocked actions, sensor history, and action history.
+- QA reports now include `neuralEvolution` with champion comparison, baseline comparison, fitness validity, contamination state, and recommended next training target.
+- Feedback UI now includes a Neural Evolution section with quick/standard/evolution run buttons, population controls, mutation settings, champion reset/export/import, stop training, and optional Visual Clone Arena metadata.
+- Added `npm run smoke:neural-population` for population, champion persistence, manual-input contamination, quick champion evaluation, and blocked target safety coverage.
+
+### Changed
+
+- `npm run train:neural` now accepts survival modes such as `--mode=quick`, `--mode=standard`, and `--mode=evolution` instead of only running the standalone neural-train path.
+- Manual input during neural training now contaminates the episode, invalidates fitness, and prevents champion saving.
+
 ## Neural Survival Agent Foundation
 
 ### Added

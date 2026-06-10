@@ -178,6 +178,7 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
   const blockedGoals = simulationSnapshot.blockedGoals ?? [];
   const blockedPlacementReasons = simulationSnapshot.blockedPlacementReasons ?? [];
   const terrainDeathContext = simulationSnapshot.terrainDeathContext ?? null;
+  const neuralEvolution = simulationSnapshot.neuralEvolution ?? null;
   const isHeadlessSimulation = runtimeSnapshot.simulationAdapter?.type === 'headless';
   const miningRatePerMinute = calculateActionRatePerMinute({
     count: simulationSnapshot.actionCounts?.mine,
@@ -317,6 +318,17 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
       title: 'Stop autonomous activity after auto-test completion',
       summary: 'Gameplay events or deaths occurred after the autonomous test completed.',
       evidence: `Post-completion deaths: ${simulationSnapshot.postCompletionDeaths ?? 0}; last death: ${JSON.stringify(simulationSnapshot.terrainDeathContext ?? null)}.`,
+    });
+  }
+
+  if (neuralEvolution?.trainingContaminated || neuralEvolution?.fitnessValid === false) {
+    issues.push({
+      code: 'neural-training-contaminated',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Separate manual input from neural training',
+      summary: 'Manual player input or invalid episode state contaminated neural fitness scoring.',
+      evidence: `trainingContaminated: ${Boolean(neuralEvolution.trainingContaminated)}; fitnessValid: ${Boolean(neuralEvolution.fitnessValid)}.`,
     });
   }
 
@@ -681,6 +693,7 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     failedActions,
     recoveryActions,
     neuralAgent: sanitizeNeuralAgentSnapshot(simulationSnapshot.neuralAgent),
+    neuralEvolution: sanitizeNeuralEvolutionSnapshot(simulationSnapshot.neuralEvolution),
     resourceScanResults,
     biomeStats: sanitizeBiomeStats(simulationSnapshot.biomeStats),
     discoveredStructures: sanitizeDiscoveredStructures(simulationSnapshot.discoveredStructures),
@@ -791,6 +804,57 @@ function sanitizeNeuralAgentSnapshot(neuralAgent = null) {
     neuralDecisionReason: neuralAgent.neuralDecisionReason ?? null,
     neuralTrainingMode: Boolean(neuralAgent.neuralTrainingMode),
     lastRewardReason: neuralAgent.lastRewardReason ?? null,
+  };
+}
+
+function sanitizeNeuralEvolutionSnapshot(neuralEvolution = null) {
+  if (!neuralEvolution) {
+    return null;
+  }
+
+  return {
+    enabled: Boolean(neuralEvolution.enabled),
+    mode: neuralEvolution.mode ?? 'quick',
+    trainingActive: Boolean(neuralEvolution.trainingActive),
+    populationSize: Number(neuralEvolution.populationSize ?? 0),
+    generationsCompleted: Number(neuralEvolution.generationsCompleted ?? 0),
+    currentGeneration: Number(neuralEvolution.currentGeneration ?? 0),
+    bestFitness: Number(neuralEvolution.bestFitness ?? 0),
+    averageFitness: Number(neuralEvolution.averageFitness ?? 0),
+    championFitness: Number(neuralEvolution.championFitness ?? 0),
+    championImproved: Boolean(neuralEvolution.championImproved),
+    bestAgentId: neuralEvolution.bestAgentId ?? null,
+    bestGoalReached: neuralEvolution.bestGoalReached ?? 'none',
+    woodCollectedByBest: Number(neuralEvolution.woodCollectedByBest ?? 0),
+    deathsByBest: Number(neuralEvolution.deathsByBest ?? 0),
+    blockedActionsByBest: Number(neuralEvolution.blockedActionsByBest ?? 0),
+    hardRecoveryMisuseCount: Number(neuralEvolution.hardRecoveryMisuseCount ?? 0),
+    movementPingPongDetected: Boolean(neuralEvolution.movementPingPongDetected),
+    trainingContaminated: Boolean(neuralEvolution.trainingContaminated),
+    fitnessValid: neuralEvolution.fitnessValid !== false,
+    championSaved: Boolean(neuralEvolution.championSaved),
+    plannerOnlyFitness: Number(neuralEvolution.plannerOnlyFitness ?? 0),
+    championEpisodeFitness: Number(neuralEvolution.championEpisodeFitness ?? 0),
+    neuralAssistedFitness: Number(neuralEvolution.neuralAssistedFitness ?? 0),
+    didNeuralImprove: Boolean(neuralEvolution.didNeuralImprove),
+    didChampionBeatPrevious: Boolean(neuralEvolution.didChampionBeatPrevious),
+    strategyImproved: neuralEvolution.strategyImproved ?? 'none',
+    failedStrategy: neuralEvolution.failedStrategy ?? null,
+    recommendedNextTrainingTarget: neuralEvolution.recommendedNextTrainingTarget ?? null,
+    agentResults: (neuralEvolution.agentResults ?? []).slice(0, 16).map((agent) => ({
+      agentId: agent.agentId ?? null,
+      agentLabel: agent.agentLabel ?? null,
+      generation: Number(agent.generation ?? 0),
+      fitness: Number(agent.fitness ?? 0),
+      progressTier: agent.progressTier ?? 'starter',
+      bestGoalReached: agent.bestGoalReached ?? 'none',
+      woodCollected: Number(agent.woodCollected ?? 0),
+      deaths: Number(agent.deaths ?? 0),
+      blockedCount: Number(agent.blockedCount ?? 0),
+      selectedAction: agent.selectedAction ?? null,
+      trainingContaminated: Boolean(agent.trainingContaminated),
+      fitnessValid: agent.fitnessValid !== false,
+    })),
   };
 }
 

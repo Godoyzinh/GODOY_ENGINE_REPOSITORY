@@ -12,6 +12,7 @@ Run these before tagging an Alpha build.
 - `npm run smoke:ai-director` validates telemetry, local QA reports, and AI task generation.
 - `npm run smoke:autoplaytest` validates autonomous bot simulation, goal planning, and report export shape.
 - `npm run smoke:neural-ai` validates neural network math, mutation, serialization, neural fitness, recovery safety, and champion training.
+- `npm run smoke:neural-population` validates multi-agent neural evolution, champion persistence, manual-input contamination, quick champion evaluation, blocked target safety, and best-agent selection.
 - `npm run smoke:settings` validates settings normalization and persistence.
 - `npm run smoke:camera` validates camera-relative movement, paused input, and vertical snap protection.
 - `npm run smoke:visual` validates sky, ambient particles, feedback particles, and procedural audio hooks.
@@ -32,7 +33,7 @@ Run these before tagging an Alpha build.
 - Feedback opens a compact AI Session Report panel.
 - Feedback report generation shows issue/task counts and keeps reports local until copied or downloaded.
 - Run Auto Test starts an autonomous playtest, shows the current AI goal/subgoal/reason/progress/target, and produces an AI Director report when complete.
-- Run Neural Training starts a neural-assisted autonomous episode and shows generation, fitness, selected action, and decision reason.
+- Neural Evolution controls start quick, standard, evolution, population training, optional clone-arena metadata, stop training, champion reset/export/import, and show live generation/fitness/action/sensor stats.
 - Join Multiplayer reports that the dedicated server is offline when `npm run dedicated:server` is not running.
 - Join Multiplayer reports a clear configuration message when a public client lacks `VITE_GODOY_WS_URL`.
 
@@ -69,8 +70,12 @@ Run these before tagging an Alpha build.
 - Reports include starter false-completion fields: `falseCompletionDetected`, `earlyAbortReason`, `woodProgressBy90s`, `craftPlanksBlockedByMissingWood`, and `hardRecoveryMisuseDetected`.
 - Reports include post-completion cleanup fields: `postCompletionEventsDetected`, `postCompletionDeaths`, plus terrain death `velocityY`, `fallDistance`, `healthBefore`, and `healthAfter` when available.
 - Reports include `neuralAgent` when neural assistance is enabled: generation, champion/current fitness, population size, mutation rate, selected action, action scores, sensor snapshot, decision reason, and training mode.
-- `npm run train:neural -- --generations=10 --population=32 --duration=60` runs headless population training and writes the local champion brain to `data/AI_NEURAL_CHAMPION.json`.
-- `npm run simulate:ai -- --mode=neural-train --duration=60 --neural` runs a neural-assisted 60 second autonomous episode without allowing neural control to trigger hard recovery.
+- Reports include `neuralEvolution` when neural assistance is enabled: mode, training state, population size, generations, best/average/champion fitness, champion improvement, best agent, wood/death/blocked counts, contamination, fitness validity, champion save status, planner/champion/neural comparison, and recommended next target.
+- `npm run train:neural -- --mode=quick --generations=10 --population=32 --duration=60` runs quick headless population training and writes the local champion brain to `data/AI_NEURAL_CHAMPION.json`.
+- `npm run train:neural -- --mode=standard --generations=5 --population=16 --duration=300` runs standard neural population training.
+- `npm run train:neural -- --mode=evolution --generations=3 --population=8 --duration=1800` runs long-form evolution training.
+- `npm run simulate:ai -- --duration=60 --neural` runs a neural-assisted 60 second quick survival episode without allowing neural control to trigger hard recovery.
+- Manual input during neural training must set `trainingContaminated = true`, `fitnessValid = false`, and prevent champion saving.
 - Quick smoke should complete early survival goals and continue pursuing the next progression goal.
 - Quick smoke should use `hardRecoveryCount = 0` unless a physical invalid state is injected.
 - If mining and wood are still zero after 90 seconds, autonomous simulation must abort as failed with a clear starter progression reason.

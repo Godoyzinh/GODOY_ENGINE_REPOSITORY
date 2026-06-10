@@ -15,6 +15,7 @@
     "smoke:ai-director": "node scripts/smokeAiDirector.mjs",
     "smoke:autoplaytest": "node scripts/smokeAutonomousPlaytest.mjs",
     "smoke:neural-ai": "node scripts/smokeNeuralAi.mjs",
+    "smoke:neural-population": "node scripts/smokeNeuralPopulation.mjs",
     "smoke:settings": "node scripts/smokeSettings.mjs",
     "smoke:camera": "node scripts/smokeCameraCollision.mjs",
     "smoke:visual": "node scripts/smokeVisualFeel.mjs",
