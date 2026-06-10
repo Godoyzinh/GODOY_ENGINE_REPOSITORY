@@ -13,6 +13,7 @@ export class FeedbackUI {
     getAiMemorySnapshot = null,
     onRunAutoTest = null,
     onRunNeuralTraining = null,
+    onStopAutoTest = null,
     runtimeConfig = null,
     onUiAction = null,
   }) {
@@ -22,6 +23,7 @@ export class FeedbackUI {
     this.getAiMemorySnapshot = getAiMemorySnapshot;
     this.onRunAutoTest = onRunAutoTest;
     this.onRunNeuralTraining = onRunNeuralTraining;
+    this.onStopAutoTest = onStopAutoTest;
     this.runtimeConfig = runtimeConfig;
     this.onUiAction = onUiAction;
     this.isOpen = false;
@@ -29,6 +31,13 @@ export class FeedbackUI {
     this.autoTestSnapshot = getAutoTestSnapshot?.() ?? null;
     this.selectedAutoTestMode = 'quick';
     this.selectedInventoryProfile = DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID;
+    this.neuralPopulationSize = 8;
+    this.neuralGenerations = 2;
+    this.neuralEpisodeDuration = 60;
+    this.neuralMutationRate = 0.08;
+    this.neuralUseChampion = true;
+    this.neuralShowClones = false;
+    this.neuralHeadlessMode = true;
     this.statusMessage = 'Reports stay local until you copy or download them.';
     this.element = document.createElement('div');
     this.element.className = 'feedback-ui';
@@ -124,9 +133,65 @@ export class FeedbackUI {
         <button type="button" data-action="run-auto-test" ${isRunning ? 'disabled' : ''}>
           ${isRunning ? 'Running Auto Test' : 'Run Auto Test'}
         </button>
-        <button type="button" data-action="run-neural-training" ${isRunning ? 'disabled' : ''}>
-          Run Neural Training
-        </button>
+        ${this.renderNeuralEvolutionControls(snapshot?.neuralEvolution, isRunning)}
+      </div>
+    `;
+  }
+
+  renderNeuralEvolutionControls(neuralEvolution, isRunning) {
+    const disabled = isRunning ? 'disabled' : '';
+
+    return `
+      <div class="feedback-ui__ai-plan" aria-label="Neural evolution controls">
+        <div class="feedback-ui__ai-plan-title">Neural Evolution</div>
+        ${this.renderAiPlanRow('Generation', neuralEvolution?.currentGeneration ?? 0)}
+        ${this.renderAiPlanRow('Best Fitness', neuralEvolution?.bestFitness ?? 0)}
+        ${this.renderAiPlanRow('Average Fitness', neuralEvolution?.averageFitness ?? 0)}
+        ${this.renderAiPlanRow('Champion Fitness', neuralEvolution?.championFitness ?? 0)}
+        ${this.renderAiPlanRow('Best Goal', neuralEvolution?.bestGoalReached ?? 'none')}
+        ${this.renderAiPlanRow('Wood', neuralEvolution?.woodCollectedByBest ?? 0)}
+        ${this.renderAiPlanRow('Deaths', neuralEvolution?.deathsByBest ?? 0)}
+        ${this.renderAiPlanRow('Blocked', neuralEvolution?.blockedActionsByBest ?? 0)}
+        <div class="feedback-ui__auto-test-row">
+          <span>Population</span>
+          <input data-action="neural-population" type="number" min="1" max="128" value="${this.neuralPopulationSize}" ${disabled}>
+        </div>
+        <div class="feedback-ui__auto-test-row">
+          <span>Generations</span>
+          <input data-action="neural-generations" type="number" min="1" max="50" value="${this.neuralGenerations}" ${disabled}>
+        </div>
+        <div class="feedback-ui__auto-test-row">
+          <span>Episode</span>
+          <input data-action="neural-duration" type="number" min="10" max="1800" value="${this.neuralEpisodeDuration}" ${disabled}>
+        </div>
+        <div class="feedback-ui__auto-test-row">
+          <span>Mutation</span>
+          <input data-action="neural-mutation" type="number" min="0" max="1" step="0.01" value="${this.neuralMutationRate}" ${disabled}>
+        </div>
+        <label class="feedback-ui__note">
+          <input data-action="neural-use-champion" type="checkbox" ${this.neuralUseChampion ? 'checked' : ''} ${disabled}>
+          Use champion
+        </label>
+        <label class="feedback-ui__note">
+          <input data-action="neural-show-clones" type="checkbox" ${this.neuralShowClones ? 'checked' : ''} ${disabled}>
+          Visual Clone Arena
+        </label>
+        <label class="feedback-ui__note">
+          <input data-action="neural-headless" type="checkbox" ${this.neuralHeadlessMode ? 'checked' : ''} ${disabled}>
+          Headless mode
+        </label>
+        <div class="feedback-ui__actions">
+          <button type="button" data-action="run-neural-quick" ${disabled}>Run Neural Quick 60s</button>
+          <button type="button" data-action="run-neural-standard" ${disabled}>Run Neural Standard 5m</button>
+          <button type="button" data-action="run-neural-evolution" ${disabled}>Run Neural Evolution 30m</button>
+          <button type="button" data-action="run-neural-training" ${disabled}>Train Population</button>
+          <button type="button" data-action="run-neural-arena" ${disabled}>Visual Clone Arena</button>
+          <button type="button" data-action="stop-neural-training" ${isRunning ? '' : 'disabled'}>Stop Training</button>
+          <button type="button" data-action="save-neural-champion">Save Champion</button>
+          <button type="button" data-action="reset-neural-champion">Reset Champion</button>
+          <button type="button" data-action="export-neural-champion">Export Champion JSON</button>
+          <button type="button" data-action="import-neural-champion">Import Champion JSON</button>
+        </div>
       </div>
     `;
   }
@@ -258,11 +323,65 @@ export class FeedbackUI {
     this.element.querySelector('[data-action="auto-test-inventory"]')?.addEventListener('change', (event) => {
       this.selectedInventoryProfile = event.target.value;
     });
+    this.bindNeuralControls();
     this.element.querySelector('[data-action="run-auto-test"]')?.addEventListener('click', () => {
       this.runAutoTest();
     });
     this.element.querySelector('[data-action="run-neural-training"]')?.addEventListener('click', () => {
-      this.runNeuralTraining();
+      this.runNeuralTraining({ modeId: this.selectedAutoTestMode, trainPopulation: true });
+    });
+    this.element.querySelector('[data-action="run-neural-quick"]')?.addEventListener('click', () => {
+      this.runNeuralTraining({ modeId: 'quick', episodeDuration: 60 });
+    });
+    this.element.querySelector('[data-action="run-neural-standard"]')?.addEventListener('click', () => {
+      this.runNeuralTraining({ modeId: 'standard', episodeDuration: 5 * 60 });
+    });
+    this.element.querySelector('[data-action="run-neural-evolution"]')?.addEventListener('click', () => {
+      this.runNeuralTraining({ modeId: 'evolution', episodeDuration: 30 * 60 });
+    });
+    this.element.querySelector('[data-action="run-neural-arena"]')?.addEventListener('click', () => {
+      this.neuralShowClones = true;
+      this.runNeuralTraining({ modeId: this.selectedAutoTestMode, showClones: true });
+    });
+    this.element.querySelector('[data-action="stop-neural-training"]')?.addEventListener('click', () => {
+      this.stopNeuralTraining();
+    });
+    this.element.querySelector('[data-action="save-neural-champion"]')?.addEventListener('click', () => {
+      this.statusMessage = 'Champion is saved automatically after valid neural runs.';
+      this.render();
+    });
+    this.element.querySelector('[data-action="reset-neural-champion"]')?.addEventListener('click', () => {
+      this.resetNeuralChampion();
+    });
+    this.element.querySelector('[data-action="export-neural-champion"]')?.addEventListener('click', () => {
+      this.exportNeuralChampion();
+    });
+    this.element.querySelector('[data-action="import-neural-champion"]')?.addEventListener('click', () => {
+      this.importNeuralChampion();
+    });
+  }
+
+  bindNeuralControls() {
+    this.element.querySelector('[data-action="neural-population"]')?.addEventListener('change', (event) => {
+      this.neuralPopulationSize = clampInteger(event.target.value, 1, 128, this.neuralPopulationSize);
+    });
+    this.element.querySelector('[data-action="neural-generations"]')?.addEventListener('change', (event) => {
+      this.neuralGenerations = clampInteger(event.target.value, 1, 50, this.neuralGenerations);
+    });
+    this.element.querySelector('[data-action="neural-duration"]')?.addEventListener('change', (event) => {
+      this.neuralEpisodeDuration = clampInteger(event.target.value, 10, 1800, this.neuralEpisodeDuration);
+    });
+    this.element.querySelector('[data-action="neural-mutation"]')?.addEventListener('change', (event) => {
+      this.neuralMutationRate = clampNumber(event.target.value, 0, 1, this.neuralMutationRate);
+    });
+    this.element.querySelector('[data-action="neural-use-champion"]')?.addEventListener('change', (event) => {
+      this.neuralUseChampion = Boolean(event.target.checked);
+    });
+    this.element.querySelector('[data-action="neural-show-clones"]')?.addEventListener('change', (event) => {
+      this.neuralShowClones = Boolean(event.target.checked);
+    });
+    this.element.querySelector('[data-action="neural-headless"]')?.addEventListener('change', (event) => {
+      this.neuralHeadlessMode = Boolean(event.target.checked);
     });
   }
 
@@ -295,20 +414,91 @@ export class FeedbackUI {
     this.render();
   }
 
-  runNeuralTraining() {
+  runNeuralTraining({ modeId = 'quick', episodeDuration = this.neuralEpisodeDuration, trainPopulation = false, showClones = this.neuralShowClones } = {}) {
     const result = this.onRunNeuralTraining?.({
+      modeId,
       inventoryProfileId: this.selectedInventoryProfile,
+      populationSize: this.neuralPopulationSize,
+      generations: this.neuralGenerations,
+      episodeDuration,
+      mutationRate: this.neuralMutationRate,
+      useChampion: this.neuralUseChampion,
+      trainPopulation,
+      showClones,
+      headlessMode: this.neuralHeadlessMode,
     }) ?? this.onRunAutoTest?.({
-      modeId: 'neural-train',
+      modeId,
       inventoryProfileId: this.selectedInventoryProfile,
       neuralAgentEnabled: true,
       neuralTrainingMode: true,
+      neuralTrainingMetadata: {
+        mode: modeId,
+        populationSize: this.neuralPopulationSize,
+        generations: this.neuralGenerations,
+        episodeDuration,
+        mutationRate: this.neuralMutationRate,
+        useChampion: this.neuralUseChampion,
+        trainPopulation,
+        showClones,
+        headlessMode: this.neuralHeadlessMode,
+      },
     });
 
-    this.selectedAutoTestMode = 'neural-train';
+    this.selectedAutoTestMode = modeId;
     this.autoTestSnapshot = result?.snapshot ?? this.getAutoTestSnapshot?.() ?? this.autoTestSnapshot;
     this.statusMessage = result?.message ?? 'Neural training started.';
     this.onUiAction?.('neural-training-run');
+    this.render();
+  }
+
+  stopNeuralTraining() {
+    const snapshot = this.onStopAutoTest?.('neural-training-stopped') ?? null;
+
+    this.autoTestSnapshot = snapshot ?? this.getAutoTestSnapshot?.() ?? this.autoTestSnapshot;
+    this.statusMessage = 'Neural training stopped.';
+    this.onUiAction?.('neural-training-stop');
+    this.render();
+  }
+
+  resetNeuralChampion() {
+    globalThis.localStorage?.removeItem?.('godoy:ai-neural-champion');
+    this.statusMessage = 'Neural champion reset locally.';
+    this.onUiAction?.('neural-champion-reset');
+    this.render();
+  }
+
+  async exportNeuralChampion() {
+    const championJson = globalThis.localStorage?.getItem?.('godoy:ai-neural-champion') ?? '';
+
+    if (!championJson) {
+      this.statusMessage = 'No local neural champion found.';
+      this.render();
+      return;
+    }
+
+    const wasCopied = await copyText(championJson);
+
+    this.statusMessage = wasCopied ? 'Champion JSON copied to clipboard.' : 'Clipboard unavailable for champion export.';
+    this.onUiAction?.('neural-champion-export');
+    this.render();
+  }
+
+  importNeuralChampion() {
+    const championJson = globalThis.window?.prompt?.('Paste champion JSON') ?? '';
+
+    if (!championJson) {
+      return;
+    }
+
+    try {
+      JSON.parse(championJson);
+      globalThis.localStorage?.setItem?.('godoy:ai-neural-champion', championJson);
+      this.statusMessage = 'Champion JSON imported locally.';
+      this.onUiAction?.('neural-champion-import');
+    } catch {
+      this.statusMessage = 'Champion JSON import failed.';
+    }
+
     this.render();
   }
 
@@ -418,4 +608,24 @@ function formatModeOption(mode) {
   }
 
   return `${mode.label} ${durationMinutes}m`;
+}
+
+function clampInteger(value, minimum, maximum, fallback) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(minimum, Math.min(maximum, Math.floor(parsed)));
+}
+
+function clampNumber(value, minimum, maximum, fallback) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(minimum, Math.min(maximum, parsed));
 }

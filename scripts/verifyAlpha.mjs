@@ -8,6 +8,7 @@ const checks = [
   ['AI director smoke', ['run', 'smoke:ai-director']],
   ['autonomous playtest smoke', ['run', 'smoke:autoplaytest']],
   ['neural AI smoke', ['run', 'smoke:neural-ai']],
+  ['neural population smoke', ['run', 'smoke:neural-population']],
   ['settings smoke', ['run', 'smoke:settings']],
   ['camera/collision smoke', ['run', 'smoke:camera']],
   ['visual/game-feel smoke', ['run', 'smoke:visual']],

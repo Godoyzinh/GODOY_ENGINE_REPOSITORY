@@ -14,9 +14,24 @@ import {
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DEFAULT_AI_MEMORY_PATH = join(PROJECT_ROOT, 'data', 'AI_MEMORY.json');
+const DEFAULT_NEURAL_CHAMPION_PATH = join(PROJECT_ROOT, 'data', 'AI_NEURAL_CHAMPION.json');
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const options = normalizeSimulationOptions(parseArgs(process.argv.slice(2)));
+  if (options.neuralAgentEnabled && options.useChampion !== false && !options.neuralGenome) {
+    options.neuralGenome = loadChampionGenome(options.championPath ?? DEFAULT_NEURAL_CHAMPION_PATH);
+  }
+  if (options.neuralAgentEnabled) {
+    options.neuralTrainingMetadata = {
+      mode: options.mode,
+      populationSize: Number(options.populationSize ?? 1),
+      generationsCompleted: 0,
+      generation: 0,
+      useChampion: options.useChampion !== false,
+      trainNeural: options.trainNeural !== false,
+      headlessMode: true,
+    };
+  }
   const aiMemorySystem = options.useMemory === false
     ? null
     : new AiMemorySystem({
@@ -67,6 +82,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       learnedKnowledge: result.snapshot.aiMemory?.learnedKnowledge?.slice(-3) ?? [],
     },
     neuralAgent: result.snapshot.neuralAgent ?? null,
+    neuralEvolution: result.snapshot.neuralEvolution ?? null,
     evolution: result.snapshot.evolution ?? null,
     failures: result.snapshot.failureCounts,
     issues: result.report.issues.length,
@@ -227,15 +243,31 @@ function parseArgs(args) {
       options.seed = Number(arg.slice('--seed='.length));
     } else if (arg.startsWith('--runs=')) {
       options.runs = Number(arg.slice('--runs='.length));
+    } else if (arg.startsWith('--population=')) {
+      options.populationSize = Number(arg.slice('--population='.length));
+    } else if (arg.startsWith('--generations=')) {
+      options.generations = Number(arg.slice('--generations='.length));
+    } else if (arg.startsWith('--episode-duration=')) {
+      options.episodeDuration = Number(arg.slice('--episode-duration='.length));
     } else if (arg.startsWith('--inventory=')) {
       options.inventoryProfileId = arg.slice('--inventory='.length);
     } else if (arg.startsWith('--output=')) {
       options.outputDir = arg.slice('--output='.length);
     } else if (arg.startsWith('--memory=')) {
       options.memoryPath = arg.slice('--memory='.length);
+    } else if (arg.startsWith('--champion=')) {
+      options.championPath = arg.slice('--champion='.length);
     } else if (arg === '--neural') {
       options.neuralAgentEnabled = true;
       options.neuralTrainingMode = true;
+    } else if (arg === '--train-neural') {
+      options.neuralAgentEnabled = true;
+      options.neuralTrainingMode = true;
+      options.trainNeural = true;
+    } else if (arg === '--no-train-neural') {
+      options.trainNeural = false;
+    } else if (arg === '--no-champion') {
+      options.useChampion = false;
     } else if (arg === '--no-memory') {
       options.useMemory = false;
     } else if (arg === '--no-write') {
@@ -274,6 +306,17 @@ function createFileStorage(filePath) {
       writeFileSync(filePath, '', 'utf8');
     },
   };
+}
+
+function loadChampionGenome(filePath) {
+  try {
+    const rawValue = readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(rawValue);
+
+    return parsed?.champion ?? parsed ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function createMemoryStorage() {

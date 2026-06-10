@@ -3,7 +3,12 @@ import { SurvivalGoalPlanner } from './survivalGoalPlanner.js';
 import { NeuralGenome } from '../ai/neural/neuralGenome.js';
 import { NeuralActionMapper } from '../ai/neural/neuralActionMapper.js';
 import { NeuralSensorSystem } from '../ai/neural/neuralSensorSystem.js';
-import { AI_NEURAL_CHAMPION_STORAGE_KEY } from '../ai/neural/neuralTrainer.js';
+import {
+  AI_NEURAL_CHAMPION_STORAGE_KEY,
+  createAgentEpisodeResult,
+  createNeuralEvolutionSnapshot,
+  createRunSummary,
+} from '../ai/neural/neuralTrainer.js';
 import {
   DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
   normalizeAutonomousInventoryProfileId,
@@ -168,6 +173,10 @@ export class AutonomousPlaytestSimulation {
     this.neuralLastSensorSnapshot = null;
     this.neuralPreviousTargetDistance = null;
     this.neuralLastRewardReason = null;
+    this.neuralTrainingContaminated = false;
+    this.neuralFitnessValid = true;
+    this.neuralChampionSaved = false;
+    this.manualInputEvents = [];
   }
 
   start({
@@ -195,7 +204,11 @@ export class AutonomousPlaytestSimulation {
     this.neuralTrainingMode = Boolean(neuralTrainingMode || this.mode.id === 'neural-train');
     this.neuralTrainingMetadata = neuralTrainingMetadata ?? this.neuralTrainingMetadata;
     if (this.neuralAgentEnabled && !this.neuralGenome) {
-      this.neuralGenome = this.loadBrowserNeuralChampion() ?? NeuralGenome.random();
+      const shouldUseChampion = this.neuralTrainingMetadata?.useChampion !== false;
+
+      this.neuralGenome = shouldUseChampion
+        ? this.loadBrowserNeuralChampion() ?? NeuralGenome.random()
+        : NeuralGenome.random();
     }
     this.startingInventoryProfileId = normalizeAutonomousInventoryProfileId(inventoryProfileId);
     this.elapsedSeconds = 0;
@@ -276,6 +289,10 @@ export class AutonomousPlaytestSimulation {
     this.neuralLastSensorSnapshot = null;
     this.neuralPreviousTargetDistance = null;
     this.neuralLastRewardReason = null;
+    this.neuralTrainingContaminated = false;
+    this.neuralFitnessValid = true;
+    this.neuralChampionSaved = false;
+    this.manualInputEvents = [];
     this.status = 'running';
     this.telemetrySystem.recordGameplayEvent('auto-test-start', {
       mode: this.mode.id,
@@ -330,6 +347,16 @@ export class AutonomousPlaytestSimulation {
     this.saveRunningMemorySnapshotIfNeeded();
     this.updateActions(safeDeltaTime);
     this.detectFailures();
+
+    if (this.shouldAbortNeuralEpisode()) {
+      const report = this.finish('neural-stop-condition');
+
+      return {
+        completed: true,
+        snapshot: this.getSnapshot(),
+        report,
+      };
+    }
 
     if (this.detectStarterProgressAbort()) {
       const report = this.finish('starter-progress-aborted');
@@ -1112,6 +1139,25 @@ export class AutonomousPlaytestSimulation {
     this.addNeuralReward(value, reason);
   }
 
+  recordManualInputContamination(inputCode = 'unknown') {
+    if (!this.neuralTrainingMode || this.status !== 'running') {
+      return;
+    }
+
+    this.neuralTrainingContaminated = true;
+    this.neuralFitnessValid = false;
+    this.manualInputEvents.push({
+      inputCode,
+      atSeconds: round(this.elapsedSeconds, 2),
+    });
+    this.manualInputEvents = this.manualInputEvents.slice(-12);
+    this.recordFailure(
+      'neural-training-contaminated',
+      `Manual input "${inputCode}" was detected during neural training; fitness is invalid.`,
+      'medium',
+    );
+  }
+
   handleBlockedPlannerPlan(plan, context) {
     if (plan.goalId !== 'craftPlanks') {
       return;
@@ -1480,6 +1526,11 @@ export class AutonomousPlaytestSimulation {
       summary: `AI repeated "${plan.action}" more than 10 times without measurable progress.`,
       atSeconds: this.elapsedSeconds,
     });
+
+    if (this.neuralTrainingMode) {
+      this.earlyAbortReason = `Neural episode stopped because ${plan.action} repeated more than 10 times without progress.`;
+      this.neuralFitnessValid = false;
+    }
   }
 
   recordCraftedItem({ plan, result, inventoryDelta }) {
@@ -1757,7 +1808,9 @@ export class AutonomousPlaytestSimulation {
   }
 
   detectStarterProgressAbort() {
-    if (this.earlyAbortReason || this.elapsedSeconds < STARTER_PROGRESS_ABORT_SECONDS) {
+    const abortSeconds = this.neuralTrainingMode ? 60 : STARTER_PROGRESS_ABORT_SECONDS;
+
+    if (this.earlyAbortReason || this.elapsedSeconds < abortSeconds) {
       return false;
     }
 
@@ -1770,11 +1823,11 @@ export class AutonomousPlaytestSimulation {
     }
 
     this.falseCompletionDetected = true;
-    this.earlyAbortReason = 'No mining actions and no wood collected after 90 seconds of starter survival progression.';
-    this.recordFailure('starter-no-wood-progress-90s', this.earlyAbortReason, 'high');
+    this.earlyAbortReason = `No mining actions and no wood collected after ${abortSeconds} seconds of starter survival progression.`;
+    this.recordFailure(`starter-no-wood-progress-${abortSeconds}s`, this.earlyAbortReason, 'high');
     this.addNeuralReward(NEURAL_REWARDS.noWoodAfter90s, this.earlyAbortReason);
     this.goalPlanner.recordBottleneck({
-      code: 'starter-no-wood-progress-90s',
+      code: `starter-no-wood-progress-${abortSeconds}s`,
       goalId: 'gatherWood',
       goalName: 'Gather Wood',
       summary: this.earlyAbortReason,
@@ -1799,6 +1852,10 @@ export class AutonomousPlaytestSimulation {
       completedGoalCount: this.goalPlanner.getSnapshot().goalsCompleted.length,
       currentGoalId: this.goalPlanner.getSnapshot().currentGoalId,
     };
+  }
+
+  shouldAbortNeuralEpisode() {
+    return Boolean(this.neuralTrainingMode && this.earlyAbortReason);
   }
 
   detectFalseCompletionBeforeFinish(reason) {
@@ -2074,7 +2131,8 @@ export class AutonomousPlaytestSimulation {
     }
 
     simulationResult = this.getSnapshot();
-    this.persistBrowserNeuralChampionIfNeeded(simulationResult);
+    this.neuralChampionSaved = this.persistBrowserNeuralChampionIfNeeded(simulationResult);
+    simulationResult = this.getSnapshot();
     const finalRuntimeSnapshot = {
       ...this.adapter.getRuntimeSnapshot?.(),
       aiMemory: simulationResult.aiMemory,
@@ -2147,6 +2205,7 @@ export class AutonomousPlaytestSimulation {
       failedActions: this.failedActions.map((failedAction) => ({ ...failedAction })),
       recoveryActions: this.recoveryActions.map((recoveryAction) => ({ ...recoveryAction })),
       neuralAgent: this.getNeuralSnapshot(),
+      neuralEvolution: this.getNeuralEvolutionSnapshot(),
       resourceScanResults,
       biomeStats: this.adapter.getBiomeStatsSnapshot?.() ?? null,
       discoveredStructures: this.adapter.getDiscoveredStructuresSnapshot?.() ?? [],
@@ -2234,6 +2293,80 @@ export class AutonomousPlaytestSimulation {
       neuralDecisionReason: this.neuralLastDecision?.neuralDecisionReason ?? null,
       neuralTrainingMode: this.neuralTrainingMode,
       lastRewardReason: this.neuralLastRewardReason ?? null,
+      trainingContaminated: this.neuralTrainingContaminated,
+      fitnessValid: this.neuralFitnessValid,
+    };
+  }
+
+  getNeuralEvolutionSnapshot() {
+    const plannerSnapshot = this.goalPlanner.getSnapshot();
+    const shallowSnapshot = this.getShallowNeuralEpisodeSnapshot(plannerSnapshot);
+    const summary = createRunSummary({
+      ...shallowSnapshot,
+      neuralAgent: {
+        currentFitness: this.neuralFitness,
+        lastRewardReason: this.neuralLastRewardReason,
+      },
+      neuralEvolution: {
+        trainingContaminated: this.neuralTrainingContaminated,
+        fitnessValid: this.neuralFitnessValid,
+      },
+    });
+    const agent = createAgentEpisodeResult({
+      agentId: this.neuralTrainingMetadata?.agentId ?? 'visible-agent-1',
+      agentLabel: this.neuralTrainingMetadata?.agentLabel ?? 'Visible Agent 1',
+      generation: this.neuralTrainingMetadata?.generation ?? this.neuralGenome?.generation ?? 0,
+      genome: this.neuralGenome,
+      episodeResult: {
+        snapshot: shallowSnapshot,
+      },
+      summary,
+      fitness: this.neuralFitness,
+    });
+
+    return createNeuralEvolutionSnapshot({
+      enabled: this.neuralAgentEnabled,
+      mode: this.neuralTrainingMetadata?.mode ?? this.mode.id,
+      trainingActive: this.neuralTrainingMode && this.status === 'running',
+      populationSize: Number(this.neuralTrainingMetadata?.populationSize ?? (this.neuralAgentEnabled ? 1 : 0)),
+      generationsCompleted: Number(this.neuralTrainingMetadata?.generationsCompleted ?? 0),
+      currentGeneration: Number(this.neuralTrainingMetadata?.generation ?? this.neuralGenome?.generation ?? 0),
+      mutationRate: Number(this.neuralGenome?.mutationRate ?? 0.08),
+      agentResults: this.neuralAgentEnabled ? [agent] : [],
+      championFitness: Number(this.neuralGenome?.fitness ?? 0),
+      previousChampionFitness: Number(this.neuralTrainingMetadata?.previousChampionFitness ?? Number.NEGATIVE_INFINITY),
+      championSaved: this.neuralChampionSaved,
+      trainingContaminated: this.neuralTrainingContaminated,
+      fitnessValid: this.neuralFitnessValid,
+    });
+  }
+
+  getShallowNeuralEpisodeSnapshot(plannerSnapshot = this.goalPlanner.getSnapshot()) {
+    const inventorySnapshot = this.inventorySnapshot ?? this.goalPlanner.getInventorySnapshot();
+
+    return {
+      status: this.status,
+      elapsedSeconds: round(this.elapsedSeconds, 2),
+      actionCounts: { ...this.actionCounts },
+      failureCounts: { ...this.failureCounts },
+      failedActions: this.failedActions.map((failedAction) => ({ ...failedAction })),
+      blockedGoals: createBlockedGoalsSnapshot(plannerSnapshot),
+      currentInventory: { ...(inventorySnapshot.current ?? {}) },
+      inventoryDelta: { ...(inventorySnapshot.delta ?? {}) },
+      hardRecoveryCount: this.hardRecoveryCount,
+      hardRecoveryMisuseDetected: this.hardRecoveryMisuseDetected,
+      neuralAgent: {
+        selectedAction: this.neuralLastDecision?.selectedAction ?? null,
+        sensorSnapshot: this.neuralLastSensorSnapshot
+          ? {
+            names: [...this.neuralLastSensorSnapshot.names],
+            values: { ...this.neuralLastSensorSnapshot.values },
+            nearestTarget: this.neuralLastSensorSnapshot.nearestTarget ? { ...this.neuralLastSensorSnapshot.nearestTarget } : null,
+          }
+          : null,
+        lastRewardReason: this.neuralLastRewardReason ?? null,
+      },
+      planner: plannerSnapshot,
     };
   }
 
@@ -2254,7 +2387,13 @@ export class AutonomousPlaytestSimulation {
   }
 
   persistBrowserNeuralChampionIfNeeded(simulationSnapshot) {
-    if (!this.neuralAgentEnabled || !this.neuralGenome || typeof localStorage === 'undefined') {
+    if (
+      !this.neuralAgentEnabled ||
+      !this.neuralGenome ||
+      this.neuralTrainingContaminated ||
+      !this.neuralFitnessValid ||
+      typeof localStorage === 'undefined'
+    ) {
       return false;
     }
 
@@ -2284,11 +2423,16 @@ export class AutonomousPlaytestSimulation {
 
       localStorage.setItem(AI_NEURAL_CHAMPION_STORAGE_KEY, JSON.stringify({
         schemaVersion: 1,
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         savedAt: new Date().toISOString(),
         generation: champion.generation,
         fitness: champion.fitness,
         mutationRate: champion.mutationRate,
+        trainingMode: this.neuralTrainingMetadata?.mode ?? this.mode.id,
         source: 'browser-autonomous-playtest',
+        bestSurvivalResult: champion.summary,
+        bestGoalReached: champion.summary?.bestGoalReached ?? 'none',
         bestRunSummary: champion.summary,
         champion: champion.serialize(),
       }));

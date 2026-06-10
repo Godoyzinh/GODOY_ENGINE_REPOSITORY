@@ -229,7 +229,8 @@ export class Engine {
       getAutoTestSnapshot: () => this.autonomousPlaytest.getSnapshot(),
       getAiMemorySnapshot: () => this.aiMemorySystem.getSnapshot(),
       onRunAutoTest: (options) => this.startAutonomousPlaytest(options),
-      onRunNeuralTraining: ({ inventoryProfileId }) => this.startNeuralTraining({ inventoryProfileId }),
+      onRunNeuralTraining: (options) => this.startNeuralTraining(options),
+      onStopAutoTest: (reason) => this.autonomousPlaytest.stop(reason),
       runtimeConfig: this.runtimeConfig,
       onUiAction: (action) => {
         this.telemetrySystem.recordGameplayEvent('feedback', { action });
@@ -300,6 +301,12 @@ export class Engine {
 
   handleKeyDown(event) {
     if (event.repeat) {
+      return;
+    }
+
+    if (this.autonomousPlaytest?.status === 'running' && this.autonomousPlaytest.neuralTrainingMode) {
+      this.autonomousPlaytest.recordManualInputContamination(event.code);
+      event.preventDefault();
       return;
     }
 
@@ -408,6 +415,7 @@ export class Engine {
 
   startAutonomousPlaytest({
     modeId = 'quick',
+    durationSeconds = null,
     inventoryProfileId = undefined,
     neuralAgentEnabled = false,
     neuralTrainingMode = false,
@@ -415,6 +423,7 @@ export class Engine {
   } = {}) {
     const result = this.autonomousPlaytest.start({
       modeId,
+      durationSeconds,
       inventoryProfileId,
       neuralAgentEnabled,
       neuralTrainingMode,
@@ -432,14 +441,35 @@ export class Engine {
     return result;
   }
 
-  startNeuralTraining({ inventoryProfileId = undefined } = {}) {
+  startNeuralTraining({
+    modeId = 'quick',
+    inventoryProfileId = undefined,
+    populationSize = 8,
+    generations = 1,
+    episodeDuration = null,
+    mutationRate = 0.08,
+    useChampion = true,
+    trainPopulation = false,
+    showClones = false,
+    headlessMode = false,
+  } = {}) {
     return this.startAutonomousPlaytest({
-      modeId: 'neural-train',
+      modeId,
+      durationSeconds: episodeDuration,
       inventoryProfileId,
       neuralAgentEnabled: true,
       neuralTrainingMode: true,
       neuralTrainingMetadata: {
-        populationSize: 32,
+        mode: modeId,
+        populationSize,
+        generations,
+        episodeDuration,
+        mutationRate,
+        useChampion,
+        trainPopulation,
+        showClones,
+        visualCloneArena: showClones,
+        headlessMode,
         source: 'feedback-ui',
       },
     });

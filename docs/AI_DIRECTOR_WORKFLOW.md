@@ -30,6 +30,8 @@ Run from the CLI:
 npm run simulate:ai
 npm run simulate:ai -- --mode=standard
 npm run simulate:ai -- --mode=stress
+npm run simulate:ai -- --duration=60 --neural
+npm run simulate:ai -- --mode=standard --duration=300 --neural
 npm run simulate:ai -- --inventory=empty
 npm run simulate:ai -- --inventory=survival-start
 npm run simulate:ai -- --inventory=debug-rich
@@ -44,6 +46,7 @@ Simulation modes:
 - Standard Test: 5 minutes.
 - Stress Test: 15 minutes.
 - Evolution Test: 30 minutes by default. The CLI splits this into multiple runs that reuse the same AI memory. A `--duration` of 1800 seconds or more automatically uses evolution mode when `--mode` is left as the default (`quick`).
+- Quick, Standard, and Evolution can run planner-only, neural-assisted champion evaluation, or neural training metadata with `--neural`.
 
 Starting inventory profiles:
 
@@ -154,14 +157,19 @@ AI-generated tasks are suggestions, not commands.
 
 ## Neural Training
 
-Use neural training only as an optional local control layer for autonomous playtests.
+Use neural training only as an optional local control layer for autonomous playtests. Survival goals remain planner-owned; each survival run is treated as an episode that can produce fitness, progress, and champion evidence.
 
 - `npm run smoke:neural-ai` verifies the neural network, mutation, serialization, fitness scoring, safety boundaries, and champion training.
-- `npm run train:neural -- --generations=10 --population=32 --duration=60` runs headless population training.
+- `npm run smoke:neural-population` verifies multi-agent population creation, champion save/load, manual-input contamination, quick champion evaluation, blocked target safety, and best-agent selection.
+- `npm run train:neural -- --mode=quick --generations=10 --population=32 --duration=60` runs headless population training.
+- `npm run train:neural -- --mode=standard --generations=5 --population=16 --duration=300` runs standard-length survival training.
+- `npm run train:neural -- --mode=evolution --generations=3 --population=8 --duration=1800` runs long-form survival training.
 - The CLI champion is saved locally to `data/AI_NEURAL_CHAMPION.json`; do not commit local champion data unless maintainers intentionally promote a fixture.
-- In-game Run Neural Training starts a neural-assisted `neural-train` episode for local inspection.
+- In-game Neural Evolution controls can start Quick, Standard, Evolution, or Train Population runs and can export/import/reset the local champion JSON.
 - The survival goal planner remains authoritative for high-level goals; neural output only biases local actions such as moving, turning, mining, collecting, exploring, jumping, or eating/recovering.
 - Neural control must never teleport the player, trigger hard recovery, bypass inventory/world validation, or continue a broken run forever.
+- Manual input during neural training marks `trainingContaminated = true`, sets `fitnessValid = false`, and blocks champion saving.
+- Reports include `neuralEvolution` with planner-only fitness, champion episode fitness, neural-assisted fitness, whether neural improved, whether the champion improved, best agent, best goal, wood collected, deaths, blocked actions, hard recovery misuse, ping-pong detection, and recommended next training target.
 
 ## Branch And PR Rules
 
