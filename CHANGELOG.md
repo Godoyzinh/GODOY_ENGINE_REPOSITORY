@@ -1,5 +1,20 @@
 # Changelog
 
+## Neural Evolution Champion Validation
+
+### Fixed
+
+- Failed neural candidates can no longer be saved or loaded as champions when fitness is non-positive, no wood was collected, no real goal progressed, the episode failed, or fitness was contaminated/invalid.
+- Neural survival validation now treats collected-and-consumed wood as real progress, so successful starter episodes are not invalidated by a low final wood balance.
+- Neural Gather Wood sensors now actively refresh reachable trunk targets before action selection, preventing `nearestTarget` from staying null when trunks are available.
+- Neural selected actions now record execution results and action counters, making reports distinguish logged decisions from state-changing actions.
+
+### Added
+
+- `bestCandidate` diagnostics for the best failed attempt, separate from a valid `champion`.
+- Report fields for champion validity/status, generation start/completion, population/agent evaluation counts, target sensor failure, selected action execution, neural action counts, neural mine attempts, neural explore steps, neural wood collected, and fitness invalid reasons.
+- Regression smoke coverage that verifies a failed population stores only `bestCandidate` and never persists it as `champion`.
+
 ## Unified Survival Neural Evolution
 
 ### Added

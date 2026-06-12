@@ -332,6 +332,28 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
     });
   }
 
+  if (neuralEvolution?.championSaved && neuralEvolution?.championValid === false) {
+    issues.push({
+      code: 'invalid-neural-champion-saved',
+      category: AI_TASK_CATEGORIES.bug,
+      severity: 'high',
+      title: 'Prevent failed neural candidates from becoming champion',
+      summary: 'A neural run reported championSaved while champion validation failed.',
+      evidence: `bestCandidate: ${JSON.stringify(neuralEvolution.bestCandidate ?? null)}; reason: ${neuralEvolution.bestCandidateFailureReason ?? 'unknown'}.`,
+    });
+  }
+
+  if (neuralEvolution?.targetSensorFailure || neuralEvolution?.nearestTargetWasNullTooLong) {
+    issues.push({
+      code: 'neural-wood-target-sensor-failure',
+      category: AI_TASK_CATEGORIES.gameplay,
+      severity: 'medium',
+      title: 'Fix neural Gather Wood target sensor',
+      summary: 'The neural agent spent too long without a reachable trunk target during Gather Wood.',
+      evidence: `nearestTargetWasNullTooLong: ${Boolean(neuralEvolution.nearestTargetWasNullTooLong)}; wood: ${neuralEvolution.neuralWoodCollected ?? 0}; action: ${JSON.stringify(neuralEvolution.selectedActionExecutionResult ?? null)}.`,
+    });
+  }
+
   if (Number(runtimeSnapshot.survival?.health ?? 100) < 50 || Number(runtimeSnapshot.survival?.hunger ?? 100) < 25) {
     issues.push({
       code: 'survival-recovery-needed',
@@ -804,6 +826,17 @@ function sanitizeNeuralAgentSnapshot(neuralAgent = null) {
     neuralDecisionReason: neuralAgent.neuralDecisionReason ?? null,
     neuralTrainingMode: Boolean(neuralAgent.neuralTrainingMode),
     lastRewardReason: neuralAgent.lastRewardReason ?? null,
+    fitnessInvalidReason: neuralAgent.fitnessInvalidReason ?? null,
+    selectedActionExecuted: Boolean(neuralAgent.selectedActionExecuted),
+    selectedActionExecutionResult: neuralAgent.selectedActionExecutionResult
+      ? { ...neuralAgent.selectedActionExecutionResult }
+      : null,
+    neuralActionCounts: sanitizeNumberRecord(neuralAgent.neuralActionCounts),
+    neuralMineAttempts: Number(neuralAgent.neuralMineAttempts ?? 0),
+    neuralExploreSteps: Number(neuralAgent.neuralExploreSteps ?? 0),
+    neuralWoodCollected: Number(neuralAgent.neuralWoodCollected ?? 0),
+    nearestTargetWasNullTooLong: Boolean(neuralAgent.nearestTargetWasNullTooLong),
+    targetSensorFailure: Boolean(neuralAgent.targetSensorFailure),
   };
 }
 
@@ -823,8 +856,18 @@ function sanitizeNeuralEvolutionSnapshot(neuralEvolution = null) {
     averageFitness: Number(neuralEvolution.averageFitness ?? 0),
     championFitness: Number(neuralEvolution.championFitness ?? 0),
     championImproved: Boolean(neuralEvolution.championImproved),
+    neuralChampionValid: Boolean(neuralEvolution.neuralChampionValid ?? neuralEvolution.championValid),
+    championValid: Boolean(neuralEvolution.championValid),
+    championStatus: neuralEvolution.championStatus ?? 'no-valid-champion-yet',
     bestAgentId: neuralEvolution.bestAgentId ?? null,
     bestGoalReached: neuralEvolution.bestGoalReached ?? 'none',
+    bestCandidate: neuralEvolution.bestCandidate ? { ...neuralEvolution.bestCandidate } : null,
+    bestCandidateFailureReason: neuralEvolution.bestCandidateFailureReason ?? null,
+    generationStarted: Number(neuralEvolution.generationStarted ?? 0),
+    generationCompleted: Number(neuralEvolution.generationCompleted ?? neuralEvolution.generationsCompleted ?? 0),
+    populationEvaluated: Boolean(neuralEvolution.populationEvaluated),
+    agentsEvaluated: Number(neuralEvolution.agentsEvaluated ?? 0),
+    validChampionFound: Boolean(neuralEvolution.validChampionFound),
     woodCollectedByBest: Number(neuralEvolution.woodCollectedByBest ?? 0),
     deathsByBest: Number(neuralEvolution.deathsByBest ?? 0),
     blockedActionsByBest: Number(neuralEvolution.blockedActionsByBest ?? 0),
@@ -832,7 +875,18 @@ function sanitizeNeuralEvolutionSnapshot(neuralEvolution = null) {
     movementPingPongDetected: Boolean(neuralEvolution.movementPingPongDetected),
     trainingContaminated: Boolean(neuralEvolution.trainingContaminated),
     fitnessValid: neuralEvolution.fitnessValid !== false,
+    fitnessInvalidReason: neuralEvolution.fitnessInvalidReason ?? null,
     championSaved: Boolean(neuralEvolution.championSaved),
+    nearestTargetWasNullTooLong: Boolean(neuralEvolution.nearestTargetWasNullTooLong),
+    targetSensorFailure: Boolean(neuralEvolution.targetSensorFailure),
+    selectedActionExecuted: Boolean(neuralEvolution.selectedActionExecuted),
+    selectedActionExecutionResult: neuralEvolution.selectedActionExecutionResult
+      ? { ...neuralEvolution.selectedActionExecutionResult }
+      : null,
+    neuralActionCounts: sanitizeNumberRecord(neuralEvolution.neuralActionCounts),
+    neuralMineAttempts: Number(neuralEvolution.neuralMineAttempts ?? 0),
+    neuralExploreSteps: Number(neuralEvolution.neuralExploreSteps ?? 0),
+    neuralWoodCollected: Number(neuralEvolution.neuralWoodCollected ?? 0),
     plannerOnlyFitness: Number(neuralEvolution.plannerOnlyFitness ?? 0),
     championEpisodeFitness: Number(neuralEvolution.championEpisodeFitness ?? 0),
     neuralAssistedFitness: Number(neuralEvolution.neuralAssistedFitness ?? 0),
@@ -852,8 +906,19 @@ function sanitizeNeuralEvolutionSnapshot(neuralEvolution = null) {
       deaths: Number(agent.deaths ?? 0),
       blockedCount: Number(agent.blockedCount ?? 0),
       selectedAction: agent.selectedAction ?? null,
+      selectedActionExecuted: Boolean(agent.selectedActionExecuted),
+      selectedActionExecutionResult: agent.selectedActionExecutionResult
+        ? { ...agent.selectedActionExecutionResult }
+        : null,
       trainingContaminated: Boolean(agent.trainingContaminated),
       fitnessValid: agent.fitnessValid !== false,
+      fitnessInvalidReason: agent.fitnessInvalidReason ?? null,
+      neuralActionCounts: sanitizeNumberRecord(agent.neuralActionCounts),
+      neuralMineAttempts: Number(agent.neuralMineAttempts ?? 0),
+      neuralExploreSteps: Number(agent.neuralExploreSteps ?? 0),
+      neuralWoodCollected: Number(agent.neuralWoodCollected ?? 0),
+      nearestTargetWasNullTooLong: Boolean(agent.nearestTargetWasNullTooLong),
+      targetSensorFailure: Boolean(agent.targetSensorFailure),
       actionHistory: sanitizeNumberRecord(agent.actionHistory),
       sensorHistory: (agent.sensorHistory ?? []).slice(0, 16).map((sensor) => ({
         names: Array.isArray(sensor?.names)

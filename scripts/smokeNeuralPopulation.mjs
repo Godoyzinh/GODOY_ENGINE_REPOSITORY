@@ -151,6 +151,52 @@ const blockedRun = runHeadlessAiSimulation({
 assert.equal(blockedRun.snapshot.hardRecoveryCount, 0, 'blocked gatherWood should not trigger hard recovery');
 assert.ok(blockedRun.snapshot.neuralEvolution.fitnessValid === false || blockedRun.snapshot.neuralAgent.currentFitness < 0, 'blocked gatherWood should penalize or invalidate fitness');
 
+const failedStorage = createMemoryStorage();
+const failedTrainer = new NeuralTrainer({
+  storage: failedStorage,
+  storageKey: AI_NEURAL_CHAMPION_STORAGE_KEY,
+});
+const failedTrainingResult = await failedTrainer.train({
+  mode: 'quick',
+  generations: 1,
+  populationSize: 3,
+  durationSeconds: 65,
+  useChampion: false,
+  runEpisode: ({ genome, generation, agentId, agentIndex }) => {
+    const result = runHeadlessAiSimulation({
+      mode: 'quick',
+      durationSeconds: 65,
+      seed: 12000 + agentIndex,
+      adapter: new BlockedWoodAdapter(),
+      neuralGenome: genome.serialize(),
+      neuralAgentEnabled: true,
+      neuralTrainingMode: true,
+      neuralTrainingMetadata: {
+        agentId,
+        generation,
+        populationSize: 3,
+        mode: 'quick',
+        headlessMode: true,
+      },
+    });
+
+    return {
+      fitness: Number(result.snapshot.neuralAgent?.currentFitness ?? 0),
+      snapshot: result.snapshot,
+      report: result.report,
+    };
+  },
+});
+const failedPayload = JSON.parse(failedStorage.getItem(AI_NEURAL_CHAMPION_STORAGE_KEY));
+
+assert.equal(failedTrainingResult.enabled, false, 'failed population should not expose a champion');
+assert.equal(failedTrainingResult.neuralEvolution.championSaved, false, 'failed population should not save champion');
+assert.equal(failedTrainingResult.neuralEvolution.championValid, false, 'failed population champion should be invalid');
+assert.equal(failedTrainingResult.neuralEvolution.championStatus, 'no-valid-champion-yet', 'failed population should report no valid champion');
+assert.ok(failedTrainingResult.neuralEvolution.bestCandidate, 'failed population should keep best candidate diagnostics');
+assert.ok(failedPayload.bestCandidate, 'failed candidate should be persisted for diagnostics');
+assert.equal(failedPayload.champion, null, 'failed candidate must not be persisted as champion');
+
 console.log('[smoke:neural-population] all checks passed');
 
 function createManualInputSimulation() {

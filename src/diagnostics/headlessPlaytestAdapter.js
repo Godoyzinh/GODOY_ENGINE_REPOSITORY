@@ -655,7 +655,7 @@ export class HeadlessPlaytestAdapter {
     this.recordBiomeVisit(this.stats.activeBiome, deltaTime);
   }
 
-  gatherWood(secondaryActions) {
+  scanWoodTargets() {
     this.lastResourceScan = this.createResourceScanSnapshot({
       scannedWoodBlocks: 3,
       woodTargetsFound: 3,
@@ -668,6 +668,12 @@ export class HeadlessPlaytestAdapter {
         nearGround: true,
       },
     });
+
+    return this.getResourceScanSnapshot();
+  }
+
+  gatherWood(secondaryActions) {
+    this.scanWoodTargets();
     this.inventory.wood += 4;
     this.inventory.drops += 1;
     this.stats.droppedItems += 1;

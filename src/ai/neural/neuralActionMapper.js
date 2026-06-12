@@ -38,7 +38,7 @@ function createActionScores(outputs = []) {
 
 function selectAction(scores, { plan, sensorSnapshot }) {
   if (plan.action === 'gatherWood') {
-    if (sensorSnapshot?.values?.targetReachable >= 1 && scores.mine >= scores.explore) {
+    if (sensorSnapshot?.values?.targetReachable >= 1 && sensorSnapshot?.values?.targetBlacklisted < 1) {
       return 'mine';
     }
 
