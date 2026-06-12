@@ -123,7 +123,8 @@ Memory is advisory only. It can influence goal reasons and target selection, but
 - Hard recovery loop evidence, including `recoveryLoopCycles`, `hardRecoveryCount`, `lastFailedGoal`, `lastFailedAction`, `failedTargetPosition`, `blacklistedTargets`, and `emergencyTeleportUsed`.
 - Starter false-completion evidence, including `falseCompletionDetected`, `earlyAbortReason`, `woodProgressBy90s`, `craftPlanksBlockedByMissingWood`, and `hardRecoveryMisuseDetected`.
 - Post-completion cleanup evidence, including `postCompletionEventsDetected`, `postCompletionDeaths`, and terrain death context with position, `velocityY`, `fallDistance`, `healthBefore`, and `healthAfter`.
-- Neural survival agent evidence when enabled, including `neuralAgent.enabled`, generation, champion/current fitness, population size, mutation rate, selected action, action scores, sensor snapshot, decision reason, and training mode.
+- Neural survival agent evidence when enabled, including `neuralAgent.enabled`, generation, champion/current fitness, population size, mutation rate, selected action, action scores, sensor snapshot, decision reason, training mode, whether the selected action executed, neural action counts, neural mine attempts, neural explore steps, neural wood collected, and fitness invalid reason.
+- Neural champion evidence separates `bestCandidate` from `champion`: failed or invalid genomes may be preserved for diagnostics, but only positive-fitness runs that collect wood and complete real goals can become valid champions.
 - `lastSimulationSnapshot` is included when Feedback reports are generated during or after an autonomous run, even if there is no active `runtimeStats.simulation`.
 - Recent sanitized gameplay events.
 - Runtime stats for renderer, settings, terrain, entities, survival, networking, and persistence.
@@ -169,7 +170,8 @@ Use neural training only as an optional local control layer for autonomous playt
 - The survival goal planner remains authoritative for high-level goals; neural output only biases local actions such as moving, turning, mining, collecting, exploring, jumping, or eating/recovering.
 - Neural control must never teleport the player, trigger hard recovery, bypass inventory/world validation, or continue a broken run forever.
 - Manual input during neural training marks `trainingContaminated = true`, sets `fitnessValid = false`, and blocks champion saving.
-- Reports include `neuralEvolution` with planner-only fitness, champion episode fitness, neural-assisted fitness, whether neural improved, whether the champion improved, best agent, best goal, wood collected, deaths, blocked actions, hard recovery misuse, ping-pong detection, and recommended next training target.
+- Reports include `neuralEvolution` with planner-only fitness, champion episode fitness, neural-assisted fitness, whether neural improved, whether the champion improved, champion validity/status, best candidate diagnostics, population/agent evaluation counts, target sensor failures, selected action execution, best agent, best goal, wood collected, deaths, blocked actions, hard recovery misuse, ping-pong detection, and recommended next training target.
+- A valid champion requires positive fitness, at least one real wood collection, a real completed goal, non-failed status, valid fitness, and uncontaminated training. If no agent meets those gates, reports should show `championSaved = false`, `championValid = false`, `championStatus = "no-valid-champion-yet"`, and a diagnostic `bestCandidate`.
 
 ## Branch And PR Rules
 

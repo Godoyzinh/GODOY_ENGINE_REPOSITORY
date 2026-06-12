@@ -231,7 +231,8 @@ export class NeuralTrainer {
     try {
       const rawValue = this.storage.getItem(this.storageKey);
       const parsed = rawValue ? JSON.parse(rawValue) : null;
-      const champion = parsed?.champion ?? parsed;
+      const storedChampion = resolveStoredChampion(parsed);
+      const champion = storedChampion.serialized;
 
       if (!champion) {
         this.bestCandidate = parsed?.bestCandidate ?? null;
@@ -241,13 +242,13 @@ export class NeuralTrainer {
 
       this.trainingHistory = parsed.trainingHistory ?? [];
       this.bestCandidate = parsed.bestCandidate ?? createBestCandidateRecord({
-        genome: NeuralGenome.deserialize(champion),
-        validation: validateNeuralChampionCandidate(NeuralGenome.deserialize(champion)),
-        generation: champion.generation ?? parsed.generation ?? 0,
+        genome: storedChampion.genome,
+        validation: storedChampion.validation,
+        generation: champion.generation ?? parsed?.generation ?? 0,
       });
       this.championCreatedAt = parsed.createdAt ?? parsed.savedAt ?? null;
-      const genome = NeuralGenome.deserialize(champion);
-      const validation = validateNeuralChampionCandidate(genome);
+      const genome = storedChampion.genome;
+      const validation = storedChampion.validation;
 
       if (!validation.valid) {
         this.championStatus = parsed.championStatus ?? NO_VALID_CHAMPION_STATUS;
@@ -322,20 +323,32 @@ export class NeuralTrainer {
       existing = null;
     }
 
-    const existingChampion = existing?.champion ?? null;
-    const existingChampionGenome = existingChampion ? NeuralGenome.deserialize(existingChampion) : null;
-    const existingChampionValidation = validateNeuralChampionCandidate(existingChampionGenome);
+    const storedChampion = resolveStoredChampion(existing);
+    const existingChampionGenome = storedChampion.genome;
+    const existingChampionValidation = storedChampion.validation;
+    const hasValidExistingChampion = existingChampionValidation.valid && existingChampionGenome;
     const payload = {
-      ...(existingChampionValidation.valid ? existing : {}),
+      ...(hasValidExistingChampion && existing?.champion ? existing : {}),
       schemaVersion: 1,
+      createdAt: hasValidExistingChampion ? (existing?.createdAt ?? existing?.savedAt ?? this.now()) : null,
       updatedAt: this.now(),
-      savedAt: existingChampionValidation.valid ? existing?.savedAt : null,
-      championValid: existingChampionValidation.valid,
-      championStatus: existingChampionValidation.valid ? 'valid-champion' : NO_VALID_CHAMPION_STATUS,
+      savedAt: hasValidExistingChampion ? (existing?.savedAt ?? this.now()) : null,
+      generation: hasValidExistingChampion ? existingChampionGenome.generation : undefined,
+      fitness: hasValidExistingChampion ? existingChampionGenome.fitness : undefined,
+      mutationRate: hasValidExistingChampion ? existingChampionGenome.mutationRate : this.mutationRate,
+      architecture: hasValidExistingChampion ? (existing?.architecture ?? this.architecture) : this.architecture,
+      trainingHistory: hasValidExistingChampion
+        ? (existing?.trainingHistory ?? this.trainingHistory.map((entry) => ({ ...entry })))
+        : this.trainingHistory.map((entry) => ({ ...entry })),
+      bestRunSummary: hasValidExistingChampion
+        ? (existing?.bestRunSummary ?? (existingChampionGenome.summary ? { ...existingChampionGenome.summary } : null))
+        : null,
+      championValid: Boolean(hasValidExistingChampion),
+      championStatus: hasValidExistingChampion ? 'valid-champion' : NO_VALID_CHAMPION_STATUS,
       bestCandidate: { ...bestCandidate },
       bestCandidateFailureReason: bestCandidate.failureReason ?? null,
       metadata,
-      champion: existingChampionValidation.valid ? existingChampion : null,
+      champion: hasValidExistingChampion ? existingChampionGenome.serialize() : null,
     };
 
     try {
@@ -587,6 +600,43 @@ export function validateNeuralChampionCandidate(candidate = null) {
     valid: !reason,
     reason,
   };
+}
+
+function resolveStoredChampion(parsed = null) {
+  if (!parsed) {
+    return {
+      serialized: null,
+      genome: null,
+      validation: validateNeuralChampionCandidate(null),
+    };
+  }
+
+  const hasChampionField = Object.prototype.hasOwnProperty.call(parsed, 'champion');
+  const serialized = hasChampionField ? parsed.champion : parsed;
+
+  if (!serialized) {
+    return {
+      serialized: null,
+      genome: null,
+      validation: validateNeuralChampionCandidate(null),
+    };
+  }
+
+  try {
+    const genome = NeuralGenome.deserialize(serialized);
+
+    return {
+      serialized,
+      genome,
+      validation: validateNeuralChampionCandidate(genome),
+    };
+  } catch {
+    return {
+      serialized: null,
+      genome: null,
+      validation: validateNeuralChampionCandidate(null),
+    };
+  }
 }
 
 export function getChampionInvalidReason(summary = {}, fitness = 0) {

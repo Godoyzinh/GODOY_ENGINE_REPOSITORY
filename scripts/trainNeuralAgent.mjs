@@ -96,7 +96,7 @@ const result = await trainer.train({
 });
 
 console.log(JSON.stringify({
-  ok: true,
+  ok: Boolean(result.enabled && result.championValid),
   championPath,
   generation: result.generation,
   championFitness: result.championFitness,
