@@ -96,10 +96,13 @@ const result = await trainer.train({
 });
 
 console.log(JSON.stringify({
-  ok: Boolean(result.enabled),
+  ok: Boolean(result.enabled && result.championValid),
   championPath,
   generation: result.generation,
   championFitness: result.championFitness,
+  championValid: result.championValid,
+  championStatus: result.championStatus,
+  bestCandidate: result.bestCandidate,
   mutationRate: result.mutationRate,
   bestRunSummary: result.bestRunSummary,
   neuralEvolution: result.neuralEvolution,

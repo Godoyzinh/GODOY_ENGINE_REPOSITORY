@@ -69,13 +69,15 @@ Run these before tagging an Alpha build.
 - Reports include hard recovery loop fields: `recoveryLoopCycles`, `hardRecoveryCount`, `lastFailedGoal`, `lastFailedAction`, `failedTargetPosition`, `blacklistedTargets`, and `emergencyTeleportUsed`.
 - Reports include starter false-completion fields: `falseCompletionDetected`, `earlyAbortReason`, `woodProgressBy90s`, `craftPlanksBlockedByMissingWood`, and `hardRecoveryMisuseDetected`.
 - Reports include post-completion cleanup fields: `postCompletionEventsDetected`, `postCompletionDeaths`, plus terrain death `velocityY`, `fallDistance`, `healthBefore`, and `healthAfter` when available.
-- Reports include `neuralAgent` when neural assistance is enabled: generation, champion/current fitness, population size, mutation rate, selected action, action scores, sensor snapshot, decision reason, and training mode.
-- Reports include `neuralEvolution` when neural assistance is enabled: mode, training state, population size, generations, best/average/champion fitness, champion improvement, best agent, wood/death/blocked counts, contamination, fitness validity, champion save status, planner/champion/neural comparison, and recommended next target.
+- Reports include `neuralAgent` when neural assistance is enabled: generation, champion/current fitness, population size, mutation rate, selected action, action scores, sensor snapshot, decision reason, training mode, selected-action execution, neural action counts, neural mine/explore counts, neural wood collected, and fitness invalid reason.
+- Reports include `neuralEvolution` when neural assistance is enabled: mode, training state, population size, generations, best/average/champion fitness, champion validity/status, best candidate diagnostics, generation start/completion, agents evaluated, selected-action execution, target sensor failure, wood/death/blocked counts, contamination, fitness validity, champion save status, planner/champion/neural comparison, and recommended next target.
 - `npm run train:neural -- --mode=quick --generations=10 --population=32 --duration=60` runs quick headless population training and writes the local champion brain to `data/AI_NEURAL_CHAMPION.json`.
 - `npm run train:neural -- --mode=standard --generations=5 --population=16 --duration=300` runs standard neural population training.
 - `npm run train:neural -- --mode=evolution --generations=3 --population=8 --duration=1800` runs long-form evolution training.
 - `npm run simulate:ai -- --duration=60 --neural` runs a neural-assisted 60 second quick survival episode without allowing neural control to trigger hard recovery.
 - Manual input during neural training must set `trainingContaminated = true`, `fitnessValid = false`, and prevent champion saving.
+- Failed neural candidates must persist only as `bestCandidate`; they must not be saved or loaded as `champion`.
+- Legacy root-level champion JSON must remain loadable and must not be deleted when best-candidate diagnostics are written.
 - Quick smoke should complete early survival goals and continue pursuing the next progression goal.
 - Quick smoke should use `hardRecoveryCount = 0` unless a physical invalid state is injected.
 - If mining and wood are still zero after 90 seconds, autonomous simulation must abort as failed with a clear starter progression reason.

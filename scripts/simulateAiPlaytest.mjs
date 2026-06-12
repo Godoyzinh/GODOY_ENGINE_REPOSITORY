@@ -11,6 +11,8 @@ import {
   DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
   normalizeAutonomousInventoryProfileId,
 } from '../src/diagnostics/autonomousInventoryProfiles.js';
+import { validateNeuralChampionCandidate } from '../src/ai/neural/neuralTrainer.js';
+import { NeuralGenome } from '../src/ai/neural/neuralGenome.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DEFAULT_AI_MEMORY_PATH = join(PROJECT_ROOT, 'data', 'AI_MEMORY.json');
@@ -312,8 +314,11 @@ function loadChampionGenome(filePath) {
   try {
     const rawValue = readFileSync(filePath, 'utf8');
     const parsed = JSON.parse(rawValue);
+    const champion = parsed?.champion ?? parsed ?? null;
+    const genome = champion ? NeuralGenome.deserialize(champion) : null;
+    const validation = validateNeuralChampionCandidate(genome);
 
-    return parsed?.champion ?? parsed ?? null;
+    return validation.valid ? champion : null;
   } catch {
     return null;
   }

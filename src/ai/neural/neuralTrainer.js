@@ -3,6 +3,7 @@ import { NeuralGenome } from './neuralGenome.js';
 import { NeuralPopulation } from './neuralPopulation.js';
 
 export const AI_NEURAL_CHAMPION_STORAGE_KEY = 'godoy:ai-neural-champion';
+export const NO_VALID_CHAMPION_STATUS = 'no-valid-champion-yet';
 export const DEFAULT_NEURAL_TRAINING_OPTIONS = Object.freeze({
   mode: 'quick',
   neuralEnabled: true,
@@ -33,9 +34,12 @@ export class NeuralTrainer {
     this.now = now;
     this.trainingHistory = [];
     this.lastAgentResults = [];
+    this.bestCandidate = null;
+    this.championStatus = NO_VALID_CHAMPION_STATUS;
     this.lastEvolutionSnapshot = createNeuralEvolutionSnapshot({
       mode: DEFAULT_NEURAL_TRAINING_OPTIONS.mode,
       mutationRate: this.mutationRate,
+      championStatus: this.championStatus,
     });
     this.championCreatedAt = null;
     this.champion = this.loadChampion();
@@ -59,6 +63,10 @@ export class NeuralTrainer {
     }
 
     const previousChampionFitness = Number(this.champion?.fitness ?? Number.NEGATIVE_INFINITY);
+    const generationStarted = 0;
+    let generationCompleted = -1;
+    let championSaved = false;
+    let validChampionFound = false;
     const random = createSeededRandom(seed);
     const population = new NeuralPopulation({
       populationSize,
@@ -103,6 +111,14 @@ export class NeuralTrainer {
       }
 
       const champion = population.getChampion();
+      const championValidation = validateNeuralChampionCandidate(champion);
+      const candidateRecord = createBestCandidateRecord({
+        genome: champion,
+        validation: championValidation,
+        generation: population.generation,
+      });
+      this.bestCandidate = candidateRecord ?? this.bestCandidate;
+      generationCompleted = population.generation;
       const generationSummary = {
         generation: population.generation,
         bestFitness: round(champion?.fitness ?? 0),
@@ -113,17 +129,33 @@ export class NeuralTrainer {
         deaths: champion?.summary?.deaths ?? 0,
         recoveryCount: champion?.summary?.recoveryCount ?? 0,
         blockedActions: champion?.summary?.blockedActions ?? 0,
+        championValid: championValidation.valid,
+        invalidReason: championValidation.reason,
       };
 
       this.trainingHistory.push(generationSummary);
       this.trainingHistory = this.trainingHistory.slice(-50);
 
-      if (!this.champion || champion.fitness >= this.champion.fitness) {
+      if (championValidation.valid) {
+        validChampionFound = true;
+      }
+
+      if (
+        championValidation.valid &&
+        (!this.champion || champion.fitness >= this.champion.fitness)
+      ) {
         this.champion = champion.clone({
           generation: population.generation,
         });
         this.champion.withFitness(champion.fitness, champion.summary);
-        this.saveChampion({
+        championSaved = this.saveChampion({
+          mode,
+          generation: population.generation,
+          populationSize,
+          durationSeconds,
+        });
+      } else if (candidateRecord) {
+        this.saveBestCandidate(candidateRecord, {
           mode,
           generation: population.generation,
           populationSize,
@@ -142,15 +174,24 @@ export class NeuralTrainer {
       mode,
       trainingActive: trainNeural,
       populationSize,
+      generationStarted,
       generationsCompleted: generations,
-      currentGeneration: this.champion?.generation ?? 0,
+      generationCompleted: Math.max(0, generationCompleted),
+      currentGeneration: Math.max(0, generationCompleted),
       mutationRate: this.mutationRate,
       agentResults: this.lastAgentResults,
       championFitness: Number(this.champion?.fitness ?? 0),
       previousChampionFitness,
       baselineResult,
       championResult,
-      championSaved: Boolean(this.champion),
+      championSaved,
+      championValid: Boolean(this.champion),
+      championStatus: this.champion ? 'valid-champion' : NO_VALID_CHAMPION_STATUS,
+      bestCandidate: this.bestCandidate,
+      bestCandidateFailureReason: this.bestCandidate?.failureReason ?? null,
+      populationEvaluated: this.lastAgentResults.length > 0,
+      agentsEvaluated: this.lastAgentResults.length,
+      validChampionFound,
       trainingContaminated: this.lastAgentResults.some((agent) => agent.trainingContaminated),
       fitnessValid: this.lastAgentResults.every((agent) => agent.fitnessValid),
     });
@@ -163,6 +204,9 @@ export class NeuralTrainer {
       enabled: Boolean(this.champion),
       generation: this.champion?.generation ?? 0,
       championFitness: round(this.champion?.fitness ?? 0),
+      championValid: Boolean(this.champion),
+      championStatus: this.champion ? 'valid-champion' : NO_VALID_CHAMPION_STATUS,
+      bestCandidate: sanitizeBestCandidateForReport(this.bestCandidate),
       mutationRate: this.mutationRate,
       architecture: {
         inputCount: this.architecture.inputCount,
@@ -187,15 +231,32 @@ export class NeuralTrainer {
     try {
       const rawValue = this.storage.getItem(this.storageKey);
       const parsed = rawValue ? JSON.parse(rawValue) : null;
-      const champion = parsed?.champion ?? parsed;
+      const storedChampion = resolveStoredChampion(parsed);
+      const champion = storedChampion.serialized;
 
       if (!champion) {
+        this.bestCandidate = parsed?.bestCandidate ?? null;
+        this.championStatus = parsed?.championStatus ?? NO_VALID_CHAMPION_STATUS;
         return null;
       }
 
       this.trainingHistory = parsed.trainingHistory ?? [];
+      this.bestCandidate = parsed.bestCandidate ?? createBestCandidateRecord({
+        genome: storedChampion.genome,
+        validation: storedChampion.validation,
+        generation: champion.generation ?? parsed?.generation ?? 0,
+      });
       this.championCreatedAt = parsed.createdAt ?? parsed.savedAt ?? null;
-      return NeuralGenome.deserialize(champion);
+      const genome = storedChampion.genome;
+      const validation = storedChampion.validation;
+
+      if (!validation.valid) {
+        this.championStatus = parsed.championStatus ?? NO_VALID_CHAMPION_STATUS;
+        return null;
+      }
+
+      this.championStatus = 'valid-champion';
+      return genome;
     } catch {
       return null;
     }
@@ -206,6 +267,20 @@ export class NeuralTrainer {
       return false;
     }
 
+    const validation = validateNeuralChampionCandidate(this.champion);
+
+    if (!validation.valid) {
+      this.bestCandidate = createBestCandidateRecord({
+        genome: this.champion,
+        validation,
+        generation: this.champion.generation,
+      });
+      this.champion = null;
+      this.championStatus = NO_VALID_CHAMPION_STATUS;
+      this.saveBestCandidate(this.bestCandidate, metadata);
+      return false;
+    }
+
     const payload = {
       schemaVersion: 1,
       createdAt: this.championCreatedAt ?? this.now(),
@@ -213,10 +288,13 @@ export class NeuralTrainer {
       savedAt: this.now(),
       generation: this.champion.generation,
       fitness: this.champion.fitness,
+      championValid: true,
+      championStatus: 'valid-champion',
       mutationRate: this.mutationRate,
       architecture: this.architecture,
       trainingHistory: this.trainingHistory.map((entry) => ({ ...entry })),
       bestRunSummary: this.champion.summary ? { ...this.champion.summary } : null,
+      bestCandidate: this.bestCandidate ? { ...this.bestCandidate } : null,
       metadata,
       champion: this.champion.serialize(),
     };
@@ -224,6 +302,58 @@ export class NeuralTrainer {
     try {
       this.storage.setItem(this.storageKey, JSON.stringify(payload, null, 2));
       this.championCreatedAt = payload.createdAt;
+      this.championStatus = 'valid-champion';
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  saveBestCandidate(bestCandidate = this.bestCandidate, metadata = {}) {
+    if (!this.storage || !bestCandidate) {
+      return false;
+    }
+
+    let existing = null;
+
+    try {
+      const rawValue = this.storage.getItem(this.storageKey);
+      existing = rawValue ? JSON.parse(rawValue) : null;
+    } catch {
+      existing = null;
+    }
+
+    const storedChampion = resolveStoredChampion(existing);
+    const existingChampionGenome = storedChampion.genome;
+    const existingChampionValidation = storedChampion.validation;
+    const hasValidExistingChampion = existingChampionValidation.valid && existingChampionGenome;
+    const payload = {
+      ...(hasValidExistingChampion && existing?.champion ? existing : {}),
+      schemaVersion: 1,
+      createdAt: hasValidExistingChampion ? (existing?.createdAt ?? existing?.savedAt ?? this.now()) : null,
+      updatedAt: this.now(),
+      savedAt: hasValidExistingChampion ? (existing?.savedAt ?? this.now()) : null,
+      generation: hasValidExistingChampion ? existingChampionGenome.generation : undefined,
+      fitness: hasValidExistingChampion ? existingChampionGenome.fitness : undefined,
+      mutationRate: hasValidExistingChampion ? existingChampionGenome.mutationRate : this.mutationRate,
+      architecture: hasValidExistingChampion ? (existing?.architecture ?? this.architecture) : this.architecture,
+      trainingHistory: hasValidExistingChampion
+        ? (existing?.trainingHistory ?? this.trainingHistory.map((entry) => ({ ...entry })))
+        : this.trainingHistory.map((entry) => ({ ...entry })),
+      bestRunSummary: hasValidExistingChampion
+        ? (existing?.bestRunSummary ?? (existingChampionGenome.summary ? { ...existingChampionGenome.summary } : null))
+        : null,
+      championValid: Boolean(hasValidExistingChampion),
+      championStatus: hasValidExistingChampion ? 'valid-champion' : NO_VALID_CHAMPION_STATUS,
+      bestCandidate: { ...bestCandidate },
+      bestCandidateFailureReason: bestCandidate.failureReason ?? null,
+      metadata,
+      champion: hasValidExistingChampion ? existingChampionGenome.serialize() : null,
+    };
+
+    try {
+      this.storage.setItem(this.storageKey, JSON.stringify(payload, null, 2));
+      this.championStatus = payload.championStatus;
       return true;
     } catch {
       return false;
@@ -237,7 +367,7 @@ export function createRunSummary(snapshot = {}) {
   const blockedActions = (snapshot.failedActions?.length ?? 0) +
     (snapshot.blockedGoals ?? []).reduce((total, blockedGoal) => total + Number(blockedGoal.count ?? 1), 0);
 
-  return {
+  const summary = {
     status: snapshot.status ?? 'unknown',
     elapsedSeconds: Number(snapshot.elapsedSeconds ?? 0),
     fitness: Number(snapshot.neuralAgent?.currentFitness ?? 0),
@@ -259,6 +389,13 @@ export function createRunSummary(snapshot = {}) {
     trainingContaminated: Boolean(snapshot.neuralEvolution?.trainingContaminated),
     fitnessValid: snapshot.neuralEvolution?.fitnessValid !== false,
     failures: (snapshot.failures ?? []).map((failure) => failure.code).slice(0, 8),
+  };
+  const fitnessInvalidReason = getFitnessInvalidReason(summary, snapshot);
+
+  return {
+    ...summary,
+    fitnessValid: summary.fitnessValid && !fitnessInvalidReason,
+    fitnessInvalidReason,
   };
 }
 
@@ -282,6 +419,7 @@ export function createAgentEpisodeResult({
     fitness: round(fitness),
     progressTier: summary?.progressionTierReached ?? 'starter',
     bestGoalReached: summary?.bestGoalReached ?? 'none',
+    completedGoalCount: Number(summary?.completedGoalCount ?? 0),
     woodCollected: Number(summary?.woodCollected ?? 0),
     deaths: Number(summary?.deaths ?? 0),
     blockedCount: Number(summary?.blockedActions ?? 0),
@@ -289,10 +427,19 @@ export function createAgentEpisodeResult({
     movementPingPongDetected: Boolean(summary?.movementPingPongDetected),
     trainingContaminated: Boolean(summary?.trainingContaminated),
     fitnessValid: summary?.fitnessValid !== false,
+    fitnessInvalidReason: summary?.fitnessInvalidReason ?? null,
     timeAliveSeconds: Number(summary?.elapsedSeconds ?? snapshot.elapsedSeconds ?? 0),
     actionHistory: { ...(snapshot.actionCounts ?? {}) },
     sensorHistory: neuralAgent.sensorSnapshot ? [neuralAgent.sensorSnapshot] : [],
     selectedAction: neuralAgent.selectedAction ?? null,
+    selectedActionExecuted: Boolean(snapshot.neuralEvolution?.selectedActionExecuted),
+    selectedActionExecutionResult: snapshot.neuralEvolution?.selectedActionExecutionResult ?? null,
+    neuralActionCounts: { ...(snapshot.neuralEvolution?.neuralActionCounts ?? {}) },
+    neuralMineAttempts: Number(snapshot.neuralEvolution?.neuralMineAttempts ?? 0),
+    neuralExploreSteps: Number(snapshot.neuralEvolution?.neuralExploreSteps ?? 0),
+    neuralWoodCollected: Number(snapshot.neuralEvolution?.neuralWoodCollected ?? summary?.woodCollected ?? 0),
+    nearestTargetWasNullTooLong: Boolean(snapshot.neuralEvolution?.nearestTargetWasNullTooLong),
+    targetSensorFailure: Boolean(snapshot.neuralEvolution?.targetSensorFailure),
     lastRewardReason: neuralAgent.lastRewardReason ?? null,
     episodeResult: {
       status: snapshot.status ?? 'unknown',
@@ -306,7 +453,9 @@ export function createNeuralEvolutionSnapshot({
   mode = 'quick',
   trainingActive = false,
   populationSize = 0,
+  generationStarted = 0,
   generationsCompleted = 0,
+  generationCompleted = generationsCompleted,
   currentGeneration = 0,
   mutationRate = DEFAULT_NEURAL_TRAINING_OPTIONS.mutationRate,
   agentResults = [],
@@ -315,10 +464,31 @@ export function createNeuralEvolutionSnapshot({
   baselineResult = null,
   championResult = null,
   championSaved = false,
+  championValid = false,
+  championStatus = NO_VALID_CHAMPION_STATUS,
+  bestCandidate = null,
+  bestCandidateFailureReason = null,
+  populationEvaluated = false,
+  agentsEvaluated = agentResults.length,
+  validChampionFound = false,
   trainingContaminated = false,
   fitnessValid = true,
+  nearestTargetWasNullTooLong = false,
+  targetSensorFailure = false,
+  selectedActionExecuted = false,
+  selectedActionExecutionResult = null,
+  neuralActionCounts = {},
+  neuralMineAttempts = 0,
+  neuralExploreSteps = 0,
+  neuralWoodCollected = 0,
+  fitnessInvalidReason = null,
 } = {}) {
   const bestAgent = [...agentResults].sort((left, right) => Number(right.fitness ?? 0) - Number(left.fitness ?? 0))[0] ?? null;
+  const resolvedBestCandidate = bestCandidate ?? (bestAgent ? createBestCandidateRecordFromAgent(bestAgent) : null);
+  const resolvedBestCandidateFailureReason = bestCandidateFailureReason ??
+    resolvedBestCandidate?.failureReason ??
+    bestAgent?.fitnessInvalidReason ??
+    null;
   const averageFitness = agentResults.length > 0
     ? agentResults.reduce((total, agent) => total + Number(agent.fitness ?? 0), 0) / agentResults.length
     : 0;
@@ -326,28 +496,57 @@ export function createNeuralEvolutionSnapshot({
   const championEpisodeFitness = Number(championResult?.snapshot?.neuralAgent?.currentFitness ?? championResult?.fitness ?? championFitness ?? 0);
   const bestFitness = Number(bestAgent?.fitness ?? championEpisodeFitness ?? 0);
   const championImproved = Number.isFinite(previousChampionFitness) && championFitness > previousChampionFitness;
+  const allFitnessValid = Boolean(fitnessValid && agentResults.every((agent) => agent.fitnessValid));
 
   return {
     enabled: Boolean(enabled),
     mode,
     trainingActive: Boolean(trainingActive),
     populationSize: Number(populationSize ?? 0),
+    generationStarted: Number(generationStarted ?? 0),
     generationsCompleted: Number(generationsCompleted ?? 0),
+    generationCompleted: Number(generationCompleted ?? generationsCompleted ?? 0),
     currentGeneration: Number(currentGeneration ?? 0),
     bestFitness: round(bestFitness),
     averageFitness: round(averageFitness),
     championFitness: round(championFitness),
     championImproved,
+    neuralChampionValid: Boolean(championValid),
+    championValid: Boolean(championValid),
+    championStatus: championValid ? 'valid-champion' : championStatus,
     bestAgentId: bestAgent?.agentId ?? null,
     bestGoalReached: bestAgent?.bestGoalReached ?? 'none',
+    bestCandidate: sanitizeBestCandidateForReport(resolvedBestCandidate),
+    bestCandidateFailureReason: resolvedBestCandidateFailureReason,
     woodCollectedByBest: Number(bestAgent?.woodCollected ?? 0),
     deathsByBest: Number(bestAgent?.deaths ?? 0),
     blockedActionsByBest: Number(bestAgent?.blockedCount ?? 0),
     hardRecoveryMisuseCount: agentResults.reduce((total, agent) => total + Number(agent.hardRecoveryMisuseCount ?? 0), 0),
     movementPingPongDetected: agentResults.some((agent) => agent.movementPingPongDetected),
     trainingContaminated: Boolean(trainingContaminated || agentResults.some((agent) => agent.trainingContaminated)),
-    fitnessValid: Boolean(fitnessValid && agentResults.every((agent) => agent.fitnessValid)),
-    championSaved: Boolean(championSaved),
+    fitnessValid: allFitnessValid,
+    fitnessInvalidReason: fitnessInvalidReason ?? (!allFitnessValid ? resolvedBestCandidateFailureReason : null),
+    championSaved: Boolean(championSaved && championValid),
+    populationEvaluated: Boolean(populationEvaluated || agentResults.length > 0),
+    agentsEvaluated: Number(agentsEvaluated ?? agentResults.length),
+    validChampionFound: Boolean(validChampionFound || agentResults.some((agent) => validateNeuralChampionCandidate({
+      fitness: agent.fitness,
+      summary: {
+        status: agent.episodeResult?.status,
+        fitnessValid: agent.fitnessValid,
+        trainingContaminated: agent.trainingContaminated,
+        woodCollected: agent.woodCollected,
+        bestGoalReached: agent.bestGoalReached,
+      },
+    }).valid)),
+    nearestTargetWasNullTooLong: Boolean(nearestTargetWasNullTooLong || agentResults.some((agent) => agent.nearestTargetWasNullTooLong)),
+    targetSensorFailure: Boolean(targetSensorFailure || agentResults.some((agent) => agent.targetSensorFailure)),
+    selectedActionExecuted: Boolean(selectedActionExecuted || agentResults.some((agent) => agent.selectedActionExecuted)),
+    selectedActionExecutionResult: selectedActionExecutionResult ?? bestAgent?.selectedActionExecutionResult ?? null,
+    neuralActionCounts: sumNeuralActionCounts(agentResults, neuralActionCounts),
+    neuralMineAttempts: Number(neuralMineAttempts || agentResults.reduce((total, agent) => total + Number(agent.neuralMineAttempts ?? 0), 0)),
+    neuralExploreSteps: Number(neuralExploreSteps || agentResults.reduce((total, agent) => total + Number(agent.neuralExploreSteps ?? 0), 0)),
+    neuralWoodCollected: Number(neuralWoodCollected || bestAgent?.neuralWoodCollected || bestAgent?.woodCollected || 0),
     plannerOnlyFitness: round(baselineFitness),
     championEpisodeFitness: round(championEpisodeFitness),
     neuralAssistedFitness: round(bestFitness),
@@ -390,4 +589,207 @@ function getRecommendedNextTrainingTarget(bestAgent = null) {
   }
 
   return 'Extend survival chain beyond the current best goal.';
+}
+
+export function validateNeuralChampionCandidate(candidate = null) {
+  const fitness = Number(candidate?.fitness ?? 0);
+  const summary = candidate?.summary ?? candidate ?? {};
+  const reason = getChampionInvalidReason(summary, fitness);
+
+  return {
+    valid: !reason,
+    reason,
+  };
+}
+
+function resolveStoredChampion(parsed = null) {
+  if (!parsed) {
+    return {
+      serialized: null,
+      genome: null,
+      validation: validateNeuralChampionCandidate(null),
+    };
+  }
+
+  const hasChampionField = Object.prototype.hasOwnProperty.call(parsed, 'champion');
+  const serialized = hasChampionField ? parsed.champion : parsed;
+
+  if (!serialized) {
+    return {
+      serialized: null,
+      genome: null,
+      validation: validateNeuralChampionCandidate(null),
+    };
+  }
+
+  try {
+    const genome = NeuralGenome.deserialize(serialized);
+
+    return {
+      serialized,
+      genome,
+      validation: validateNeuralChampionCandidate(genome),
+    };
+  } catch {
+    return {
+      serialized: null,
+      genome: null,
+      validation: validateNeuralChampionCandidate(null),
+    };
+  }
+}
+
+export function getChampionInvalidReason(summary = {}, fitness = 0) {
+  if (!summary) {
+    return 'missing-summary';
+  }
+
+  if (Number(fitness ?? summary.fitness ?? 0) <= 0) {
+    return 'fitness-not-positive';
+  }
+
+  if (summary.fitnessValid === false) {
+    return summary.fitnessInvalidReason ?? 'fitness-invalid';
+  }
+
+  if (summary.trainingContaminated) {
+    return 'training-contaminated';
+  }
+
+  if (summary.status === 'failed') {
+    return 'episode-failed';
+  }
+
+  if (Number(summary.woodCollected ?? 0) < 1) {
+    return 'missing-first-wood';
+  }
+
+  if (!summary.bestGoalReached || summary.bestGoalReached === 'none') {
+    return 'no-goal-progress';
+  }
+
+  return null;
+}
+
+function getFitnessInvalidReason(summary = {}, snapshot = {}) {
+  const reasons = [];
+  const elapsedSeconds = Number(summary.elapsedSeconds ?? snapshot.elapsedSeconds ?? 0);
+  const mineCount = Number(snapshot.actionCounts?.mine ?? summary.actionHistory?.mine ?? 0);
+
+  if (summary.status === 'failed') {
+    reasons.push('episode-failed');
+  }
+
+  if (elapsedSeconds >= 60 && Number(summary.woodCollected ?? 0) <= 0) {
+    reasons.push('no-wood-after-starter-window');
+  }
+
+  if (mineCount <= 0) {
+    reasons.push('mine-count-zero');
+  }
+
+  if (summary.bestGoalReached === 'none') {
+    reasons.push('no-goal-progress');
+  }
+
+  if (summary.progressionTierReached === 'starter' && Number(summary.completedGoalCount ?? 0) <= 0) {
+    reasons.push('starter-tier-no-completions');
+  }
+
+  if (snapshot.neuralEvolution?.nearestTargetWasNullTooLong) {
+    reasons.push('nearest-target-null-too-long');
+  }
+
+  if (snapshot.neuralEvolution?.selectedActionExecuted === false) {
+    reasons.push('selected-action-not-executed');
+  }
+
+  if (summary.trainingContaminated) {
+    reasons.push('training-contaminated');
+  }
+
+  if (Number(summary.hardRecoveryMisuseCount ?? 0) > 0) {
+    reasons.push('hard-recovery-misuse');
+  }
+
+  return reasons.length > 0 ? reasons.join('; ') : null;
+}
+
+function createBestCandidateRecord({ genome, validation, generation } = {}) {
+  if (!genome) {
+    return null;
+  }
+
+  return {
+    genomeId: genome.id ?? null,
+    generation: Number(generation ?? genome.generation ?? 0),
+    fitness: round(genome.fitness ?? 0),
+    status: genome.summary?.status ?? 'unknown',
+    progressionTierReached: genome.summary?.progressionTierReached ?? 'starter',
+    bestGoalReached: genome.summary?.bestGoalReached ?? 'none',
+    completedGoalCount: Number(genome.summary?.completedGoalCount ?? 0),
+    woodCollected: Number(genome.summary?.woodCollected ?? 0),
+    fitnessValid: genome.summary?.fitnessValid !== false,
+    failureReason: validation?.reason ?? getChampionInvalidReason(genome.summary, genome.fitness),
+    summary: genome.summary ? { ...genome.summary } : null,
+    genome: genome.serialize(),
+  };
+}
+
+function createBestCandidateRecordFromAgent(agent = null) {
+  if (!agent) {
+    return null;
+  }
+
+  return {
+    agentId: agent.agentId ?? null,
+    genomeId: agent.genomeId ?? null,
+    generation: Number(agent.generation ?? 0),
+    fitness: round(agent.fitness ?? 0),
+    status: agent.episodeResult?.status ?? 'unknown',
+    progressionTierReached: agent.progressTier ?? 'starter',
+    bestGoalReached: agent.bestGoalReached ?? 'none',
+    completedGoalCount: Number(agent.completedGoalCount ?? 0),
+    woodCollected: Number(agent.woodCollected ?? 0),
+    fitnessValid: agent.fitnessValid !== false,
+    failureReason: agent.fitnessInvalidReason ?? getChampionInvalidReason({
+      status: agent.episodeResult?.status,
+      fitnessValid: agent.fitnessValid,
+      woodCollected: agent.woodCollected,
+      bestGoalReached: agent.bestGoalReached,
+      trainingContaminated: agent.trainingContaminated,
+    }, agent.fitness),
+  };
+}
+
+function sanitizeBestCandidateForReport(candidate = null) {
+  if (!candidate) {
+    return null;
+  }
+
+  return {
+    agentId: candidate.agentId ?? null,
+    genomeId: candidate.genomeId ?? null,
+    generation: Number(candidate.generation ?? 0),
+    fitness: round(candidate.fitness ?? 0),
+    status: candidate.status ?? candidate.summary?.status ?? 'unknown',
+    progressionTierReached: candidate.progressionTierReached ?? candidate.summary?.progressionTierReached ?? 'starter',
+    bestGoalReached: candidate.bestGoalReached ?? candidate.summary?.bestGoalReached ?? 'none',
+    completedGoalCount: Number(candidate.completedGoalCount ?? candidate.summary?.completedGoalCount ?? 0),
+    woodCollected: Number(candidate.woodCollected ?? candidate.summary?.woodCollected ?? 0),
+    fitnessValid: candidate.fitnessValid !== false,
+    failureReason: candidate.failureReason ?? null,
+  };
+}
+
+function sumNeuralActionCounts(agentResults = [], baseCounts = {}) {
+  const summed = { ...baseCounts };
+
+  for (const agent of agentResults) {
+    for (const [action, count] of Object.entries(agent.neuralActionCounts ?? {})) {
+      summed[action] = Number(summed[action] ?? 0) + Number(count ?? 0);
+    }
+  }
+
+  return summed;
 }

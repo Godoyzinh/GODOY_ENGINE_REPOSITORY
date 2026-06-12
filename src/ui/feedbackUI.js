@@ -140,16 +140,26 @@ export class FeedbackUI {
 
   renderNeuralEvolutionControls(neuralEvolution, isRunning) {
     const disabled = isRunning ? 'disabled' : '';
+    const championLabel = neuralEvolution?.championValid
+      ? `${neuralEvolution.championFitness ?? 0}`
+      : 'none yet';
+    const bestCandidateFitness = neuralEvolution?.bestCandidate?.fitness ?? neuralEvolution?.bestFitness ?? 0;
+    const bestCandidateFailure = neuralEvolution?.bestCandidateFailureReason ?? neuralEvolution?.fitnessInvalidReason ?? 'none';
 
     return `
       <div class="feedback-ui__ai-plan" aria-label="Neural evolution controls">
         <div class="feedback-ui__ai-plan-title">Neural Evolution</div>
         ${this.renderAiPlanRow('Generation', neuralEvolution?.currentGeneration ?? 0)}
+        ${this.renderAiPlanRow('Generations Done', neuralEvolution?.generationsCompleted ?? 0)}
+        ${this.renderAiPlanRow('Agents Evaluated', neuralEvolution?.agentsEvaluated ?? 0)}
         ${this.renderAiPlanRow('Best Fitness', neuralEvolution?.bestFitness ?? 0)}
+        ${this.renderAiPlanRow('Best Candidate', bestCandidateFitness)}
+        ${this.renderAiPlanRow('Candidate Blocker', bestCandidateFailure)}
         ${this.renderAiPlanRow('Average Fitness', neuralEvolution?.averageFitness ?? 0)}
-        ${this.renderAiPlanRow('Champion Fitness', neuralEvolution?.championFitness ?? 0)}
+        ${this.renderAiPlanRow('Champion', championLabel)}
         ${this.renderAiPlanRow('Best Goal', neuralEvolution?.bestGoalReached ?? 'none')}
         ${this.renderAiPlanRow('Wood', neuralEvolution?.woodCollectedByBest ?? 0)}
+        ${this.renderAiPlanRow('Action Executed', neuralEvolution?.selectedActionExecuted ? 'yes' : 'no')}
         ${this.renderAiPlanRow('Deaths', neuralEvolution?.deathsByBest ?? 0)}
         ${this.renderAiPlanRow('Blocked', neuralEvolution?.blockedActionsByBest ?? 0)}
         <div class="feedback-ui__auto-test-row">
