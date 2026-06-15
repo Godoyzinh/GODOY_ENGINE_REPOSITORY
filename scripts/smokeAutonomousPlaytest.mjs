@@ -266,6 +266,10 @@ assert.equal(report.runtimeStats.simulation.elapsedSeconds, snapshot.elapsedSeco
 assert.ok(report.runtimeStats.simulation, 'report should include sanitized simulation stats');
 assert.ok(report.simulationResult, 'exported report should include full simulation result');
 assert.equal(report.simulationResult.elapsedSeconds, report.runtimeStats.simulation.elapsedSeconds, 'simulationResult and runtimeStats.simulation should stay aligned');
+assert.equal(snapshot.neuralAgent, undefined, 'planner-only autonomous baseline should not expose neural agent state');
+assert.equal(snapshot.neuralEvolution, undefined, 'planner-only autonomous baseline should not expose neural evolution state');
+assert.equal(report.runtimeStats.simulation.neuralAgent, undefined, 'planner-only reports should not include neural agent noise');
+assert.equal(report.runtimeStats.simulation.neuralEvolution, undefined, 'planner-only reports should not include neural evolution noise');
 assert.equal(snapshot.recoveryPauseSpamCount, 0, 'quick smoke should not emit duplicate recovery pause events');
 assert.equal(snapshot.recoveryLoopDetected, false, 'quick smoke should not detect recovery event loops');
 assert.equal(snapshot.hardRecoveryCount, 0, 'quick smoke should not use hard recovery without injected physical invalid state');

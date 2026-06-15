@@ -1,5 +1,19 @@
 # Changelog
 
+## AI Cleanup And Stable Survival Baseline
+
+### Changed
+
+- Neural Evolution is now feature-flagged off by default in the browser runtime with `neuralEnabled=false` and `experimentalNeuralEvolution=false`.
+- Feedback UI now keeps stable autonomous runs as the primary controls and moves Neural Evolution behind an Experimental section that requires explicit flags.
+- Planner-only autonomous reports no longer include disabled neural agent/evolution payloads.
+
+### Fixed
+
+- Added safe fallbacks for report/UI label rendering to avoid `Cannot read properties of undefined (reading 'label')` failures.
+- Runtime config smoke coverage now verifies neural feature flags default off and can be enabled explicitly.
+- Autonomous smoke coverage now verifies the stable planner-only baseline is not contaminated by disabled neural telemetry.
+
 ## Neural Evolution Champion Validation
 
 ### Fixed

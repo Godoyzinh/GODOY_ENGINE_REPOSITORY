@@ -232,6 +232,10 @@ export class Engine {
       onRunNeuralTraining: (options) => this.startNeuralTraining(options),
       onStopAutoTest: (reason) => this.autonomousPlaytest.stop(reason),
       runtimeConfig: this.runtimeConfig,
+      experimentalFlags: {
+        neuralEnabled: this.runtimeConfig.neuralEnabled,
+        experimentalNeuralEvolution: this.runtimeConfig.experimentalNeuralEvolution,
+      },
       onUiAction: (action) => {
         this.telemetrySystem.recordGameplayEvent('feedback', { action });
         this.audioFeedbackSystem.playCue('ui');
@@ -421,6 +425,14 @@ export class Engine {
     neuralTrainingMode = false,
     neuralTrainingMetadata = null,
   } = {}) {
+    if ((neuralAgentEnabled || neuralTrainingMode) && !this.runtimeConfig.neuralEnabled) {
+      return {
+        ok: false,
+        message: 'Neural AI is disabled for the stable Alpha baseline. Enable VITE_GODOY_NEURAL_ENABLED=1 for experimental runs.',
+        snapshot: this.autonomousPlaytest.getSnapshot(),
+      };
+    }
+
     const result = this.autonomousPlaytest.start({
       modeId,
       durationSeconds,
@@ -453,6 +465,14 @@ export class Engine {
     showClones = false,
     headlessMode = false,
   } = {}) {
+    if (!this.runtimeConfig.neuralEnabled || !this.runtimeConfig.experimentalNeuralEvolution) {
+      return {
+        ok: false,
+        message: 'Experimental Neural Evolution is disabled. Set VITE_GODOY_NEURAL_ENABLED=1 and VITE_GODOY_EXPERIMENTAL_NEURAL_EVOLUTION=1 to use it.',
+        snapshot: this.autonomousPlaytest.getSnapshot(),
+      };
+    }
+
     return this.startAutonomousPlaytest({
       modeId,
       durationSeconds: episodeDuration,

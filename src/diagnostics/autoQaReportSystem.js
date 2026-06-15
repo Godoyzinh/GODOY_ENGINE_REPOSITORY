@@ -4,6 +4,8 @@ const STORAGE_KEY = 'godoy:auto-qa:last-report';
 const SCHEMA_VERSION = 1;
 const MINING_SPAM_PER_MINUTE_THRESHOLD = 120;
 const HARD_RECOVERY_LOOP_THRESHOLD = 3;
+const REPORT_MEMORY_LIST_LIMIT = 8;
+const REPORT_HISTORY_LIST_LIMIT = 12;
 
 export class AutoQaReportSystem {
   constructor({
@@ -516,34 +518,40 @@ export function summarizeIssues(telemetrySnapshot, runtimeSnapshot = {}) {
     });
   }
 
-  for (const failedGoal of plannerSnapshot?.goalsFailed ?? []) {
+  for (const failedGoal of (plannerSnapshot?.goalsFailed ?? []).filter(Boolean)) {
+    const failedGoalName = getSafeLabel(failedGoal, 'Unknown Goal');
+
     issues.push({
-      code: `goal-failed-${failedGoal.id}`,
+      code: `goal-failed-${failedGoal.id ?? 'unknown'}`,
       category: AI_TASK_CATEGORIES.gameplay,
       severity: 'medium',
-      title: `Review failed AI goal: ${failedGoal.label}`,
-      summary: failedGoal.reason ?? `${failedGoal.label} did not complete during the autonomous playtest.`,
-      evidence: `Time spent: ${failedGoal.timeSpentSeconds}s; failed at ${failedGoal.failedAtSeconds}s.`,
+      title: `Review failed AI goal: ${failedGoalName}`,
+      summary: failedGoal.reason ?? `${failedGoalName} did not complete during the autonomous playtest.`,
+      evidence: `Time spent: ${failedGoal.timeSpentSeconds ?? 'unknown'}s; failed at ${failedGoal.failedAtSeconds ?? 'unknown'}s.`,
     });
   }
 
-  for (const blockedGoal of blockedGoals.slice(0, 6)) {
+  for (const blockedGoal of blockedGoals.slice(0, 6).filter(Boolean)) {
+    const blockedGoalName = getSafeLabel(blockedGoal, 'Unknown Goal');
+
     issues.push({
-      code: blockedGoal.code,
+      code: blockedGoal.code ?? 'blocked-goal',
       category: AI_TASK_CATEGORIES.gameplay,
-      severity: getBottleneckSeverity(blockedGoal.code),
-      title: `Review blocked AI goal: ${blockedGoal.goalName}`,
+      severity: getBottleneckSeverity(blockedGoal.code ?? ''),
+      title: `Review blocked AI goal: ${blockedGoalName}`,
       summary: blockedGoal.reason,
       evidence: `Count: ${blockedGoal.count ?? 1}; last seen at ${blockedGoal.lastAtSeconds ?? 'unknown'}s.`,
     });
   }
 
-  for (const bottleneck of (plannerSnapshot?.bottlenecks ?? []).slice(0, 6)) {
+  for (const bottleneck of (plannerSnapshot?.bottlenecks ?? []).slice(0, 6).filter(Boolean)) {
+    const bottleneckName = getSafeLabel(bottleneck, 'Unknown Goal');
+
     issues.push({
-      code: bottleneck.code,
+      code: bottleneck.code ?? 'progression-bottleneck',
       category: AI_TASK_CATEGORIES.gameplay,
-      severity: getBottleneckSeverity(bottleneck.code),
-      title: `Review AI progression bottleneck: ${bottleneck.goalName}`,
+      severity: getBottleneckSeverity(bottleneck.code ?? ''),
+      title: `Review AI progression bottleneck: ${bottleneckName}`,
       summary: bottleneck.summary,
       evidence: `Count: ${bottleneck.count}; first seen at ${bottleneck.firstAtSeconds}s; last seen at ${bottleneck.lastAtSeconds}s.`,
     });
@@ -689,6 +697,12 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     'count',
     'lastAtSeconds',
   ]));
+  const neuralAgent = simulationSnapshot.neuralAgent?.enabled
+    ? sanitizeNeuralAgentSnapshot(simulationSnapshot.neuralAgent)
+    : null;
+  const neuralEvolution = simulationSnapshot.neuralEvolution?.enabled
+    ? sanitizeNeuralEvolutionSnapshot(simulationSnapshot.neuralEvolution)
+    : null;
 
   return {
     status: simulationSnapshot.status,
@@ -714,8 +728,8 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     failedCrafts: craftingSnapshot.failedCrafts,
     failedActions,
     recoveryActions,
-    neuralAgent: sanitizeNeuralAgentSnapshot(simulationSnapshot.neuralAgent),
-    neuralEvolution: sanitizeNeuralEvolutionSnapshot(simulationSnapshot.neuralEvolution),
+    ...(neuralAgent ? { neuralAgent } : {}),
+    ...(neuralEvolution ? { neuralEvolution } : {}),
     resourceScanResults,
     biomeStats: sanitizeBiomeStats(simulationSnapshot.biomeStats),
     discoveredStructures: sanitizeDiscoveredStructures(simulationSnapshot.discoveredStructures),
@@ -727,16 +741,16 @@ function sanitizeSimulationSnapshot(simulationSnapshot = null) {
     memoryLoadRunCount: Number(simulationSnapshot.memoryLoadRunCount ?? aiMemory?.memoryLoadRunCount ?? 0),
     memorySaveRunCount: Number(simulationSnapshot.memorySaveRunCount ?? aiMemory?.memorySaveRunCount ?? 0),
     learnedKnowledge: Array.isArray(simulationSnapshot.learnedKnowledge)
-      ? simulationSnapshot.learnedKnowledge.slice(-24).map((knowledge) => String(knowledge))
+      ? simulationSnapshot.learnedKnowledge.slice(-REPORT_HISTORY_LIST_LIMIT).map((knowledge) => String(knowledge))
       : aiMemory?.learnedKnowledge ?? [],
     newKnowledge: Array.isArray(simulationSnapshot.newKnowledge)
-      ? simulationSnapshot.newKnowledge.slice(-24).map((knowledge) => String(knowledge))
+      ? simulationSnapshot.newKnowledge.slice(-REPORT_HISTORY_LIST_LIMIT).map((knowledge) => String(knowledge))
       : aiMemory?.newKnowledge ?? [],
     learnedLessons: Array.isArray(simulationSnapshot.learnedLessons)
-      ? simulationSnapshot.learnedLessons.slice(-24).map((lesson) => String(lesson))
+      ? simulationSnapshot.learnedLessons.slice(-REPORT_HISTORY_LIST_LIMIT).map((lesson) => String(lesson))
       : aiMemory?.learnedLessons ?? [],
     strategyChanges: Array.isArray(simulationSnapshot.strategyChanges)
-      ? simulationSnapshot.strategyChanges.slice(-24).map((change) => String(change))
+      ? simulationSnapshot.strategyChanges.slice(-REPORT_HISTORY_LIST_LIMIT).map((change) => String(change))
       : aiMemory?.strategyChanges ?? [],
     biomeRatings: sanitizeBiomeRatings(simulationSnapshot.biomeRatings ?? aiMemory?.biomeRatings),
     deathPosition: sanitizePosition(simulationSnapshot.deathPosition),
@@ -951,7 +965,7 @@ function sanitizeAiMemorySnapshot(aiMemory = null) {
     bestStoneBiome: aiMemory.bestStoneBiome ?? null,
     averageIronTime: Number(aiMemory.averageIronTime ?? 0),
     strategies: {
-      successful: (aiMemory.strategies?.successful ?? []).slice(-16).map((strategy) => pick(strategy, [
+      successful: (aiMemory.strategies?.successful ?? []).slice(-REPORT_MEMORY_LIST_LIMIT).map((strategy) => pick(strategy, [
         'goalId',
         'goalName',
         'strategy',
@@ -962,7 +976,7 @@ function sanitizeAiMemorySnapshot(aiMemory = null) {
         'count',
         'at',
       ])),
-      failed: (aiMemory.strategies?.failed ?? []).slice(-16).map((strategy) => pick(strategy, [
+      failed: (aiMemory.strategies?.failed ?? []).slice(-REPORT_MEMORY_LIST_LIMIT).map((strategy) => pick(strategy, [
         'goalId',
         'goalName',
         'strategy',
@@ -973,7 +987,7 @@ function sanitizeAiMemorySnapshot(aiMemory = null) {
         'at',
       ])),
     },
-    successfulStrategies: (aiMemory.successfulStrategies ?? []).slice(-16).map((strategy) => pick(strategy, [
+    successfulStrategies: (aiMemory.successfulStrategies ?? []).slice(-REPORT_MEMORY_LIST_LIMIT).map((strategy) => pick(strategy, [
       'goalId',
       'goalName',
       'strategy',
@@ -984,7 +998,7 @@ function sanitizeAiMemorySnapshot(aiMemory = null) {
       'count',
       'at',
     ])),
-    failedStrategies: (aiMemory.failedStrategies ?? []).slice(-16).map((strategy) => pick(strategy, [
+    failedStrategies: (aiMemory.failedStrategies ?? []).slice(-REPORT_MEMORY_LIST_LIMIT).map((strategy) => pick(strategy, [
       'goalId',
       'goalName',
       'strategy',
@@ -1001,24 +1015,24 @@ function sanitizeAiMemorySnapshot(aiMemory = null) {
     resourceEfficiency: sanitizeResourceEfficiency(aiMemory.resourceEfficiency),
     discoveredStructures: sanitizeDiscoveredStructures(aiMemory.discoveredStructures),
     knownStructures: sanitizeDiscoveredStructures(aiMemory.knownStructures),
-    dangerousBiomes: (aiMemory.dangerousBiomes ?? []).slice(0, 16).map((biome) => String(biome)),
+    dangerousBiomes: (aiMemory.dangerousBiomes ?? []).slice(0, REPORT_MEMORY_LIST_LIMIT).map((biome) => String(biome)),
     deathCauses: sanitizeCountRecord(aiMemory.deathCauses),
     blockedActionStatistics: sanitizeCountRecord(aiMemory.blockedActionStatistics),
     craftingStats: sanitizeCraftingStatsSummary(aiMemory.craftingStats),
     shelterStats: sanitizeShelterStatsSummary(aiMemory.shelterStats),
     storageStats: sanitizeStorageSnapshot(aiMemory.storageStats),
-    learnedKnowledge: (aiMemory.learnedKnowledge ?? []).slice(-24).map((knowledge) => String(knowledge)),
-    newKnowledge: (aiMemory.newKnowledge ?? []).slice(-24).map((knowledge) => String(knowledge)),
-    learnedLessons: (aiMemory.learnedLessons ?? []).slice(-24).map((lesson) => String(lesson)),
-    strategyChanges: (aiMemory.strategyChanges ?? []).slice(-24).map((change) => String(change)),
-    optimizationSuggestions: (aiMemory.optimizationSuggestions ?? []).slice(-24).map((suggestion) => String(suggestion)),
+    learnedKnowledge: (aiMemory.learnedKnowledge ?? []).slice(-REPORT_HISTORY_LIST_LIMIT).map((knowledge) => String(knowledge)),
+    newKnowledge: (aiMemory.newKnowledge ?? []).slice(-REPORT_HISTORY_LIST_LIMIT).map((knowledge) => String(knowledge)),
+    learnedLessons: (aiMemory.learnedLessons ?? []).slice(-REPORT_HISTORY_LIST_LIMIT).map((lesson) => String(lesson)),
+    strategyChanges: (aiMemory.strategyChanges ?? []).slice(-REPORT_HISTORY_LIST_LIMIT).map((change) => String(change)),
+    optimizationSuggestions: (aiMemory.optimizationSuggestions ?? []).slice(-REPORT_HISTORY_LIST_LIMIT).map((suggestion) => String(suggestion)),
     strategyHints: aiMemory.strategyHints ? {
       preferredWoodBiome: aiMemory.strategyHints.preferredWoodBiome ?? null,
       preferredStoneBiome: aiMemory.strategyHints.preferredStoneBiome ?? null,
       fastestGoal: aiMemory.strategyHints.fastestGoal ? { ...aiMemory.strategyHints.fastestGoal } : null,
       commonBottleneck: aiMemory.strategyHints.commonBottleneck ? { ...aiMemory.strategyHints.commonBottleneck } : null,
-      knownBiomes: (aiMemory.strategyHints.knownBiomes ?? []).slice(0, 16),
-      knownStructures: (aiMemory.strategyHints.knownStructures ?? []).slice(0, 16),
+      knownBiomes: (aiMemory.strategyHints.knownBiomes ?? []).slice(0, REPORT_MEMORY_LIST_LIMIT),
+      knownStructures: (aiMemory.strategyHints.knownStructures ?? []).slice(0, REPORT_MEMORY_LIST_LIMIT),
     } : null,
   };
 }
@@ -1029,7 +1043,7 @@ function sanitizeBiomeStats(biomeStats = null) {
   }
 
   return Object.fromEntries(
-    Object.entries(biomeStats).slice(0, 16).map(([biome, stats]) => [biome, {
+    Object.entries(biomeStats).slice(0, REPORT_MEMORY_LIST_LIMIT).map(([biome, stats]) => [biome, {
       biome: stats.biome ?? biome,
       visits: Number(stats.visits ?? 0),
       seconds: Number(stats.seconds ?? stats.totalSeconds ?? 0),
@@ -1048,7 +1062,7 @@ function sanitizeBiomeRatings(biomeRatings = null) {
   }
 
   return Object.fromEntries(
-    Object.entries(biomeRatings).slice(0, 16).map(([biome, rating]) => [biome, {
+    Object.entries(biomeRatings).slice(0, REPORT_MEMORY_LIST_LIMIT).map(([biome, rating]) => [biome, {
       biome: rating.biome ?? biome,
       resourceYield: Number(rating.resourceYield ?? 0),
       survivalRate: Number(rating.survivalRate ?? 0),
@@ -1068,7 +1082,7 @@ function sanitizeDiscoveredStructures(discoveredStructures = null) {
     ? discoveredStructures
     : Object.values(discoveredStructures);
 
-  return structures.slice(0, 32).map((structure) => ({
+  return structures.slice(0, REPORT_MEMORY_LIST_LIMIT).map((structure) => ({
     id: structure.id ?? null,
     type: structure.type ?? 'unknown',
     biome: structure.biome ?? 'Unknown',
@@ -1118,7 +1132,7 @@ function sanitizeResourceEfficiency(resourceEfficiency = null) {
   }
 
   return Object.fromEntries(
-    Object.entries(resourceEfficiency).slice(0, 32).map(([resourceId, stats]) => [resourceId, {
+    Object.entries(resourceEfficiency).slice(0, REPORT_MEMORY_LIST_LIMIT).map(([resourceId, stats]) => [resourceId, {
       resourceId: stats.resourceId ?? resourceId,
       totalGained: Number(stats.totalGained ?? 0),
       totalActions: Number(stats.totalActions ?? 0),
@@ -1134,7 +1148,7 @@ function sanitizeCountRecord(record = null) {
   }
 
   return Object.fromEntries(
-    Object.entries(record).slice(0, 32).map(([key, value]) => [key, {
+    Object.entries(record).slice(0, REPORT_MEMORY_LIST_LIMIT).map(([key, value]) => [key, {
       ...pick(value, [
         'summary',
         'severity',
@@ -1162,7 +1176,7 @@ function sanitizeCraftingStatsSummary(craftingStats = null) {
     failures: Number(craftingStats.failures ?? 0),
     successRate: Number(craftingStats.successRate ?? 0),
     byAction: Object.fromEntries(
-      Object.entries(craftingStats.byAction ?? {}).slice(0, 24).map(([action, stats]) => [action, {
+      Object.entries(craftingStats.byAction ?? {}).slice(0, REPORT_MEMORY_LIST_LIMIT).map(([action, stats]) => [action, {
         successes: Number(stats.successes ?? 0),
         failures: Number(stats.failures ?? 0),
         successRate: Number(stats.successRate ?? 0),
@@ -1192,7 +1206,7 @@ function sanitizeProgressionTimes(progressionTimes = null) {
   }
 
   return Object.fromEntries(
-    Object.entries(progressionTimes).slice(0, 32).map(([goalId, stats]) => [goalId, {
+    Object.entries(progressionTimes).slice(0, REPORT_MEMORY_LIST_LIMIT).map(([goalId, stats]) => [goalId, {
       goalId: stats.goalId ?? goalId,
       goalName: stats.goalName ?? goalId,
       samples: Number(stats.samples ?? 0),
@@ -1210,7 +1224,7 @@ function sanitizeResourceDiscovery(resourceDiscoveryMetrics = null) {
   }
 
   return Object.fromEntries(
-    Object.entries(resourceDiscoveryMetrics).slice(0, 32).map(([resourceId, stats]) => [resourceId, {
+    Object.entries(resourceDiscoveryMetrics).slice(0, REPORT_MEMORY_LIST_LIMIT).map(([resourceId, stats]) => [resourceId, {
       resourceId: stats.resourceId ?? resourceId,
       found: Number(stats.found ?? 0),
       attempts: Number(stats.attempts ?? 0),
@@ -1638,6 +1652,10 @@ function pick(source, keys) {
   }
 
   return picked;
+}
+
+function getSafeLabel(value = null, fallback = 'Unknown') {
+  return value?.label ?? value?.goalName ?? value?.name ?? value?.id ?? fallback;
 }
 
 function sanitizeNumberRecord(record = {}) {

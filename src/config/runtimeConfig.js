@@ -24,6 +24,8 @@ export function resolveRuntimeConfig({
   const multiplayerServerUrl = queryServerUrl || envServerUrl || fallbackServerUrl;
   const releaseVersion = env.VITE_GODOY_RELEASE_VERSION ?? DEFAULT_RELEASE_VERSION;
   const releaseChannel = env.VITE_GODOY_RELEASE_CHANNEL ?? DEFAULT_RELEASE_CHANNEL;
+  const neuralEnabled = parseBooleanFlag(env.VITE_GODOY_NEURAL_ENABLED, false);
+  const experimentalNeuralEvolution = parseBooleanFlag(env.VITE_GODOY_EXPERIMENTAL_NEURAL_EVOLUTION, false);
 
   return {
     appName: 'Godoy Engine',
@@ -35,7 +37,21 @@ export function resolveRuntimeConfig({
     multiplayerServerUrl,
     isMultiplayerConfigured: Boolean(multiplayerServerUrl),
     feedbackUrl: env.VITE_GODOY_FEEDBACK_URL ?? '',
+    neuralEnabled,
+    experimentalNeuralEvolution,
   };
+}
+
+function parseBooleanFlag(value, fallback = false) {
+  if (value === true || value === false) {
+    return value;
+  }
+
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
 }
 
 function getViteEnv() {

@@ -33,7 +33,7 @@ Run these before tagging an Alpha build.
 - Feedback opens a compact AI Session Report panel.
 - Feedback report generation shows issue/task counts and keeps reports local until copied or downloaded.
 - Run Auto Test starts an autonomous playtest, shows the current AI goal/subgoal/reason/progress/target, and produces an AI Director report when complete.
-- Neural Evolution controls start quick, standard, evolution, population training, optional clone-arena metadata, stop training, champion reset/export/import, and show live generation/fitness/action/sensor stats.
+- Neural Evolution controls are hidden by default behind experimental flags. When `VITE_GODOY_NEURAL_ENABLED=1` and `VITE_GODOY_EXPERIMENTAL_NEURAL_EVOLUTION=1` are set, they appear in an Experimental section with a stability warning.
 - Join Multiplayer reports that the dedicated server is offline when `npm run dedicated:server` is not running.
 - Join Multiplayer reports a clear configuration message when a public client lacks `VITE_GODOY_WS_URL`.
 
@@ -69,8 +69,9 @@ Run these before tagging an Alpha build.
 - Reports include hard recovery loop fields: `recoveryLoopCycles`, `hardRecoveryCount`, `lastFailedGoal`, `lastFailedAction`, `failedTargetPosition`, `blacklistedTargets`, and `emergencyTeleportUsed`.
 - Reports include starter false-completion fields: `falseCompletionDetected`, `earlyAbortReason`, `woodProgressBy90s`, `craftPlanksBlockedByMissingWood`, and `hardRecoveryMisuseDetected`.
 - Reports include post-completion cleanup fields: `postCompletionEventsDetected`, `postCompletionDeaths`, plus terrain death `velocityY`, `fallDistance`, `healthBefore`, and `healthAfter` when available.
-- Reports include `neuralAgent` when neural assistance is enabled: generation, champion/current fitness, population size, mutation rate, selected action, action scores, sensor snapshot, decision reason, training mode, selected-action execution, neural action counts, neural mine/explore counts, neural wood collected, and fitness invalid reason.
-- Reports include `neuralEvolution` when neural assistance is enabled: mode, training state, population size, generations, best/average/champion fitness, champion validity/status, best candidate diagnostics, generation start/completion, agents evaluated, selected-action execution, target sensor failure, wood/death/blocked counts, contamination, fitness validity, champion save status, planner/champion/neural comparison, and recommended next target.
+- Planner-only reports must not include `neuralAgent` or `neuralEvolution` noise.
+- Reports include `neuralAgent` only when neural assistance is explicitly enabled: generation, champion/current fitness, population size, mutation rate, selected action, action scores, sensor snapshot, decision reason, training mode, selected-action execution, neural action counts, neural mine/explore counts, neural wood collected, and fitness invalid reason.
+- Reports include `neuralEvolution` only when neural assistance is explicitly enabled: mode, training state, population size, generations, best/average/champion fitness, champion validity/status, best candidate diagnostics, generation start/completion, agents evaluated, selected-action execution, target sensor failure, wood/death/blocked counts, contamination, fitness validity, champion save status, planner/champion/neural comparison, and recommended next target.
 - `npm run train:neural -- --mode=quick --generations=10 --population=32 --duration=60` runs quick headless population training and writes the local champion brain to `data/AI_NEURAL_CHAMPION.json`.
 - `npm run train:neural -- --mode=standard --generations=5 --population=16 --duration=300` runs standard neural population training.
 - `npm run train:neural -- --mode=evolution --generations=3 --population=8 --duration=1800` runs long-form evolution training.
