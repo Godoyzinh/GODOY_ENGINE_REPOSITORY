@@ -11,6 +11,7 @@
 - Audio currently uses lightweight procedural cues plus hooks; authored sound assets and mixing are future work.
 - AI Session Reports are local QA artifacts and do not create GitHub issues or code changes automatically.
 - Autonomous playtests are deterministic goal-oriented QA probes, not full human playtesting replacements.
+- Neural Evolution remains experimental and is disabled in the stable Alpha browser flow unless explicitly enabled with feature flags.
 
 ## Performance
 
@@ -32,6 +33,7 @@
 - Autonomous hard recovery now invalidates failed targets, forces replanning, detects repeated recovery loops, and includes stale-simulation fallback snapshots in Feedback reports.
 - Autonomous starter progression now aborts failed runs after 90 seconds with no mining/wood progress instead of reporting false completion.
 - Autonomous post-test cleanup now clears movement, mining targets, landing impact, and recovery state so automated death loops do not continue after completion.
+- Planner-only AI reports now omit neural agent/evolution payloads, and experimental Neural Evolution UI is hidden by default.
 
 ## WebGL Fallback
 

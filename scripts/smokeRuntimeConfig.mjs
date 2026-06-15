@@ -6,6 +6,8 @@ assertLocalDevelopmentFallback();
 assertProductionRequiresConfiguredServer();
 assertEnvironmentServerUrl();
 assertQueryServerOverride();
+assertExperimentalFlagsDefaultOff();
+assertExperimentalFlagsCanBeEnabled();
 await assertMissingServerHealthMessage();
 
 console.log('smoke:runtime-config ok');
@@ -21,6 +23,8 @@ function assertLocalDevelopmentFallback() {
 
   assert.equal(config.multiplayerServerUrl, 'ws://127.0.0.1:8787');
   assert.equal(config.isMultiplayerConfigured, true);
+  assert.equal(config.neuralEnabled, false);
+  assert.equal(config.experimentalNeuralEvolution, false);
 }
 
 function assertProductionRequiresConfiguredServer() {
@@ -66,6 +70,34 @@ function assertQueryServerOverride() {
   });
 
   assert.equal(config.multiplayerServerUrl, 'wss://override.example.com');
+}
+
+function assertExperimentalFlagsDefaultOff() {
+  const config = resolveRuntimeConfig({
+    env: {
+      MODE: 'development',
+      DEV: true,
+    },
+    locationHref: 'http://127.0.0.1:5173/',
+  });
+
+  assert.equal(config.neuralEnabled, false);
+  assert.equal(config.experimentalNeuralEvolution, false);
+}
+
+function assertExperimentalFlagsCanBeEnabled() {
+  const config = resolveRuntimeConfig({
+    env: {
+      MODE: 'development',
+      DEV: true,
+      VITE_GODOY_NEURAL_ENABLED: '1',
+      VITE_GODOY_EXPERIMENTAL_NEURAL_EVOLUTION: 'true',
+    },
+    locationHref: 'http://127.0.0.1:5173/',
+  });
+
+  assert.equal(config.neuralEnabled, true);
+  assert.equal(config.experimentalNeuralEvolution, true);
 }
 
 async function assertMissingServerHealthMessage() {

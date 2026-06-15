@@ -341,7 +341,7 @@ export class AutonomousPlaytestSimulation {
 
     return {
       ok: true,
-      message: `${this.mode.label} started with ${this.startingInventoryProfileId} inventory.`,
+      message: `${getSafeLabel(this.mode, 'Unknown Mode')} started with ${this.startingInventoryProfileId} inventory.`,
       snapshot: this.getSnapshot(),
     };
   }
@@ -2299,13 +2299,15 @@ export class AutonomousPlaytestSimulation {
 
     this.reportSystem.updateReportRuntime?.(report, finalRuntimeSnapshot);
     this.lastSimulationSnapshot = simulationResult;
+    const sanitizedSimulationResult = report.runtimeStats?.simulation ?? simulationResult;
+    const sanitizedLastSimulationSnapshot = report.lastSimulationSnapshot ?? sanitizedSimulationResult;
 
     this.lastReport = {
       ...report,
       issues: report.issues.map((issue) => ({ ...issue })),
       aiTasks: report.aiTasks.map((task) => ({ ...task })),
-      simulationResult,
-      lastSimulationSnapshot: simulationResult,
+      simulationResult: sanitizedSimulationResult,
+      lastSimulationSnapshot: sanitizedLastSimulationSnapshot,
     };
     this.reportSystem.lastReport = this.lastReport;
     this.reportSystem.persistReport?.(this.lastReport);
@@ -2328,12 +2330,18 @@ export class AutonomousPlaytestSimulation {
     const resourceScanResults = this.resourceScanResults ?? this.adapter.getResourceScanSnapshot?.() ?? null;
     const shelterValidation = this.shelterValidation ?? this.adapter.getShelterValidationSnapshot?.() ?? null;
     const blockedGoals = createBlockedGoalsSnapshot(plannerSnapshot);
+    const neuralSnapshots = this.neuralAgentEnabled
+      ? {
+        neuralAgent: this.getNeuralSnapshot(),
+        neuralEvolution: this.getNeuralEvolutionSnapshot(),
+      }
+      : {};
 
     return {
       status: this.status,
       mode: {
         id: this.mode.id,
-        label: this.mode.label,
+        label: getSafeLabel(this.mode, 'Unknown Mode'),
         durationSeconds: this.mode.durationSeconds,
       },
       elapsedSeconds: round(this.elapsedSeconds, 2),
@@ -2362,8 +2370,7 @@ export class AutonomousPlaytestSimulation {
       failedCrafts: this.failedCrafts.map((failedCraft) => ({ ...failedCraft })),
       failedActions: this.failedActions.map((failedAction) => ({ ...failedAction })),
       recoveryActions: this.recoveryActions.map((recoveryAction) => ({ ...recoveryAction })),
-      neuralAgent: this.getNeuralSnapshot(),
-      neuralEvolution: this.getNeuralEvolutionSnapshot(),
+      ...neuralSnapshots,
       resourceScanResults,
       biomeStats: this.adapter.getBiomeStatsSnapshot?.() ?? null,
       discoveredStructures: this.adapter.getDiscoveredStructuresSnapshot?.() ?? [],
@@ -3080,10 +3087,10 @@ function getPositiveDeltaTotal(inventoryDelta) {
 function createBlockedGoalsSnapshot(plannerSnapshot = {}) {
   const blockedGoals = [];
 
-  for (const bottleneck of plannerSnapshot.bottlenecks ?? []) {
+  for (const bottleneck of (plannerSnapshot.bottlenecks ?? []).filter(Boolean)) {
     blockedGoals.push({
       goalId: bottleneck.goalId,
-      goalName: bottleneck.goalName,
+      goalName: getSafeLabel(bottleneck, 'Unknown Goal'),
       code: bottleneck.code,
       reason: bottleneck.summary,
       count: bottleneck.count,
@@ -3091,10 +3098,10 @@ function createBlockedGoalsSnapshot(plannerSnapshot = {}) {
     });
   }
 
-  for (const failedGoal of plannerSnapshot.goalsFailed ?? []) {
+  for (const failedGoal of (plannerSnapshot.goalsFailed ?? []).filter(Boolean)) {
     blockedGoals.push({
       goalId: failedGoal.id,
-      goalName: failedGoal.label,
+      goalName: getSafeLabel(failedGoal, 'Unknown Goal'),
       code: `goal-failed:${failedGoal.id}`,
       reason: failedGoal.reason,
       count: 1,
@@ -3121,6 +3128,10 @@ function dedupeBlockedGoals(blockedGoals) {
   }
 
   return deduped;
+}
+
+function getSafeLabel(value = null, fallback = 'Unknown') {
+  return value?.label ?? value?.goalName ?? value?.name ?? value?.id ?? fallback;
 }
 
 function getHorizontalDistance(leftPosition, rightPosition) {

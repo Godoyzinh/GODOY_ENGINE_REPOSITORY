@@ -30,8 +30,6 @@ Run from the CLI:
 npm run simulate:ai
 npm run simulate:ai -- --mode=standard
 npm run simulate:ai -- --mode=stress
-npm run simulate:ai -- --duration=60 --neural
-npm run simulate:ai -- --mode=standard --duration=300 --neural
 npm run simulate:ai -- --inventory=empty
 npm run simulate:ai -- --inventory=survival-start
 npm run simulate:ai -- --inventory=debug-rich
@@ -46,7 +44,7 @@ Simulation modes:
 - Standard Test: 5 minutes.
 - Stress Test: 15 minutes.
 - Evolution Test: 30 minutes by default. The CLI splits this into multiple runs that reuse the same AI memory. A `--duration` of 1800 seconds or more automatically uses evolution mode when `--mode` is left as the default (`quick`).
-- Quick, Standard, and Evolution can run planner-only, neural-assisted champion evaluation, or neural training metadata with `--neural`.
+- Quick, Standard, and Evolution run planner-only by default. Neural-assisted runs are experimental and must be requested explicitly with `--neural` from the CLI or enabled in the browser with both `VITE_GODOY_NEURAL_ENABLED=1` and `VITE_GODOY_EXPERIMENTAL_NEURAL_EVOLUTION=1`.
 
 Starting inventory profiles:
 
@@ -110,7 +108,7 @@ Memory is advisory only. It can influence goal reasons and target selection, but
 - Inventory initial/current/delta snapshots for autonomous playtests, also exported as `inventorySnapshot` and `resourceDeltas`.
 - Actual equipped tool, including missing-pickaxe evidence if Gather Stone starts without a valid mining tool.
 - Furnace crafting diagnostics: recipe presence, valid stone-material options, attempted counts, and block reason.
-- AI memory: `memorySnapshot`, persistence source, load/save run counts, learned knowledge, new knowledge, learned lessons, strategy changes, optimization suggestions, biome ratings, strategy hints, biome statistics, progression times, resource discovery metrics, discovered structures, storage reserves, and base tier state.
+- AI memory: compact `memorySnapshot`, persistence source, load/save run counts, recent learned knowledge, recent lessons, strategy changes, biome hints, storage reserves, and base tier state.
 - Storage persistence: reports include placed storage chests, reserve contents, and persisted chest counts for engine-backed auto tests.
 - Starting inventory profile plus explicit `initialInventory`, `currentInventory`, and `inventoryDelta` aliases.
 - Goal transition history, failed action evidence, and crafted item/failed craft attempt lists, including no-delta craft failures.
@@ -123,7 +121,7 @@ Memory is advisory only. It can influence goal reasons and target selection, but
 - Hard recovery loop evidence, including `recoveryLoopCycles`, `hardRecoveryCount`, `lastFailedGoal`, `lastFailedAction`, `failedTargetPosition`, `blacklistedTargets`, and `emergencyTeleportUsed`.
 - Starter false-completion evidence, including `falseCompletionDetected`, `earlyAbortReason`, `woodProgressBy90s`, `craftPlanksBlockedByMissingWood`, and `hardRecoveryMisuseDetected`.
 - Post-completion cleanup evidence, including `postCompletionEventsDetected`, `postCompletionDeaths`, and terrain death context with position, `velocityY`, `fallDistance`, `healthBefore`, and `healthAfter`.
-- Neural survival agent evidence when enabled, including `neuralAgent.enabled`, generation, champion/current fitness, population size, mutation rate, selected action, action scores, sensor snapshot, decision reason, training mode, whether the selected action executed, neural action counts, neural mine attempts, neural explore steps, neural wood collected, and fitness invalid reason.
+- Neural survival agent evidence only when explicitly enabled, including `neuralAgent.enabled`, generation, champion/current fitness, population size, mutation rate, selected action, action scores, sensor snapshot, decision reason, training mode, whether the selected action executed, neural action counts, neural mine attempts, neural explore steps, neural wood collected, and fitness invalid reason.
 - Neural champion evidence separates `bestCandidate` from `champion`: failed or invalid genomes may be preserved for diagnostics, but only positive-fitness runs that collect wood and complete real goals can become valid champions.
 - `lastSimulationSnapshot` is included when Feedback reports are generated during or after an autonomous run, even if there is no active `runtimeStats.simulation`.
 - Recent sanitized gameplay events.
@@ -158,10 +156,11 @@ AI-generated tasks are suggestions, not commands.
 
 ## Neural Training
 
-Use neural training only as an optional local control layer for autonomous playtests. Survival goals remain planner-owned; each survival run is treated as an episode that can produce fitness, progress, and champion evidence.
+Use neural training only as an optional experimental local control layer for autonomous playtests. Survival goals remain planner-owned; each survival run is treated as an episode that can produce fitness, progress, and champion evidence. The stable Alpha baseline keeps neural loading, UI controls, and neural telemetry disabled unless explicitly enabled.
 
 - `npm run smoke:neural-ai` verifies the neural network, mutation, serialization, fitness scoring, safety boundaries, and champion training.
 - `npm run smoke:neural-population` verifies multi-agent population creation, champion save/load, manual-input contamination, quick champion evaluation, blocked target safety, and best-agent selection.
+- Browser neural controls require `VITE_GODOY_NEURAL_ENABLED=1` and `VITE_GODOY_EXPERIMENTAL_NEURAL_EVOLUTION=1`.
 - `npm run train:neural -- --mode=quick --generations=10 --population=32 --duration=60` runs headless population training.
 - `npm run train:neural -- --mode=standard --generations=5 --population=16 --duration=300` runs standard-length survival training.
 - `npm run train:neural -- --mode=evolution --generations=3 --population=8 --duration=1800` runs long-form survival training.

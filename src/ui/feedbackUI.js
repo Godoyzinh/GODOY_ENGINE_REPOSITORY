@@ -2,7 +2,6 @@ import {
   AUTONOMOUS_INVENTORY_PROFILE_OPTIONS,
   DEFAULT_AUTONOMOUS_INVENTORY_PROFILE_ID,
 } from '../diagnostics/autonomousInventoryProfiles.js';
-import { getPlaytestModes } from '../diagnostics/playtestSimulationModes.js';
 
 export class FeedbackUI {
   constructor({
@@ -15,6 +14,7 @@ export class FeedbackUI {
     onRunNeuralTraining = null,
     onStopAutoTest = null,
     runtimeConfig = null,
+    experimentalFlags = null,
     onUiAction = null,
   }) {
     this.reportSystem = reportSystem;
@@ -25,6 +25,7 @@ export class FeedbackUI {
     this.onRunNeuralTraining = onRunNeuralTraining;
     this.onStopAutoTest = onStopAutoTest;
     this.runtimeConfig = runtimeConfig;
+    this.experimentalFlags = normalizeExperimentalFlags(experimentalFlags);
     this.onUiAction = onUiAction;
     this.isOpen = false;
     this.lastReport = null;
@@ -100,20 +101,14 @@ export class FeedbackUI {
     const isRunning = snapshot?.status === 'running';
     const progressPercent = Math.round((snapshot?.progress ?? 0) * 100);
     const statusLabel = snapshot
-      ? `${snapshot.mode.label}: ${snapshot.status} ${progressPercent}%`
+      ? `${formatModeLabel(snapshot.mode)}: ${snapshot.status ?? 'unknown'} ${progressPercent}%`
       : 'Quick Smoke: idle';
 
     return `
       <div class="feedback-ui__auto-test">
         <div class="feedback-ui__auto-test-row">
           <span>${escapeHtml(statusLabel)}</span>
-          <select data-action="auto-test-mode" ${isRunning ? 'disabled' : ''}>
-            ${getPlaytestModes().map((mode) => `
-              <option value="${escapeAttribute(mode.id)}" ${this.selectedAutoTestMode === mode.id ? 'selected' : ''}>
-                ${escapeHtml(formatModeOption(mode))}
-              </option>
-            `).join('')}
-          </select>
+          ${isRunning ? '<button type="button" data-action="stop-auto-test">Stop</button>' : ''}
         </div>
         <div class="feedback-ui__auto-test-row">
           <span>Starting Inventory</span>
@@ -130,15 +125,21 @@ export class FeedbackUI {
         </div>
         ${this.renderAiGoalOverlay(snapshot?.planner)}
         ${this.renderNeuralAgentStatus(snapshot?.neuralAgent)}
-        <button type="button" data-action="run-auto-test" ${isRunning ? 'disabled' : ''}>
-          ${isRunning ? 'Running Auto Test' : 'Run Auto Test'}
-        </button>
+        <div class="feedback-ui__actions">
+          <button type="button" data-action="run-auto-quick" ${isRunning ? 'disabled' : ''}>Run Quick Survival Test 60s</button>
+          <button type="button" data-action="run-auto-standard" ${isRunning ? 'disabled' : ''}>Run Standard Survival Test 5m</button>
+          <button type="button" data-action="run-auto-evolution" ${isRunning ? 'disabled' : ''}>Run Evolution Test 30m</button>
+        </div>
         ${this.renderNeuralEvolutionControls(snapshot?.neuralEvolution, isRunning)}
       </div>
     `;
   }
 
   renderNeuralEvolutionControls(neuralEvolution, isRunning) {
+    if (!this.experimentalFlags.neuralEnabled || !this.experimentalFlags.experimentalNeuralEvolution) {
+      return '';
+    }
+
     const disabled = isRunning ? 'disabled' : '';
     const championLabel = neuralEvolution?.championValid
       ? `${neuralEvolution.championFitness ?? 0}`
@@ -147,8 +148,9 @@ export class FeedbackUI {
     const bestCandidateFailure = neuralEvolution?.bestCandidateFailureReason ?? neuralEvolution?.fitnessInvalidReason ?? 'none';
 
     return `
-      <div class="feedback-ui__ai-plan" aria-label="Neural evolution controls">
-        <div class="feedback-ui__ai-plan-title">Neural Evolution</div>
+      <div class="feedback-ui__ai-plan" aria-label="Experimental neural evolution controls">
+        <div class="feedback-ui__ai-plan-title">Experimental Neural Evolution</div>
+        <span class="feedback-ui__note">Experimental. May be unstable.</span>
         ${this.renderAiPlanRow('Generation', neuralEvolution?.currentGeneration ?? 0)}
         ${this.renderAiPlanRow('Generations Done', neuralEvolution?.generationsCompleted ?? 0)}
         ${this.renderAiPlanRow('Agents Evaluated', neuralEvolution?.agentsEvaluated ?? 0)}
@@ -327,15 +329,21 @@ export class FeedbackUI {
     this.element.querySelector('[data-action="download-report"]')?.addEventListener('click', () => {
       this.downloadReport();
     });
-    this.element.querySelector('[data-action="auto-test-mode"]')?.addEventListener('change', (event) => {
-      this.selectedAutoTestMode = event.target.value;
-    });
     this.element.querySelector('[data-action="auto-test-inventory"]')?.addEventListener('change', (event) => {
       this.selectedInventoryProfile = event.target.value;
     });
     this.bindNeuralControls();
-    this.element.querySelector('[data-action="run-auto-test"]')?.addEventListener('click', () => {
-      this.runAutoTest();
+    this.element.querySelector('[data-action="run-auto-quick"]')?.addEventListener('click', () => {
+      this.runAutoTest({ modeId: 'quick' });
+    });
+    this.element.querySelector('[data-action="run-auto-standard"]')?.addEventListener('click', () => {
+      this.runAutoTest({ modeId: 'standard' });
+    });
+    this.element.querySelector('[data-action="run-auto-evolution"]')?.addEventListener('click', () => {
+      this.runAutoTest({ modeId: 'evolution' });
+    });
+    this.element.querySelector('[data-action="stop-auto-test"]')?.addEventListener('click', () => {
+      this.stopAutoTest();
     });
     this.element.querySelector('[data-action="run-neural-training"]')?.addEventListener('click', () => {
       this.runNeuralTraining({ modeId: this.selectedAutoTestMode, trainPopulation: true });
@@ -412,9 +420,10 @@ export class FeedbackUI {
     this.render();
   }
 
-  runAutoTest() {
+  runAutoTest({ modeId = this.selectedAutoTestMode } = {}) {
+    this.selectedAutoTestMode = modeId;
     const result = this.onRunAutoTest?.({
-      modeId: this.selectedAutoTestMode,
+      modeId,
       inventoryProfileId: this.selectedInventoryProfile,
     });
 
@@ -425,6 +434,12 @@ export class FeedbackUI {
   }
 
   runNeuralTraining({ modeId = 'quick', episodeDuration = this.neuralEpisodeDuration, trainPopulation = false, showClones = this.neuralShowClones } = {}) {
+    if (!this.experimentalFlags.neuralEnabled || !this.experimentalFlags.experimentalNeuralEvolution) {
+      this.statusMessage = 'Experimental Neural Evolution is disabled for the stable Alpha baseline.';
+      this.render();
+      return;
+    }
+
     const result = this.onRunNeuralTraining?.({
       modeId,
       inventoryProfileId: this.selectedInventoryProfile,
@@ -458,6 +473,15 @@ export class FeedbackUI {
     this.autoTestSnapshot = result?.snapshot ?? this.getAutoTestSnapshot?.() ?? this.autoTestSnapshot;
     this.statusMessage = result?.message ?? 'Neural training started.';
     this.onUiAction?.('neural-training-run');
+    this.render();
+  }
+
+  stopAutoTest(reason = 'auto-test-stopped') {
+    const snapshot = this.onStopAutoTest?.(reason) ?? null;
+
+    this.autoTestSnapshot = snapshot ?? this.getAutoTestSnapshot?.() ?? this.autoTestSnapshot;
+    this.statusMessage = 'Autonomous playtest stopped.';
+    this.onUiAction?.('auto-test-stop');
     this.render();
   }
 
@@ -610,14 +634,15 @@ function escapeAttribute(value) {
   return escapeHtml(value).replaceAll('"', '&quot;');
 }
 
-function formatModeOption(mode) {
-  const durationMinutes = Math.round((mode.durationSeconds ?? 60) / 60);
+function formatModeLabel(mode) {
+  return mode?.label ?? mode?.id ?? 'Unknown Mode';
+}
 
-  if (durationMinutes <= 1) {
-    return `${mode.label} 60s`;
-  }
-
-  return `${mode.label} ${durationMinutes}m`;
+function normalizeExperimentalFlags(flags = null) {
+  return {
+    neuralEnabled: Boolean(flags?.neuralEnabled),
+    experimentalNeuralEvolution: Boolean(flags?.experimentalNeuralEvolution),
+  };
 }
 
 function clampInteger(value, minimum, maximum, fallback) {
